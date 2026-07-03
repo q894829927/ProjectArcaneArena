@@ -607,6 +607,16 @@ After changing code:
 
 ---
 
+## Code Review Rules
+
+For any review request, follow `code_review.md`.
+
+Review responses are an exception to the normal task response format: findings must come first, ordered by severity, and grounded in file and line references whenever possible.
+
+If no issues are found, say that clearly and mention any remaining test gaps or residual risk.
+
+---
+
 ## Common Mistakes to Avoid
 
 Avoid these mistakes:
