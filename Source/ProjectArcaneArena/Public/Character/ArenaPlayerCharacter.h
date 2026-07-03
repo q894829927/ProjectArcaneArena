@@ -10,6 +10,7 @@ class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
 class APlayerController;
+class UAbilitySystemComponent;
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaPlayerCharacter : public AArenaCharacterBase
@@ -19,11 +20,16 @@ class PROJECTARCANEARENA_API AArenaPlayerCharacter : public AArenaCharacterBase
 public:
 	AArenaPlayerCharacter();
 
+	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+
 protected:
+	virtual void PossessedBy(AController* NewController) override;
+	virtual void OnRep_PlayerState() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 private:
+	void InitializeAbilityActorInfo();
 	void AddDefaultMappingContext() const;
 	void CreateDefaultInputMappings();
 	void FaceMouseCursor();

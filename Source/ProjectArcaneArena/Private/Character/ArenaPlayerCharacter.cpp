@@ -1,11 +1,13 @@
 #include "Character/ArenaPlayerCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Core/ArenaPlayerState.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GAS/ArenaAbilitySystemComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
@@ -41,11 +43,48 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 	CreateDefaultInputMappings();
 }
 
+UAbilitySystemComponent* AArenaPlayerCharacter::GetAbilitySystemComponent() const
+{
+	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
+	return ArenaPlayerState ? ArenaPlayerState->GetAbilitySystemComponent() : nullptr;
+}
+
+void AArenaPlayerCharacter::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+
+	InitializeAbilityActorInfo();
+}
+
+void AArenaPlayerCharacter::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+
+	InitializeAbilityActorInfo();
+}
+
 void AArenaPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
 	FaceMouseCursor();
+}
+
+void AArenaPlayerCharacter::InitializeAbilityActorInfo()
+{
+	AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
+	if (!ArenaPlayerState)
+	{
+		return;
+	}
+
+	UArenaAbilitySystemComponent* ArenaASC = ArenaPlayerState->GetArenaAbilitySystemComponent();
+	if (!ArenaASC)
+	{
+		return;
+	}
+
+	ArenaASC->InitAbilityActorInfo(ArenaPlayerState, this);
 }
 
 void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)

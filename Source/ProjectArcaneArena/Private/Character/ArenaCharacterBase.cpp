@@ -7,3 +7,8 @@ AArenaCharacterBase::AArenaCharacterBase()
 	bReplicates = true;
 	SetReplicateMovement(true);
 }
+
+UAbilitySystemComponent* AArenaCharacterBase::GetAbilitySystemComponent() const
+{
+	return nullptr;
+}
