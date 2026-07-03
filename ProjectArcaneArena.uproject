@@ -3,6 +3,13 @@
 	"EngineAssociation": "{C8908338-47BB-AF0F-81FC-9EBAAEDEAF04}",
 	"Category": "",
 	"Description": "",
+	"Modules": [
+		{
+			"Name": "ProjectArcaneArena",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
 	"Plugins": [
 		{
 			"Name": "ModelingToolsEditorMode",
@@ -14,6 +21,21 @@
 		{
 			"Name": "GameplayStateTree",
 			"Enabled": true
+		},
+		{
+			"Name": "GameplayAbilities",
+			"Enabled": true
+		},
+		{
+			"Name": "VisualStudioTools",
+			"Enabled": true,
+			"TargetAllowList": [
+				"Editor"
+			],
+			"MarketplaceURL": "com.epicgames.launcher://ue/marketplace/product/362651520df94e4fa65492dbcba44ae2",
+			"SupportedTargetPlatforms": [
+				"Win64"
+			]
 		}
 	]
 }
