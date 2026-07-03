@@ -1,0 +1,98 @@
+# Unreal Engine
+
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+.vscode/.browse.VC.db*
+.vscode/ipch/
+*.VC.db
+*.opensdf
+*.sdf
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Visual Studio / Rider
+
+*.sln
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user
+.idea/
+_ReSharper*/
+*.DotSettings.user
+
+# Build output
+
+Build/
+Builds/
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# Unreal generated files
+
+*.generated.h
+*.gen.cpp
+*.obj
+*.pch
+*.pdb
+*.idb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.exe
+*.app
+*.dSYM/
+
+# Logs and crash reports
+
+*.log
+*.tmp
+*.bak
+*.swp
+*.pid
+Saved/Logs/
+Saved/Crashes/
+Saved/Autosaves/
+Saved/Backup/
+
+# Derived asset cache
+
+*.udd
+*.udic
+*.upipelinecache
+
+# OS files
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python / tools
+
+**pycache**/
+*.pyc
+.venv/
+venv/
+.env
+
+# Codex / local agent files
+
+.codex/cache/
+.codex/logs/
+.codex/sessions/
+.codex/tmp/
+
+# Keep important project files
+
+!Config/
+!Content/
+!Source/
+!Plugins/
+!AGENTS.md
+!*.uproject
+!*.uplugin
