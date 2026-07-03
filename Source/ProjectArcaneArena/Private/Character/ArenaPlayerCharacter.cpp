@@ -4,6 +4,7 @@
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
@@ -149,13 +150,13 @@ void AArenaPlayerCharacter::FaceMouseCursor()
 		return;
 	}
 
-	FHitResult CursorHit;
-	if (!PlayerController->GetHitResultUnderCursor(ECC_Visibility, false, CursorHit))
+	FVector AimPoint;
+	if (!GetMouseAimPointOnPlane(*PlayerController, AimPoint))
 	{
 		return;
 	}
 
-	FVector FacingDirection = CursorHit.ImpactPoint - GetActorLocation();
+	FVector FacingDirection = AimPoint - GetActorLocation();
 	FacingDirection.Z = 0.0f;
 
 	if (FacingDirection.IsNearlyZero())
@@ -166,11 +167,39 @@ void AArenaPlayerCharacter::FaceMouseCursor()
 	const FRotator TargetRotation = FRotator(0.0f, FacingDirection.Rotation().Yaw, 0.0f);
 	ApplyFacingRotation(TargetRotation);
 
-	if (!HasAuthority() && FMath::Abs(FMath::FindDeltaAngleDegrees(LastSentFacingYaw, TargetRotation.Yaw)) > FacingReplicationYawTolerance)
+	const float CurrentTime = GetWorld()->GetTimeSeconds();
+	if (!HasAuthority()
+		&& CurrentTime - LastFacingReplicationTime >= FacingReplicationMinInterval
+		&& FMath::Abs(FMath::FindDeltaAngleDegrees(LastSentFacingYaw, TargetRotation.Yaw)) > FacingReplicationYawTolerance)
 	{
 		LastSentFacingYaw = TargetRotation.Yaw;
+		LastFacingReplicationTime = CurrentTime;
 		Server_SetFacingRotation(TargetRotation);
 	}
+}
+
+bool AArenaPlayerCharacter::GetMouseAimPointOnPlane(const APlayerController& PlayerController, FVector& OutAimPoint) const
+{
+	FVector WorldOrigin;
+	FVector WorldDirection;
+	if (!PlayerController.DeprojectMousePositionToWorld(WorldOrigin, WorldDirection))
+	{
+		return false;
+	}
+
+	if (FMath::IsNearlyZero(WorldDirection.Z))
+	{
+		return false;
+	}
+
+	const float DistanceToAimPlane = (AimPlaneZ - WorldOrigin.Z) / WorldDirection.Z;
+	if (DistanceToAimPlane < 0.0f)
+	{
+		return false;
+	}
+
+	OutAimPoint = WorldOrigin + WorldDirection * DistanceToAimPlane;
+	return true;
 }
 
 void AArenaPlayerCharacter::ApplyFacingRotation(const FRotator& NewRotation)
