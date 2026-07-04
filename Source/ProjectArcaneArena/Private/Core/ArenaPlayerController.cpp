@@ -12,8 +12,5 @@ void AArenaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	FInputModeGameAndUI InputMode;
-	InputMode.SetHideCursorDuringCapture(false);
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	SetInputMode(InputMode);
+	SetInputMode(FInputModeGameOnly());
 }

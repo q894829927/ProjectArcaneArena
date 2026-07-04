@@ -9,7 +9,6 @@ class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
-class APlayerController;
 class UAbilitySystemComponent;
 
 UCLASS()
@@ -25,16 +24,12 @@ public:
 protected:
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void OnRep_PlayerState() override;
-	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 private:
 	void InitializeAbilityActorInfo();
 	void AddDefaultMappingContext() const;
 	void CreateDefaultInputMappings();
-	void FaceMouseCursor();
-	bool GetMouseAimPointOnPlane(const APlayerController& PlayerController, FVector& OutAimPoint) const;
-	void ApplyFacingRotation(const FRotator& NewRotation);
 
 	void Input_Move(const FInputActionValue& Value);
 	void Input_BasicAttack();
@@ -42,9 +37,6 @@ private:
 	void Input_Dash();
 	void Input_Shield();
 	void Input_Ultimate();
-
-	UFUNCTION(Server, Reliable)
-	void Server_SetFacingRotation(FRotator NewRotation);
 
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
@@ -76,16 +68,4 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	int32 InputMappingPriority = 0;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Aiming")
-	float AimPlaneZ = 0.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	float FacingReplicationYawTolerance = 1.0f;
-
-	UPROPERTY(EditDefaultsOnly, Category = "Input")
-	float FacingReplicationMinInterval = 0.05f;
-
-	float LastSentFacingYaw = 0.0f;
-	float LastFacingReplicationTime = 0.0f;
 };

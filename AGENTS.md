@@ -642,12 +642,11 @@ Follow this order:
 ### Phase 1: Single-Player Foundation
 
 1. Create top-down character movement.
-2. Add mouse-facing logic.
-3. Set up GameMode, PlayerController, PlayerState, GameState.
-4. Add AbilitySystemComponent and AttributeSet.
-5. Initialize GAS correctly.
-6. Add Health, Shield, Energy, AttackPower, Defense.
-7. Add basic HUD.
+2. Set up GameMode, PlayerController, PlayerState, GameState.
+3. Add AbilitySystemComponent and AttributeSet.
+4. Initialize GAS correctly.
+5. Add Health, Shield, Energy, AttackPower, Defense.
+6. Add basic HUD.
 
 ### Phase 2: GAS Combat
 

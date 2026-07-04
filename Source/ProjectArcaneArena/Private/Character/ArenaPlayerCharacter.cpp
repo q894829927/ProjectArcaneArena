@@ -14,13 +14,13 @@
 
 AArenaPlayerCharacter::AArenaPlayerCharacter()
 {
-	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bCanEverTick = false;
 
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 	bUseControllerRotationYaw = false;
 
-	GetCharacterMovement()->bOrientRotationToMovement = false;
+	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->bUseControllerDesiredRotation = false;
 	GetCharacterMovement()->MaxWalkSpeed = 600.0f;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
@@ -61,13 +61,6 @@ void AArenaPlayerCharacter::OnRep_PlayerState()
 	Super::OnRep_PlayerState();
 
 	InitializeAbilityActorInfo();
-}
-
-void AArenaPlayerCharacter::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
-
-	FaceMouseCursor();
 }
 
 void AArenaPlayerCharacter::InitializeAbilityActorInfo()
@@ -176,76 +169,6 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	DefaultMappingContext->MapKey(UltimateAction, EKeys::R);
 }
 
-void AArenaPlayerCharacter::FaceMouseCursor()
-{
-	if (!IsLocallyControlled())
-	{
-		return;
-	}
-
-	APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	if (!PlayerController)
-	{
-		return;
-	}
-
-	FVector AimPoint;
-	if (!GetMouseAimPointOnPlane(*PlayerController, AimPoint))
-	{
-		return;
-	}
-
-	FVector FacingDirection = AimPoint - GetActorLocation();
-	FacingDirection.Z = 0.0f;
-
-	if (FacingDirection.IsNearlyZero())
-	{
-		return;
-	}
-
-	const FRotator TargetRotation = FRotator(0.0f, FacingDirection.Rotation().Yaw, 0.0f);
-	ApplyFacingRotation(TargetRotation);
-
-	const float CurrentTime = GetWorld()->GetTimeSeconds();
-	if (!HasAuthority()
-		&& CurrentTime - LastFacingReplicationTime >= FacingReplicationMinInterval
-		&& FMath::Abs(FMath::FindDeltaAngleDegrees(LastSentFacingYaw, TargetRotation.Yaw)) > FacingReplicationYawTolerance)
-	{
-		LastSentFacingYaw = TargetRotation.Yaw;
-		LastFacingReplicationTime = CurrentTime;
-		Server_SetFacingRotation(TargetRotation);
-	}
-}
-
-bool AArenaPlayerCharacter::GetMouseAimPointOnPlane(const APlayerController& PlayerController, FVector& OutAimPoint) const
-{
-	FVector WorldOrigin;
-	FVector WorldDirection;
-	if (!PlayerController.DeprojectMousePositionToWorld(WorldOrigin, WorldDirection))
-	{
-		return false;
-	}
-
-	if (FMath::IsNearlyZero(WorldDirection.Z))
-	{
-		return false;
-	}
-
-	const float DistanceToAimPlane = (AimPlaneZ - WorldOrigin.Z) / WorldDirection.Z;
-	if (DistanceToAimPlane < 0.0f)
-	{
-		return false;
-	}
-
-	OutAimPoint = WorldOrigin + WorldDirection * DistanceToAimPlane;
-	return true;
-}
-
-void AArenaPlayerCharacter::ApplyFacingRotation(const FRotator& NewRotation)
-{
-	SetActorRotation(NewRotation);
-}
-
 void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 {
 	const FVector2D MovementVector = Value.Get<FVector2D>();
@@ -282,11 +205,4 @@ void AArenaPlayerCharacter::Input_Shield()
 void AArenaPlayerCharacter::Input_Ultimate()
 {
 	// TODO: Route to the AbilitySystemComponent input flow in the GAS pass.
-}
-
-void AArenaPlayerCharacter::Server_SetFacingRotation_Implementation(FRotator NewRotation)
-{
-	NewRotation.Pitch = 0.0f;
-	NewRotation.Roll = 0.0f;
-	ApplyFacingRotation(NewRotation);
 }
