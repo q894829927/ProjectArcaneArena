@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemComponent.h"
+#include "GameplayTagContainer.h"
 #include "ArenaAbilitySystemComponent.generated.h"
 
 UCLASS()
@@ -11,4 +12,6 @@ class PROJECTARCANEARENA_API UArenaAbilitySystemComponent : public UAbilitySyste
 
 public:
 	UArenaAbilitySystemComponent();
+
+	void AbilityInputTagPressed(const FGameplayTag& InputTag);
 };

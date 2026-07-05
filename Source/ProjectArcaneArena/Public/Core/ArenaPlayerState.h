@@ -25,10 +25,19 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|GAS")
 	UArenaAttributeSet* GetArenaAttributeSet() const;
 
+	bool HasGrantedStartupAbilities() const { return bGrantedStartupAbilities; }
+	void SetGrantedStartupAbilities(bool bNewGrantedStartupAbilities);
+
+	bool HasAppliedDefaultAttributes() const { return bAppliedDefaultAttributes; }
+	void SetAppliedDefaultAttributes(bool bNewAppliedDefaultAttributes);
+
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAbilitySystemComponent> AbilitySystemComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAttributeSet> AttributeSet;
+
+	bool bGrantedStartupAbilities = false;
+	bool bAppliedDefaultAttributes = false;
 };

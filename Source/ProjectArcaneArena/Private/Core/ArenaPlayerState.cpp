@@ -30,3 +30,13 @@ UArenaAttributeSet* AArenaPlayerState::GetArenaAttributeSet() const
 {
 	return AttributeSet;
 }
+
+void AArenaPlayerState::SetGrantedStartupAbilities(bool bNewGrantedStartupAbilities)
+{
+	bGrantedStartupAbilities = bNewGrantedStartupAbilities;
+}
+
+void AArenaPlayerState::SetAppliedDefaultAttributes(bool bNewAppliedDefaultAttributes)
+{
+	bAppliedDefaultAttributes = bNewAppliedDefaultAttributes;
+}

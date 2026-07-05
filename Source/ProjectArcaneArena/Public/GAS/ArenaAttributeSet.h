@@ -11,6 +11,8 @@
 	GAMEPLAYATTRIBUTE_VALUE_SETTER(PropertyName) \
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
+struct FGameplayEffectModCallbackData;
+
 UCLASS()
 class PROJECTARCANEARENA_API UArenaAttributeSet : public UAttributeSet
 {
@@ -22,6 +24,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
+	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Health);
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, MaxHealth);
@@ -32,6 +35,10 @@ public:
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, AttackPower);
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Defense);
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, MoveSpeed);
+	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, CritChance);
+	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, CritDamage);
+	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Damage);
+	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Healing);
 
 protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Arena|Attributes")
@@ -61,6 +68,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MoveSpeed, Category = "Arena|Attributes")
 	FGameplayAttributeData MoveSpeed;
 
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CritChance, Category = "Arena|Attributes")
+	FGameplayAttributeData CritChance;
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_CritDamage, Category = "Arena|Attributes")
+	FGameplayAttributeData CritDamage;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Attributes|Meta")
+	FGameplayAttributeData Damage;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Attributes|Meta")
+	FGameplayAttributeData Healing;
+
 	UFUNCTION()
 	void OnRep_Health(const FGameplayAttributeData& OldValue);
 
@@ -88,6 +107,13 @@ protected:
 	UFUNCTION()
 	void OnRep_MoveSpeed(const FGameplayAttributeData& OldValue);
 
+	UFUNCTION()
+	void OnRep_CritChance(const FGameplayAttributeData& OldValue);
+
+	UFUNCTION()
+	void OnRep_CritDamage(const FGameplayAttributeData& OldValue);
+
 private:
 	void ClampAttribute(const FGameplayAttribute& Attribute, float& NewValue) const;
+	void UpdateDeadTag() const;
 };

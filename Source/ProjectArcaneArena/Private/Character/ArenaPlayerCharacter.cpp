@@ -4,10 +4,13 @@
 #include "Core/ArenaPlayerState.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
+#include "GAS/ArenaGameplayAbility.h"
+#include "GAS/ArenaGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
+#include "GameplayEffect.h"
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
@@ -78,6 +81,57 @@ void AArenaPlayerCharacter::InitializeAbilityActorInfo()
 	}
 
 	ArenaASC->InitAbilityActorInfo(ArenaPlayerState, this);
+
+	if (HasAuthority())
+	{
+		ApplyDefaultAttributes(ArenaPlayerState, ArenaASC);
+		GrantStartupAbilities(ArenaPlayerState, ArenaASC);
+	}
+}
+
+void AArenaPlayerCharacter::ApplyDefaultAttributes(AArenaPlayerState* ArenaPlayerState, UArenaAbilitySystemComponent* ArenaASC)
+{
+	if (!ArenaPlayerState || !ArenaASC || ArenaPlayerState->HasAppliedDefaultAttributes() || !DefaultAttributeEffect)
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = ArenaASC->MakeEffectContext();
+	EffectContext.AddSourceObject(this);
+
+	const FGameplayEffectSpecHandle SpecHandle = ArenaASC->MakeOutgoingSpec(DefaultAttributeEffect, 1.0f, EffectContext);
+	if (SpecHandle.IsValid())
+	{
+		ArenaASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+		ArenaPlayerState->SetAppliedDefaultAttributes(true);
+	}
+}
+
+void AArenaPlayerCharacter::GrantStartupAbilities(AArenaPlayerState* ArenaPlayerState, UArenaAbilitySystemComponent* ArenaASC)
+{
+	if (!ArenaPlayerState || !ArenaASC || ArenaPlayerState->HasGrantedStartupAbilities())
+	{
+		return;
+	}
+
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : StartupAbilities)
+	{
+		if (!AbilityClass)
+		{
+			continue;
+		}
+
+		FGameplayAbilitySpec AbilitySpec(AbilityClass, 1, INDEX_NONE, this);
+		const UArenaGameplayAbility* ArenaAbilityCDO = Cast<UArenaGameplayAbility>(AbilityClass->GetDefaultObject<UGameplayAbility>());
+		if (ArenaAbilityCDO && ArenaAbilityCDO->GetInputTag().IsValid())
+		{
+			AbilitySpec.GetDynamicSpecSourceTags().AddTag(ArenaAbilityCDO->GetInputTag());
+		}
+
+		ArenaASC->GiveAbility(AbilitySpec);
+	}
+
+	ArenaPlayerState->SetGrantedStartupAbilities(true);
 }
 
 void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -169,6 +223,17 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	DefaultMappingContext->MapKey(UltimateAction, EKeys::R);
 }
 
+void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& InputTag)
+{
+	UArenaAbilitySystemComponent* ArenaASC = Cast<UArenaAbilitySystemComponent>(GetAbilitySystemComponent());
+	if (!ArenaASC)
+	{
+		return;
+	}
+
+	ArenaASC->AbilityInputTagPressed(InputTag);
+}
+
 void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 {
 	const FVector2D MovementVector = Value.Get<FVector2D>();
@@ -184,7 +249,7 @@ void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 
 void AArenaPlayerCharacter::Input_BasicAttack()
 {
-	// TODO: Route to the AbilitySystemComponent input flow in the GAS pass.
+	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_BasicAttack);
 }
 
 void AArenaPlayerCharacter::Input_Fireball()

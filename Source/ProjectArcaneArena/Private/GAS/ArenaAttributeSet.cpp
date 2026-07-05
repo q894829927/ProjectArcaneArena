@@ -1,6 +1,8 @@
 #include "GAS/ArenaAttributeSet.h"
 
 #include "AbilitySystemComponent.h"
+#include "GAS/ArenaGameplayTags.h"
+#include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 
 UArenaAttributeSet::UArenaAttributeSet()
@@ -17,6 +19,10 @@ UArenaAttributeSet::UArenaAttributeSet()
 	InitAttackPower(10.0f);
 	InitDefense(0.0f);
 	InitMoveSpeed(600.0f);
+	InitCritChance(0.05f);
+	InitCritDamage(2.0f);
+	InitDamage(0.0f);
+	InitHealing(0.0f);
 }
 
 void UArenaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -32,6 +38,8 @@ void UArenaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, Defense, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, MoveSpeed, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, CritChance, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, CritDamage, COND_None, REPNOTIFY_Always);
 }
 
 void UArenaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
@@ -46,6 +54,56 @@ void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attrib
 	Super::PreAttributeBaseChange(Attribute, NewValue);
 
 	ClampAttribute(Attribute, NewValue);
+}
+
+void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
+{
+	Super::PostGameplayEffectExecute(Data);
+
+	if (Data.EvaluatedData.Attribute == GetDamageAttribute())
+	{
+		const float LocalDamage = FMath::Max(GetDamage(), 0.0f);
+		SetDamage(0.0f);
+
+		if (LocalDamage > 0.0f)
+		{
+			const float ShieldDamage = FMath::Min(GetShield(), LocalDamage);
+			const float RemainingDamage = LocalDamage - ShieldDamage;
+
+			SetShield(GetShield() - ShieldDamage);
+			SetHealth(GetHealth() - RemainingDamage);
+		}
+
+		UpdateDeadTag();
+	}
+	else if (Data.EvaluatedData.Attribute == GetHealingAttribute())
+	{
+		const float LocalHealing = FMath::Max(GetHealing(), 0.0f);
+		SetHealing(0.0f);
+
+		if (LocalHealing > 0.0f)
+		{
+			SetHealth(GetHealth() + LocalHealing);
+		}
+
+		UpdateDeadTag();
+	}
+	else if (Data.EvaluatedData.Attribute == GetHealthAttribute()
+		|| Data.EvaluatedData.Attribute == GetMaxHealthAttribute())
+	{
+		SetHealth(GetHealth());
+		UpdateDeadTag();
+	}
+	else if (Data.EvaluatedData.Attribute == GetShieldAttribute()
+		|| Data.EvaluatedData.Attribute == GetMaxShieldAttribute())
+	{
+		SetShield(GetShield());
+	}
+	else if (Data.EvaluatedData.Attribute == GetEnergyAttribute()
+		|| Data.EvaluatedData.Attribute == GetMaxEnergyAttribute())
+	{
+		SetEnergy(GetEnergy());
+	}
 }
 
 void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, float& NewValue) const
@@ -85,6 +143,49 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	else if (Attribute == GetMoveSpeedAttribute())
 	{
 		NewValue = FMath::Max(NewValue, 0.0f);
+	}
+	else if (Attribute == GetCritChanceAttribute())
+	{
+		NewValue = FMath::Clamp(NewValue, 0.0f, 1.0f);
+	}
+	else if (Attribute == GetCritDamageAttribute())
+	{
+		NewValue = FMath::Max(NewValue, 1.0f);
+	}
+	else if (Attribute == GetDamageAttribute())
+	{
+		NewValue = FMath::Max(NewValue, 0.0f);
+	}
+	else if (Attribute == GetHealingAttribute())
+	{
+		NewValue = FMath::Max(NewValue, 0.0f);
+	}
+}
+
+void UArenaAttributeSet::UpdateDeadTag() const
+{
+	UAbilitySystemComponent* OwningASC = GetOwningAbilitySystemComponent();
+	if (!OwningASC)
+	{
+		return;
+	}
+
+	const AActor* OwningActor = OwningASC->GetOwnerActor();
+	if (!OwningActor || !OwningActor->HasAuthority())
+	{
+		return;
+	}
+
+	if (GetHealth() <= 0.0f)
+	{
+		if (!OwningASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+		{
+			OwningASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dead);
+		}
+	}
+	else if (OwningASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		OwningASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dead);
 	}
 }
 
@@ -131,4 +232,14 @@ void UArenaAttributeSet::OnRep_Defense(const FGameplayAttributeData& OldValue)
 void UArenaAttributeSet::OnRep_MoveSpeed(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MoveSpeed, OldValue);
+}
+
+void UArenaAttributeSet::OnRep_CritChance(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, CritChance, OldValue);
+}
+
+void UArenaAttributeSet::OnRep_CritDamage(const FGameplayAttributeData& OldValue)
+{
+	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, CritDamage, OldValue);
 }

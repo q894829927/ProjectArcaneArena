@@ -2,14 +2,19 @@
 
 #include "CoreMinimal.h"
 #include "Character/ArenaCharacterBase.h"
+#include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "ArenaPlayerCharacter.generated.h"
 
+class AArenaPlayerState;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
 class USpringArmComponent;
 class UAbilitySystemComponent;
+class UArenaAbilitySystemComponent;
+class UGameplayAbility;
+class UGameplayEffect;
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaPlayerCharacter : public AArenaCharacterBase
@@ -28,8 +33,11 @@ protected:
 
 private:
 	void InitializeAbilityActorInfo();
+	void ApplyDefaultAttributes(AArenaPlayerState* ArenaPlayerState, UArenaAbilitySystemComponent* ArenaASC);
+	void GrantStartupAbilities(AArenaPlayerState* ArenaPlayerState, UArenaAbilitySystemComponent* ArenaASC);
 	void AddDefaultMappingContext() const;
 	void CreateDefaultInputMappings();
+	void Input_AbilityInputTagPressed(const FGameplayTag& InputTag);
 
 	void Input_Move(const FInputActionValue& Value);
 	void Input_BasicAttack();
@@ -68,4 +76,10 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	int32 InputMappingPriority = 0;
+
+	UPROPERTY(EditDefaultsOnly, Category = "GAS")
+	TSubclassOf<UGameplayEffect> DefaultAttributeEffect;
+
+	UPROPERTY(EditDefaultsOnly, Category = "GAS")
+	TArray<TSubclassOf<UGameplayAbility>> StartupAbilities;
 };
