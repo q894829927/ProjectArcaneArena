@@ -9,8 +9,10 @@
 class AArenaEnemyCharacter;
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
+class UArenaEnemyHealthBarWidget;
 class UGameplayEffect;
 class UAbilitySystemComponent;
+class UWidgetComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FArenaEnemyDeathSignature, AArenaEnemyCharacter*, Enemy);
 
@@ -54,12 +56,17 @@ private:
 	void HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleDeath();
+	void RefreshHealthBar();
+	void SetHealthBarValues(float Health, float MaxHealth);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAbilitySystemComponent> AbilitySystemComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAttributeSet> AttributeSet;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent;
 
 	FDelegateHandle DeadTagDelegateHandle;
 	FDelegateHandle HealthChangedDelegateHandle;

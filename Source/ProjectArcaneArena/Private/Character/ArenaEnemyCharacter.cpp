@@ -2,11 +2,13 @@
 
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffect.h"
+#include "UI/ArenaEnemyHealthBarWidget.h"
 
 AArenaEnemyCharacter::AArenaEnemyCharacter()
 {
@@ -16,6 +18,14 @@ AArenaEnemyCharacter::AArenaEnemyCharacter()
 
 	AttributeSet = CreateDefaultSubobject<UArenaAttributeSet>(TEXT("AttributeSet"));
 	AbilitySystemComponent->AddAttributeSetSubobject(AttributeSet.Get());
+
+	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidget"));
+	HealthBarWidgetComponent->SetupAttachment(RootComponent);
+	HealthBarWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	HealthBarWidgetComponent->SetDrawSize(FVector2D(120.0f, 16.0f));
+	HealthBarWidgetComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
+	HealthBarWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	HealthBarWidgetComponent->SetGenerateOverlapEvents(false);
 
 	GetCharacterMovement()->MaxWalkSpeed = 350.0f;
 }
@@ -36,6 +46,8 @@ void AArenaEnemyCharacter::BeginPlay()
 	{
 		ApplyDefaultAttributes();
 	}
+
+	RefreshHealthBar();
 }
 
 void AArenaEnemyCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -122,6 +134,7 @@ void AArenaEnemyCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag, 
 void AArenaEnemyCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
 	const float MaxHealth = AttributeSet ? AttributeSet->GetMaxHealth() : 0.0f;
+	SetHealthBarValues(Data.NewValue, MaxHealth);
 	K2_OnHealthChanged(Data.OldValue, Data.NewValue, MaxHealth);
 
 	const float DamageAmount = FMath::Max(Data.OldValue - Data.NewValue, 0.0f);
@@ -165,6 +178,12 @@ void AArenaEnemyCharacter::HandleDeath()
 		AbilitySystemComponent->CancelAllAbilities();
 	}
 
+	if (HealthBarWidgetComponent)
+	{
+		HealthBarWidgetComponent->SetHiddenInGame(true);
+		HealthBarWidgetComponent->SetVisibility(false);
+	}
+
 	OnEnemyDeath.Broadcast(this);
 	K2_OnDeathStarted();
 
@@ -172,4 +191,33 @@ void AArenaEnemyCharacter::HandleDeath()
 	{
 		SetLifeSpan(DeathLifeSpan);
 	}
+}
+
+void AArenaEnemyCharacter::RefreshHealthBar()
+{
+	if (!AttributeSet)
+	{
+		return;
+	}
+
+	SetHealthBarValues(AttributeSet->GetHealth(), AttributeSet->GetMaxHealth());
+}
+
+void AArenaEnemyCharacter::SetHealthBarValues(float Health, float MaxHealth)
+{
+	if (!HealthBarWidgetComponent)
+	{
+		return;
+	}
+
+	HealthBarWidgetComponent->InitWidget();
+
+	UArenaEnemyHealthBarWidget* HealthBarWidget = Cast<UArenaEnemyHealthBarWidget>(
+		HealthBarWidgetComponent->GetUserWidgetObject());
+	if (!HealthBarWidget)
+	{
+		return;
+	}
+
+	HealthBarWidget->SetHealthValues(Health, MaxHealth);
 }
