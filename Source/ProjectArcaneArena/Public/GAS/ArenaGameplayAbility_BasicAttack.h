@@ -34,8 +34,8 @@ protected:
 	float SkillMultiplier = 1.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Trace", meta = (ClampMin = "0.0"))
-	float AttackRange = 175.0f;
+	float AttackRange = 275.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Trace", meta = (ClampMin = "0.0"))
-	float AttackRadius = 50.0f;
+	float AttackRadius = 100.0f;
 };
