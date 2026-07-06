@@ -10,6 +10,11 @@ UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
 	InputTag = ArenaGameplayTags::Ability_BasicAttack;
 	DamageTypeTag = ArenaGameplayTags::Damage_Physical;
+
+	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_BasicAttack));
+	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
+	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
+	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_BasicAttack);
 }
 
 void UArenaGameplayAbility_BasicAttack::ActivateAbility(
@@ -24,17 +29,17 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 		return;
 	}
 
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
+	AActor* AvatarActor = ActorInfo->AvatarActor.Get();
+	UWorld* World = AvatarActor->GetWorld();
+	if (!World || !DamageEffectClass)
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	AActor* AvatarActor = ActorInfo->AvatarActor.Get();
-	UWorld* World = AvatarActor->GetWorld();
-	if (!World || !DamageEffectClass)
+	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
@@ -68,6 +73,16 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 
 		UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitActor);
 		if (!TargetASC)
+		{
+			continue;
+		}
+
+		if (ActorInfo->AbilitySystemComponent.IsValid() && TargetASC == ActorInfo->AbilitySystemComponent.Get())
+		{
+			continue;
+		}
+
+		if (TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
 		{
 			continue;
 		}

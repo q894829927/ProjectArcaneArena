@@ -7,6 +7,7 @@
 #include "ArenaEnemyCharacter.generated.h"
 
 class AArenaEnemyCharacter;
+class AArenaDamageNumberActor;
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
 class UArenaEnemyHealthBarWidget;
@@ -39,6 +40,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Death", meta = (ClampMin = "0.0"))
 	float DeathLifeSpan = 3.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Feedback")
+	TSubclassOf<AArenaDamageNumberActor> DamageNumberActorClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Feedback")
+	FVector DamageNumberSpawnOffset = FVector(0.0f, 0.0f, 130.0f);
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Enemy")
 	void K2_OnDeathStarted();
 
@@ -58,6 +65,7 @@ private:
 	void HandleDeath();
 	void RefreshHealthBar();
 	void SetHealthBarValues(float Health, float MaxHealth);
+	void SpawnDamageNumber(float DamageAmount);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAbilitySystemComponent> AbilitySystemComponent;

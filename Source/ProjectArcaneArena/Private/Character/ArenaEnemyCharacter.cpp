@@ -8,6 +8,7 @@
 #include "GAS/ArenaGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffect.h"
+#include "UI/ArenaDamageNumberActor.h"
 #include "UI/ArenaEnemyHealthBarWidget.h"
 
 AArenaEnemyCharacter::AArenaEnemyCharacter()
@@ -140,6 +141,7 @@ void AArenaEnemyCharacter::HandleHealthChanged(const FOnAttributeChangeData& Dat
 	const float DamageAmount = FMath::Max(Data.OldValue - Data.NewValue, 0.0f);
 	if (DamageAmount > 0.0f)
 	{
+		SpawnDamageNumber(DamageAmount);
 		K2_OnDamaged(DamageAmount, Data.NewValue, MaxHealth);
 	}
 }
@@ -220,4 +222,34 @@ void AArenaEnemyCharacter::SetHealthBarValues(float Health, float MaxHealth)
 	}
 
 	HealthBarWidget->SetHealthValues(Health, MaxHealth);
+}
+
+void AArenaEnemyCharacter::SpawnDamageNumber(float DamageAmount)
+{
+	if (DamageAmount <= 0.0f || !DamageNumberActorClass || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.Instigator = GetInstigator();
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+
+	AArenaDamageNumberActor* DamageNumberActor = World->SpawnActor<AArenaDamageNumberActor>(
+		DamageNumberActorClass,
+		GetActorLocation() + DamageNumberSpawnOffset,
+		FRotator::ZeroRotator,
+		SpawnParameters);
+
+	if (DamageNumberActor)
+	{
+		DamageNumberActor->SetDamageAmount(DamageAmount);
+	}
 }
