@@ -176,17 +176,9 @@ void UArenaAttributeSet::UpdateDeadTag() const
 		return;
 	}
 
-	if (GetHealth() <= 0.0f)
-	{
-		if (!OwningASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
-		{
-			OwningASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dead);
-		}
-	}
-	else if (OwningASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
-	{
-		OwningASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dead);
-	}
+	const int32 DeadTagCount = GetHealth() <= 0.0f ? 1 : 0;
+	OwningASC->SetLooseGameplayTagCount(ArenaGameplayTags::State_Dead, DeadTagCount);
+	OwningASC->SetReplicatedLooseGameplayTagCount(ArenaGameplayTags::State_Dead, DeadTagCount);
 }
 
 void UArenaAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
