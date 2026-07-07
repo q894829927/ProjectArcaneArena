@@ -13,11 +13,13 @@
 
 AArenaEnemyCharacter::AArenaEnemyCharacter()
 {
+	// 敌人 ASC 跟随敌人实例，适合短生命周期 AI；复制模式用 Minimal 降低非拥有者开销。
 	AbilitySystemComponent = CreateDefaultSubobject<UArenaAbilitySystemComponent>(TEXT("AbilitySystemComponent"));
 	AbilitySystemComponent->SetIsReplicated(true);
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 
 	AttributeSet = CreateDefaultSubobject<UArenaAttributeSet>(TEXT("AttributeSet"));
+	// 敌人属性需要被 ASC 管理，伤害、死亡和血条都从这里读取。
 	AbilitySystemComponent->AddAttributeSetSubobject(AttributeSet.Get());
 
 	HealthBarWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("HealthBarWidget"));
@@ -40,6 +42,7 @@ void AArenaEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// 初始化顺序先建 ActorInfo，再绑定委托，最后由服务端应用默认属性。
 	InitializeAbilityActorInfo();
 	BindAbilitySystemDelegates();
 
@@ -76,6 +79,7 @@ void AArenaEnemyCharacter::ApplyDefaultAttributes()
 	FGameplayEffectContextHandle EffectContext = AbilitySystemComponent->MakeEffectContext();
 	EffectContext.AddSourceObject(this);
 
+	// 敌人初始属性同样通过 GameplayEffect 应用，保持与玩家属性流程一致。
 	const FGameplayEffectSpecHandle SpecHandle = AbilitySystemComponent->MakeOutgoingSpec(DefaultAttributeEffect, 1.0f, EffectContext);
 	if (SpecHandle.IsValid())
 	{
@@ -91,11 +95,13 @@ void AArenaEnemyCharacter::BindAbilitySystemDelegates()
 		return;
 	}
 
+	// 死亡只监听 State.Dead 标签，避免 Health 变化和死亡流程相互抢职责。
 	DeadTagDelegateHandle = AbilitySystemComponent->RegisterAndCallGameplayTagEvent(
 		ArenaGameplayTags::State_Dead,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &AArenaEnemyCharacter::HandleDeadTagChanged),
 		EGameplayTagEventType::NewOrRemoved);
 
+	// Health delegate 只驱动 UI 和反馈，真正死亡由 State.Dead 标签统一触发。
 	HealthChangedDelegateHandle = AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
 		UArenaAttributeSet::GetHealthAttribute()).AddUObject(this, &AArenaEnemyCharacter::HandleHealthChanged);
 }
@@ -153,6 +159,7 @@ void AArenaEnemyCharacter::HandleDeath()
 		return;
 	}
 
+	// 死亡可能被标签复制和服务端本地回调多次观察到，必须防重入。
 	bDeathHandled = true;
 
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
@@ -186,6 +193,7 @@ void AArenaEnemyCharacter::HandleDeath()
 		HealthBarWidgetComponent->SetVisibility(false);
 	}
 
+	// 广播给后续 WaveManager/GameMode 使用，蓝图事件只负责表现层。
 	OnEnemyDeath.Broadcast(this);
 	K2_OnDeathStarted();
 
@@ -242,6 +250,7 @@ void AArenaEnemyCharacter::SpawnDamageNumber(float DamageAmount)
 	SpawnParameters.Instigator = GetInstigator();
 	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
+	// 伤害数字是本地表现 Actor，不复制也不参与任何伤害结算。
 	AArenaDamageNumberActor* DamageNumberActor = World->SpawnActor<AArenaDamageNumberActor>(
 		DamageNumberActorClass,
 		GetActorLocation() + DamageNumberSpawnOffset,

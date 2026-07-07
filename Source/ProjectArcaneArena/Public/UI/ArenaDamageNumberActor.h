@@ -14,12 +14,15 @@ class PROJECTARCANEARENA_API AArenaDamageNumberActor : public AActor
 public:
 	AArenaDamageNumberActor();
 
+	// 让伤害数字以轻量方式向上漂浮，作为临时受击反馈。
 	virtual void Tick(float DeltaSeconds) override;
 
+	// 设置显示数值，并同步到内部 Widget。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetDamageAmount(float InDamageAmount);
 
 protected:
+	// BeginPlay 时刷新生命周期和初始显示数值。
 	virtual void BeginPlay() override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|UI")

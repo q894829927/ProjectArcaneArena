@@ -578,8 +578,9 @@ Rules:
 * Do not place large logic directly inside Tick unless necessary.
 * Prefer timers, delegates, GAS tasks, or event-driven logic.
 * Keep functions short and focused.
-* Add a brief comment for newly added functions to state their purpose or extension point.
-* Add comments for complex logic, especially GAS, replication, input routing, damage, death, or server-authoritative flow.
+* Add a brief Chinese comment for newly added functions to state their purpose or extension point.
+* Add Chinese comments for complex logic, especially GAS, replication, input routing, damage, death, or server-authoritative flow.
+* When changing code, update any affected comments so they continue to match the implementation.
 * Avoid redundant comments that merely repeat obvious code.
 
 ---

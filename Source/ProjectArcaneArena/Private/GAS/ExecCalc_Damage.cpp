@@ -14,6 +14,7 @@ struct FArenaDamageStatics
 
 	FArenaDamageStatics()
 	{
+		// Source 捕获攻击/暴击属性，Target 捕获防御属性，保持伤害计算服务端权威。
 		AttackPowerDef = FGameplayEffectAttributeCaptureDefinition(
 			UArenaAttributeSet::GetAttackPowerAttribute(),
 			EGameplayEffectAttributeCaptureSource::Source,
@@ -41,6 +42,7 @@ static const FArenaDamageStatics& DamageStatics()
 
 UExecCalc_Damage::UExecCalc_Damage()
 {
+	// 注册捕获属性后，GE 执行时才能从 Source/Target ASC 读取聚合后的属性值。
 	RelevantAttributesToCapture.Add(DamageStatics().AttackPowerDef);
 	RelevantAttributesToCapture.Add(DamageStatics().CritChanceDef);
 	RelevantAttributesToCapture.Add(DamageStatics().CritDamageDef);
@@ -54,6 +56,7 @@ void UExecCalc_Damage::Execute_Implementation(
 	UAbilitySystemComponent* TargetASC = ExecutionParams.GetTargetAbilitySystemComponent();
 	if (!TargetASC || TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Invincible))
 	{
+		// 无目标或目标无敌时不输出任何 modifier，AttributeSet 不会收到 Damage。
 		return;
 	}
 
@@ -66,6 +69,7 @@ void UExecCalc_Damage::Execute_Implementation(
 	EvaluateParameters.SourceTags = SourceTags;
 	EvaluateParameters.TargetTags = TargetTags;
 
+	// 捕获值会自动包含 Active GameplayEffect、Tag 条件和聚合器修正。
 	float AttackPower = 0.0f;
 	float CritChance = 0.0f;
 	float CritDamage = 1.0f;
@@ -99,6 +103,7 @@ void UExecCalc_Damage::Execute_Implementation(
 	const float SkillMultiplier = FMath::Max(
 		Spec.GetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Damage_SkillMultiplier, false, 1.0f),
 		0.0f);
+	// 暴击随机数只在服务端 ExecCalc 中产生，避免客户端决定最终伤害。
 	const float CritMultiplier = FMath::FRand() <= CritChance ? CritDamage : 1.0f;
 	const float DefenseReduction = 100.0f / (100.0f + Defense);
 
@@ -108,6 +113,7 @@ void UExecCalc_Damage::Execute_Implementation(
 		return;
 	}
 
+	// 输出到 Damage meta attribute，由 AttributeSet 负责护盾优先承伤和死亡标签。
 	OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
 		UArenaAttributeSet::GetDamageAttribute(),
 		EGameplayModOp::Additive,

@@ -15,12 +15,14 @@ public:
 	UArenaGameplayAbility_BasicAttack();
 
 protected:
+	// 服务端执行基础攻击：提交冷却，扫描前方目标，并应用伤害 GE。
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
+	// 绘制攻击范围，帮助区分输入未触发和攻击未命中。
 	void DrawAttackRangeDebug(UWorld* World, const FVector& Start, const FVector& End, bool bHitTarget) const;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage")

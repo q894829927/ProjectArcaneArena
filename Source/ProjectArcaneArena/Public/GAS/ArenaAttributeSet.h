@@ -21,9 +21,13 @@ class PROJECTARCANEARENA_API UArenaAttributeSet : public UAttributeSet
 public:
 	UArenaAttributeSet();
 
+	// 注册需要复制的属性，配合 RepNotify 驱动客户端 UI。
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
+	// 修改 CurrentValue 前统一 clamp，防止属性越界。
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
+	// 修改 BaseValue 前统一 clamp，覆盖 Instant GE 等基础值变化。
 	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
+	// 处理 Damage/Healing 等 meta attribute，并维护死亡标签。
 	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Health);
@@ -114,6 +118,8 @@ protected:
 	void OnRep_CritDamage(const FGameplayAttributeData& OldValue);
 
 private:
+	// 统一属性边界规则，避免多个执行路径各自 clamp。
 	void ClampAttribute(const FGameplayAttribute& Attribute, float& NewValue) const;
+	// 由服务端根据 Health 同步 State.Dead，死亡表现监听该标签。
 	void UpdateDeadTag() const;
 };

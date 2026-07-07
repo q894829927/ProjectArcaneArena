@@ -13,5 +13,6 @@ class PROJECTARCANEARENA_API UArenaAbilitySystemComponent : public UAbilitySyste
 public:
 	UArenaAbilitySystemComponent();
 
+	// 根据输入标签查找对应 AbilitySpec，并交给 GAS 标准激活流程处理。
 	void AbilityInputTagPressed(const FGameplayTag& InputTag);
 };
