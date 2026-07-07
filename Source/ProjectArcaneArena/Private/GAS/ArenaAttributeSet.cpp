@@ -118,7 +118,8 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 	else if (Attribute == GetMaxHealthAttribute())
 	{
-		NewValue = FMath::Max(NewValue, 1.0f);
+		// 项目规则允许所有属性归零，0 可表示该资源或能力被禁用。
+		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 	else if (Attribute == GetShieldAttribute())
 	{
@@ -134,7 +135,7 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 	else if (Attribute == GetMaxEnergyAttribute())
 	{
-		NewValue = FMath::Max(NewValue, 1.0f);
+		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 	else if (Attribute == GetAttackPowerAttribute())
 	{
@@ -154,7 +155,7 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 	else if (Attribute == GetCritDamageAttribute())
 	{
-		NewValue = FMath::Max(NewValue, 1.0f);
+		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 	else if (Attribute == GetDamageAttribute())
 	{
