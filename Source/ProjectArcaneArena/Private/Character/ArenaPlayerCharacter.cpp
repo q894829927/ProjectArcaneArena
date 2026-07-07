@@ -19,6 +19,7 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
 
+	// 角色当前仍按移动方向旋转；后续鼠标朝向应独立驱动角色朝向。
 	bUseControllerRotationPitch = false;
 	bUseControllerRotationRoll = false;
 	bUseControllerRotationYaw = false;
@@ -28,6 +29,7 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 	GetCharacterMovement()->MaxWalkSpeed = 600.0f;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 
+	// 顶视角相机使用绝对旋转，避免角色朝向影响镜头。
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
 	CameraBoom->TargetArmLength = 900.0f;
@@ -80,10 +82,12 @@ void AArenaPlayerCharacter::InitializeAbilityActorInfo()
 		return;
 	}
 
+	// OwnerActor 是 PlayerState，AvatarActor 是当前 Character，这是玩家 GAS 的多人友好结构。
 	ArenaASC->InitAbilityActorInfo(ArenaPlayerState, this);
 
 	if (HasAuthority())
 	{
+		// 属性和技能只在服务端初始化，客户端通过 GAS 复制和 OnRep 接收结果。
 		ApplyDefaultAttributes(ArenaPlayerState, ArenaASC);
 		GrantStartupAbilities(ArenaPlayerState, ArenaASC);
 	}
@@ -99,6 +103,7 @@ void AArenaPlayerCharacter::ApplyDefaultAttributes(AArenaPlayerState* ArenaPlaye
 	FGameplayEffectContextHandle EffectContext = ArenaASC->MakeEffectContext();
 	EffectContext.AddSourceObject(this);
 
+	// 默认属性也走 GameplayEffect，避免绕过 AttributeSet/GAS 的统一流程。
 	const FGameplayEffectSpecHandle SpecHandle = ArenaASC->MakeOutgoingSpec(DefaultAttributeEffect, 1.0f, EffectContext);
 	if (SpecHandle.IsValid())
 	{
@@ -125,6 +130,7 @@ void AArenaPlayerCharacter::GrantStartupAbilities(AArenaPlayerState* ArenaPlayer
 		const UArenaGameplayAbility* ArenaAbilityCDO = Cast<UArenaGameplayAbility>(AbilityClass->GetDefaultObject<UGameplayAbility>());
 		if (ArenaAbilityCDO && ArenaAbilityCDO->GetInputTag().IsValid())
 		{
+			// 输入标签存在 Spec 上，ASC 输入路由时不需要硬编码具体 Ability 类。
 			AbilitySpec.GetDynamicSpecSourceTags().AddTag(ArenaAbilityCDO->GetInputTag());
 		}
 
@@ -225,6 +231,7 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 
 void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
+	// Character 只负责把本地输入转成标签，是否能激活由 ASC/GAS 判断。
 	UArenaAbilitySystemComponent* ArenaASC = Cast<UArenaAbilitySystemComponent>(GetAbilitySystemComponent());
 	if (!ArenaASC)
 	{
@@ -254,7 +261,7 @@ void AArenaPlayerCharacter::Input_BasicAttack()
 
 void AArenaPlayerCharacter::Input_Fireball()
 {
-	// TODO: Route to the AbilitySystemComponent input flow in the GAS pass.
+	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_Fireball);
 }
 
 void AArenaPlayerCharacter::Input_Dash()

@@ -62,11 +62,13 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 
 	if (Data.EvaluatedData.Attribute == GetDamageAttribute())
 	{
+		// Damage 是瞬时 meta attribute：ExecCalc 写入后立刻消费并清零。
 		const float LocalDamage = FMath::Max(GetDamage(), 0.0f);
 		SetDamage(0.0f);
 
 		if (LocalDamage > 0.0f)
 		{
+			// 伤害先消耗护盾，剩余部分才扣 Health。
 			const float ShieldDamage = FMath::Min(GetShield(), LocalDamage);
 			const float RemainingDamage = LocalDamage - ShieldDamage;
 
@@ -78,6 +80,7 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	}
 	else if (Data.EvaluatedData.Attribute == GetHealingAttribute())
 	{
+		// Healing 也是瞬时 meta attribute，避免复制和长期保存临时治疗量。
 		const float LocalHealing = FMath::Max(GetHealing(), 0.0f);
 		SetHealing(0.0f);
 
@@ -91,6 +94,7 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	else if (Data.EvaluatedData.Attribute == GetHealthAttribute()
 		|| Data.EvaluatedData.Attribute == GetMaxHealthAttribute())
 	{
+		// 通过 setter 重新走 clamp，确保 MaxHealth 改变后 Health 仍合法。
 		SetHealth(GetHealth());
 		UpdateDeadTag();
 	}
@@ -114,7 +118,8 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 	else if (Attribute == GetMaxHealthAttribute())
 	{
-		NewValue = FMath::Max(NewValue, 1.0f);
+		// 项目规则允许所有属性归零，0 可表示该资源或能力被禁用。
+		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 	else if (Attribute == GetShieldAttribute())
 	{
@@ -130,7 +135,7 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 	else if (Attribute == GetMaxEnergyAttribute())
 	{
-		NewValue = FMath::Max(NewValue, 1.0f);
+		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 	else if (Attribute == GetAttackPowerAttribute())
 	{
@@ -150,7 +155,7 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 	else if (Attribute == GetCritDamageAttribute())
 	{
-		NewValue = FMath::Max(NewValue, 1.0f);
+		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 	else if (Attribute == GetDamageAttribute())
 	{
@@ -177,6 +182,7 @@ void UArenaAttributeSet::UpdateDeadTag() const
 	}
 
 	const int32 DeadTagCount = GetHealth() <= 0.0f ? 1 : 0;
+	// 本地 loose tag 供服务端立即判断，replicated loose tag 供客户端稳定观察死亡状态。
 	OwningASC->SetLooseGameplayTagCount(ArenaGameplayTags::State_Dead, DeadTagCount);
 	OwningASC->SetReplicatedLooseGameplayTagCount(ArenaGameplayTags::State_Dead, DeadTagCount);
 }

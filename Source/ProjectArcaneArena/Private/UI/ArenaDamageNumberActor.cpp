@@ -6,6 +6,7 @@
 AArenaDamageNumberActor::AArenaDamageNumberActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	// 伤害数字只作为本地表现生成，不需要网络复制。
 	bReplicates = false;
 
 	WidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("DamageNumberWidget"));
@@ -31,6 +32,7 @@ void AArenaDamageNumberActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// 临时反馈采用简单上浮，后续可替换为 UMG 动画或 GameplayCue。
 	AddActorWorldOffset(FVector::UpVector * FloatSpeed * DeltaSeconds, false);
 }
 
@@ -45,6 +47,7 @@ void AArenaDamageNumberActor::SetDamageAmount(float InDamageAmount)
 
 	WidgetComponent->InitWidget();
 
+	// WidgetClass 可由蓝图配置，C++ 只在存在对应基类时写入数值。
 	UArenaDamageNumberWidget* DamageNumberWidget = Cast<UArenaDamageNumberWidget>(
 		WidgetComponent->GetUserWidgetObject());
 	if (DamageNumberWidget)

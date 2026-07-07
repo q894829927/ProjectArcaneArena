@@ -2,6 +2,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "DrawDebugHelpers.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
 
@@ -11,6 +12,7 @@ UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 	InputTag = ArenaGameplayTags::Ability_BasicAttack;
 	DamageTypeTag = ArenaGameplayTags::Damage_Physical;
 
+	// Ability Tag 和阻断标签都交给 GAS CanActivate/Commit 路径统一判断。
 	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_BasicAttack));
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
@@ -37,6 +39,7 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 		return;
 	}
 
+	// Commit 会检查并应用冷却/消耗，失败时不继续做攻击扫描。
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -46,6 +49,7 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	const FVector Start = AvatarActor->GetActorLocation();
 	const FVector End = Start + AvatarActor->GetActorForwardVector() * AttackRange;
 
+	// 当前 BasicAttack 使用角色 ForwardVector，后续若改鼠标/TargetData 可替换这里。
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ArenaBasicAttack), false, AvatarActor);
 	QueryParams.AddIgnoredActor(AvatarActor);
 
@@ -77,11 +81,13 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 			continue;
 		}
 
+		// 避免命中自身 ASC，玩家 ASC 位于 PlayerState 时仍需要这个保护。
 		if (ActorInfo->AbilitySystemComponent.IsValid() && TargetASC == ActorInfo->AbilitySystemComponent.Get())
 		{
 			continue;
 		}
 
+		// 死亡目标不再参与命中选择，防止重复受击和死亡反馈。
 		if (TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
 		{
 			continue;
@@ -96,8 +102,11 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 		}
 	}
 
+	DrawAttackRangeDebug(World, Start, End, BestTarget != nullptr);
+
 	if (BestTarget && BestTargetASC)
 	{
+		// 伤害数值以 SetByCaller 写入 GE Spec，实际计算由 ExecCalc_Damage 完成。
 		FGameplayEffectSpecHandle DamageSpecHandle = MakeOutgoingGameplayEffectSpec(
 			DamageEffectClass,
 			GetAbilityLevel(Handle, ActorInfo));
@@ -118,4 +127,59 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	}
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+}
+
+void UArenaGameplayAbility_BasicAttack::DrawAttackRangeDebug(UWorld* World, const FVector& Start, const FVector& End, bool bHitTarget) const
+{
+	if (!bDrawDebugAttackRange || !World)
+	{
+		return;
+	}
+
+	const FVector AttackVector = End - Start;
+	const float AttackLength = AttackVector.Size();
+	if (AttackLength <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const FColor RangeColor = (bHitTarget ? DebugAttackRangeHitColor : DebugAttackRangeMissColor).ToFColor(true);
+	const FVector AttackDirection = AttackVector / AttackLength;
+	const FVector CapsuleCenter = (Start + End) * 0.5f;
+	const float CapsuleHalfHeight = AttackLength * 0.5f + AttackRadius;
+	const FQuat CapsuleRotation = FRotationMatrix::MakeFromZ(AttackDirection).ToQuat();
+
+	// Debug 胶囊和端点球用于确认 Ability 已触发但可能没有命中。
+	DrawDebugCapsule(
+		World,
+		CapsuleCenter,
+		CapsuleHalfHeight,
+		AttackRadius,
+		CapsuleRotation,
+		RangeColor,
+		false,
+		DebugAttackRangeDuration,
+		0,
+		2.0f);
+
+	DrawDebugLine(
+		World,
+		Start,
+		End,
+		FColor::White,
+		false,
+		DebugAttackRangeDuration,
+		0,
+		1.0f);
+
+	DrawDebugSphere(
+		World,
+		End,
+		AttackRadius,
+		16,
+		RangeColor,
+		false,
+		DebugAttackRangeDuration,
+		0,
+		1.5f);
 }

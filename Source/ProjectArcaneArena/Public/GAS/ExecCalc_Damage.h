@@ -12,6 +12,7 @@ class PROJECTARCANEARENA_API UExecCalc_Damage : public UGameplayEffectExecutionC
 public:
 	UExecCalc_Damage();
 
+	// 服务端伤害计算入口，输出到 Damage meta attribute，由 AttributeSet 扣血。
 	virtual void Execute_Implementation(
 		const FGameplayEffectCustomExecutionParameters& ExecutionParams,
 		FGameplayEffectCustomExecutionOutput& OutExecutionOutput) const override;

@@ -12,6 +12,7 @@ class PROJECTARCANEARENA_API UArenaEnemyHealthBarWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	// 根据 GAS 属性值刷新血条百分比，UI 不直接修改 Health。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetHealthValues(float InHealth, float InMaxHealth);
 
