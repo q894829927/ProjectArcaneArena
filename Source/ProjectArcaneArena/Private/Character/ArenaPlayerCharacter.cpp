@@ -153,6 +153,8 @@ void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	}
 
 	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AArenaPlayerCharacter::Input_Move);
+	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &AArenaPlayerCharacter::Input_MoveStopped);
+	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Canceled, this, &AArenaPlayerCharacter::Input_MoveStopped);
 	EnhancedInputComponent->BindAction(BasicAttackAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_BasicAttack);
 	EnhancedInputComponent->BindAction(FireballAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Fireball);
 	EnhancedInputComponent->BindAction(DashAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Dash);
@@ -247,11 +249,20 @@ void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 
 	if (!Controller || MovementVector.IsNearlyZero())
 	{
+		LastMovementInputDirection = FVector::ZeroVector;
 		return;
 	}
 
+	const FVector MoveDirection = (FVector::ForwardVector * MovementVector.Y + FVector::RightVector * MovementVector.X).GetSafeNormal();
+	LastMovementInputDirection = MoveDirection;
+
 	AddMovementInput(FVector::ForwardVector, MovementVector.Y);
 	AddMovementInput(FVector::RightVector, MovementVector.X);
+}
+
+void AArenaPlayerCharacter::Input_MoveStopped(const FInputActionValue& Value)
+{
+	LastMovementInputDirection = FVector::ZeroVector;
 }
 
 void AArenaPlayerCharacter::Input_BasicAttack()
@@ -266,7 +277,7 @@ void AArenaPlayerCharacter::Input_Fireball()
 
 void AArenaPlayerCharacter::Input_Dash()
 {
-	// TODO: Route to the AbilitySystemComponent input flow in the GAS pass.
+	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_Dash);
 }
 
 void AArenaPlayerCharacter::Input_Shield()

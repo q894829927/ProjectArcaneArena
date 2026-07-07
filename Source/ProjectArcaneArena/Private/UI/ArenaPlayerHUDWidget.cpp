@@ -65,6 +65,20 @@ namespace
 				MakeCooldownSecondsText(RemainingTime))
 			: NSLOCTEXT("ArenaPlayerHUDWidget", "FireballSlotReady", "Fireball Ready");
 	}
+
+	FText MakeDashSlotText(bool bHasDashAbility, bool bIsCooldownActive, float RemainingTime)
+	{
+		if (!bHasDashAbility)
+		{
+			return NSLOCTEXT("ArenaPlayerHUDWidget", "DashSlotLocked", "Locked");
+		}
+
+		return bIsCooldownActive
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "DashSlotCooldownFormat", "{0}s"),
+				MakeCooldownSecondsText(RemainingTime))
+			: NSLOCTEXT("ArenaPlayerHUDWidget", "DashSlotReady", "Dash Ready");
+	}
 }
 
 void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* InAbilitySystemComponent, UArenaAttributeSet* InAttributeSet)
@@ -91,6 +105,7 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	RefreshSkillSlotPlaceholders();
 	RefreshBasicAttackCooldownFromAbilitySystem();
 	RefreshFireballCooldownFromAbilitySystem();
+	RefreshDashCooldownFromAbilitySystem();
 	BasicAttackCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
 		ArenaGameplayTags::Cooldown_BasicAttack,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBasicAttackCooldownChanged),
@@ -98,6 +113,10 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	FireballCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
 		ArenaGameplayTags::Cooldown_Fireball,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleFireballCooldownChanged),
+		EGameplayTagEventType::NewOrRemoved);
+	DashCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::Cooldown_Dash,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleDashCooldownChanged),
 		EGameplayTagEventType::NewOrRemoved);
 
 	RefreshAttributeValues();
@@ -205,6 +224,27 @@ void UArenaPlayerHUDWidget::SetFireballCooldownValues(bool bInCooldownActive, fl
 	}
 }
 
+void UArenaPlayerHUDWidget::SetDashCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration)
+{
+	const bool bHasDashAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Dash);
+	bDashCooldownActive = bHasDashAbility && bInCooldownActive;
+	DashCooldownRemaining = bDashCooldownActive ? FMath::Max(InRemainingTime, 0.0f) : 0.0f;
+	DashCooldownDuration = bDashCooldownActive ? FMath::Max(InDuration, 0.0f) : 0.0f;
+	DashCooldownPercent = DashCooldownDuration > 0.0f
+		? FMath::Clamp(DashCooldownRemaining / DashCooldownDuration, 0.0f, 1.0f)
+		: 0.0f;
+
+	if (DashSlotText)
+	{
+		DashSlotText->SetText(MakeDashSlotText(bHasDashAbility, bDashCooldownActive, DashCooldownRemaining));
+	}
+
+	if (DashCooldownProgressBar)
+	{
+		DashCooldownProgressBar->SetPercent(DashCooldownPercent);
+	}
+}
+
 void UArenaPlayerHUDWidget::NativeDestruct()
 {
 	UnbindFromAbilitySystem();
@@ -216,6 +256,7 @@ void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 {
 	StopBasicAttackCooldownTimer();
 	StopFireballCooldownTimer();
+	StopDashCooldownTimer();
 
 	if (UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get())
 	{
@@ -273,6 +314,15 @@ void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 				EGameplayTagEventType::NewOrRemoved);
 			FireballCooldownTagDelegateHandle.Reset();
 		}
+
+		if (DashCooldownTagDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent->UnregisterGameplayTagEvent(
+				DashCooldownTagDelegateHandle,
+				ArenaGameplayTags::Cooldown_Dash,
+				EGameplayTagEventType::NewOrRemoved);
+			DashCooldownTagDelegateHandle.Reset();
+		}
 	}
 
 	BoundAbilitySystemComponent.Reset();
@@ -299,7 +349,8 @@ void UArenaPlayerHUDWidget::RefreshSkillSlotPlaceholders()
 
 	if (DashSlotText)
 	{
-		DashSlotText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "DashSlotLocked", "Locked"));
+		const bool bHasDashAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Dash);
+		DashSlotText->SetText(MakeDashSlotText(bHasDashAbility, false, 0.0f));
 	}
 
 	if (ShieldSlotText)
@@ -367,6 +418,33 @@ void UArenaPlayerHUDWidget::RefreshFireballCooldownFromAbilitySystem()
 	}
 }
 
+void UArenaPlayerHUDWidget::RefreshDashCooldownFromAbilitySystem()
+{
+	float RemainingTime = 0.0f;
+	float Duration = 0.0f;
+	const bool bHasCooldownTime = GetCooldownTimeForTag(ArenaGameplayTags::Cooldown_Dash, RemainingTime, Duration);
+
+	if (const UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get())
+	{
+		const bool bHasCooldownTag = AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::Cooldown_Dash);
+		SetDashCooldownValues(bHasCooldownTag, bHasCooldownTime ? RemainingTime : 0.0f, bHasCooldownTime ? Duration : 0.0f);
+
+		if (bHasCooldownTag)
+		{
+			StartDashCooldownTimer();
+		}
+		else
+		{
+			StopDashCooldownTimer();
+		}
+	}
+	else
+	{
+		SetDashCooldownValues(false, 0.0f, 0.0f);
+		StopDashCooldownTimer();
+	}
+}
+
 void UArenaPlayerHUDWidget::StartBasicAttackCooldownTimer()
 {
 	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(BasicAttackCooldownTimerHandle))
@@ -399,6 +477,21 @@ void UArenaPlayerHUDWidget::StartFireballCooldownTimer()
 		true);
 }
 
+void UArenaPlayerHUDWidget::StartDashCooldownTimer()
+{
+	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(DashCooldownTimerHandle))
+	{
+		return;
+	}
+
+	GetWorld()->GetTimerManager().SetTimer(
+		DashCooldownTimerHandle,
+		this,
+		&UArenaPlayerHUDWidget::RefreshDashCooldownFromAbilitySystem,
+		0.05f,
+		true);
+}
+
 void UArenaPlayerHUDWidget::StopBasicAttackCooldownTimer()
 {
 	if (GetWorld())
@@ -412,6 +505,14 @@ void UArenaPlayerHUDWidget::StopFireballCooldownTimer()
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(FireballCooldownTimerHandle);
+	}
+}
+
+void UArenaPlayerHUDWidget::StopDashCooldownTimer()
+{
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(DashCooldownTimerHandle);
 	}
 }
 
@@ -524,4 +625,16 @@ void UArenaPlayerHUDWidget::HandleFireballCooldownChanged(const FGameplayTag Cal
 	}
 
 	RefreshFireballCooldownFromAbilitySystem();
+}
+
+void UArenaPlayerHUDWidget::HandleDashCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	if (CallbackTag == ArenaGameplayTags::Cooldown_Dash && NewCount <= 0)
+	{
+		SetDashCooldownValues(false, 0.0f, 0.0f);
+		StopDashCooldownTimer();
+		return;
+	}
+
+	RefreshDashCooldownFromAbilitySystem();
 }

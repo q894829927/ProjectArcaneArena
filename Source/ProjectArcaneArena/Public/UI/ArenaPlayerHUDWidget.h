@@ -46,6 +46,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetFireballCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
 
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetDashCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
+
 protected:
 	// Widget 销毁时解绑 GAS 委托，避免回调悬挂到已销毁 UI。
 	virtual void NativeDestruct() override;
@@ -91,6 +94,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> FireballCooldownProgressBar;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UProgressBar> DashCooldownProgressBar;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float CurrentHealth = 0.0f;
@@ -143,6 +149,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float FireballCooldownPercent = 0.0f;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	bool bDashCooldownActive = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float DashCooldownRemaining = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float DashCooldownDuration = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float DashCooldownPercent = 0.0f;
+
 private:
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
@@ -159,17 +177,23 @@ private:
 	// 从 ASC 查询 Fireball 冷却 ActiveGE 的剩余时间，并刷新 HUD。
 	void RefreshFireballCooldownFromAbilitySystem();
 
+	void RefreshDashCooldownFromAbilitySystem();
+
 	// 冷却期间用定时器刷新秒数，避免把整个 HUD 放进 Tick。
 	void StartBasicAttackCooldownTimer();
 
 	// Fireball 冷却期间单独刷新秒数，避免互相影响。
 	void StartFireballCooldownTimer();
 
+	void StartDashCooldownTimer();
+
 	// 冷却结束或 Widget 销毁时停止刷新定时器。
 	void StopBasicAttackCooldownTimer();
 
 	// 冷却结束或 Widget 销毁时停止刷新定时器。
 	void StopFireballCooldownTimer();
+
+	void StopDashCooldownTimer();
 
 	// 查询拥有 Cooldown.BasicAttack 标签的 ActiveGE，返回最长剩余时间。
 	bool GetBasicAttackCooldownTime(float& OutRemainingTime, float& OutDuration) const;
@@ -188,6 +212,7 @@ private:
 	void HandleMaxEnergyChanged(const FOnAttributeChangeData& Data);
 	void HandleBasicAttackCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleFireballCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	void HandleDashCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
 	TWeakObjectPtr<UArenaAttributeSet> BoundAttributeSet;
@@ -200,7 +225,9 @@ private:
 	FDelegateHandle MaxEnergyChangedDelegateHandle;
 	FDelegateHandle BasicAttackCooldownTagDelegateHandle;
 	FDelegateHandle FireballCooldownTagDelegateHandle;
+	FDelegateHandle DashCooldownTagDelegateHandle;
 
 	FTimerHandle BasicAttackCooldownTimerHandle;
 	FTimerHandle FireballCooldownTimerHandle;
+	FTimerHandle DashCooldownTimerHandle;
 };

@@ -27,6 +27,9 @@ public:
 	// 玩家角色的 ASC 存放在 PlayerState 上，这里只负责转发访问。
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 
+	// Returns current dash input direction, or zero when standing still.
+	FVector GetLastMovementInputDirection() const { return LastMovementInputDirection; }
+
 protected:
 	// 服务端 Possess 后初始化 AvatarActor，并授予默认属性和启动技能。
 	virtual void PossessedBy(AController* NewController) override;
@@ -51,6 +54,8 @@ private:
 
 	// WASD 移动输入，使用 CharacterMovement 以保持后续网络移动兼容。
 	void Input_Move(const FInputActionValue& Value);
+	// Clears cached dash direction when movement input stops.
+	void Input_MoveStopped(const FInputActionValue& Value);
 	// 基础攻击输入入口，当前只发送 Ability.BasicAttack 标签。
 	void Input_BasicAttack();
 	// Fireball 输入入口，只发送 Ability.Fireball 标签，具体技能逻辑由 GAS 处理。
@@ -98,4 +103,6 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "GAS")
 	TArray<TSubclassOf<UGameplayAbility>> StartupAbilities;
+
+	FVector LastMovementInputDirection = FVector::ZeroVector;
 };
