@@ -2,6 +2,7 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "DrawDebugHelpers.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
 
@@ -96,6 +97,8 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 		}
 	}
 
+	DrawAttackRangeDebug(World, Start, End, BestTarget != nullptr);
+
 	if (BestTarget && BestTargetASC)
 	{
 		FGameplayEffectSpecHandle DamageSpecHandle = MakeOutgoingGameplayEffectSpec(
@@ -118,4 +121,58 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	}
 
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+}
+
+void UArenaGameplayAbility_BasicAttack::DrawAttackRangeDebug(UWorld* World, const FVector& Start, const FVector& End, bool bHitTarget) const
+{
+	if (!bDrawDebugAttackRange || !World)
+	{
+		return;
+	}
+
+	const FVector AttackVector = End - Start;
+	const float AttackLength = AttackVector.Size();
+	if (AttackLength <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const FColor RangeColor = (bHitTarget ? DebugAttackRangeHitColor : DebugAttackRangeMissColor).ToFColor(true);
+	const FVector AttackDirection = AttackVector / AttackLength;
+	const FVector CapsuleCenter = (Start + End) * 0.5f;
+	const float CapsuleHalfHeight = AttackLength * 0.5f + AttackRadius;
+	const FQuat CapsuleRotation = FRotationMatrix::MakeFromZ(AttackDirection).ToQuat();
+
+	DrawDebugCapsule(
+		World,
+		CapsuleCenter,
+		CapsuleHalfHeight,
+		AttackRadius,
+		CapsuleRotation,
+		RangeColor,
+		false,
+		DebugAttackRangeDuration,
+		0,
+		2.0f);
+
+	DrawDebugLine(
+		World,
+		Start,
+		End,
+		FColor::White,
+		false,
+		DebugAttackRangeDuration,
+		0,
+		1.0f);
+
+	DrawDebugSphere(
+		World,
+		End,
+		AttackRadius,
+		16,
+		RangeColor,
+		false,
+		DebugAttackRangeDuration,
+		0,
+		1.5f);
 }

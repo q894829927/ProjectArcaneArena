@@ -607,6 +607,38 @@ After changing code:
 
 ---
 
+## Unreal Build Verification Safety
+
+This project may be associated with a source-built Unreal Engine directory. Treat any build command as potentially expensive and disruptive.
+
+Incident summary to avoid repeating:
+
+* A small gameplay-code validation attempt triggered a large engine rebuild because UnrealBuildTool was run against the source engine with changed command-line arguments.
+* Trying `-NoSharedPCH` to work around a PCH/page-file error invalidated the UBT makefile and caused thousands of engine/plugin actions to be scheduled.
+* Visual Studio then showed engine-level targets such as `UE5`, `ShaderCompileWorker`, `AutomationTool`, `Slate`, `RenderCore`, and `BlueprintGraph` compiling.
+* The failure was mainly `C3859` / system code `1455` / `C1076`, meaning Windows virtual memory/page file was too small for the PCH workload.
+* The root cause was the build invocation and source-engine association, not the small gameplay code edit itself.
+
+Rules:
+
+1. Do not run a full Visual Studio solution build, `UE5` target build, source-engine rebuild, or `ShaderCompileWorker` build unless the user explicitly asks for it.
+2. Do not use `-NoSharedPCH`, clean/rebuild, or any broad makefile-invalidating build flag as a quick workaround for compile errors.
+3. Do not change `ProjectArcaneArena.uproject` `EngineAssociation` unless the user explicitly requests an engine switch.
+4. Before any build command, check `git diff -- ProjectArcaneArena.uproject` and confirm whether the project is associated with a source engine or installed engine.
+5. Before any build command, check for existing `Build.bat`, `UnrealBuildTool`, `cl`, `link`, and relevant `dotnet` build processes. Do not start another build if one is already running.
+6. For routine C++ validation, prefer the smallest possible check first: inspect includes, run `git diff --check`, and compile only when necessary.
+7. If compile verification is necessary, ask the user first when the project is on a source engine or when the editor/Live Coding is active.
+8. If the user approves a compile, use only the narrow project editor target, without broad flags:
+
+```text
+Build.bat ProjectArcaneArenaEditor Win64 Development -Project="E:\UE_DEMO\ProjectArcaneArena\ProjectArcaneArena.uproject" -WaitMutex -FromMsBuild
+```
+
+9. If UBT reports Live Coding is active, do not try unrelated workaround flags. Ask the user to use the editor Compile/Live Coding flow or to close the editor.
+10. If PCH virtual memory errors appear, stop and report the page-file issue. Do not attempt source-engine-wide rebuilds to force progress.
+
+---
+
 ## Code Review Rules
 
 For any review request, follow `code_review.md`.
