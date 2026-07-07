@@ -45,6 +45,36 @@ The final technical goal is:
 
 ---
 
+## Roguelike Build Design Goal
+
+The upgrade system should support a build-driven Roguelike combat loop, not only flat stat bonuses.
+
+Design direction:
+
+* Use Hades-like clarity for build branches, ability-focused choices, rarity, and readable upgrade intent.
+* Use The Binding of Isaac-like surprise sparingly through rule-changing upgrades and strong synergies.
+* Keep the first version controlled, readable, and suitable for a portfolio demo.
+
+First-version build axes:
+
+* Fire build
+* Lightning build
+* Crit build
+* Shield build
+* Dash build
+
+Upgrade design should include:
+
+* Attribute upgrades such as AttackPower, MaxHealth, CritChance, MoveSpeed, and cooldown reduction.
+* Ability variants such as Fireball splitting, Dash leaving a damage trail, or Shield exploding when broken.
+* Trigger upgrades such as OnKill, OnCrit, OnDashEnd, OnShieldBreak, and OnAbilityCast effects.
+* Status and damage-type synergies such as Burning, Shocked, Fire damage, and Lightning damage.
+* A small number of legendary rule-changing upgrades that meaningfully change how the player fights.
+
+Do not try to make the first version an unlimited item-combination sandbox. Prefer a small set of clear, testable build paths with a few high-impact synergy upgrades.
+
+---
+
 ## Development Principles
 
 Follow these principles strictly:
@@ -311,6 +341,22 @@ Phase.Combat
 Phase.Upgrade
 Phase.Victory
 Phase.Defeat
+
+Build.Fire
+Build.Lightning
+Build.Crit
+Build.Shield
+Build.Dash
+
+Trigger.OnKill
+Trigger.OnCrit
+Trigger.OnDashEnd
+Trigger.OnShieldBreak
+Trigger.OnAbilityCast
+
+Status.Burning
+Status.Shocked
+Status.Marked
 ```
 
 Rules:
@@ -320,6 +366,8 @@ Rules:
 * An invincible character should not receive normal damage.
 * Cooldown tags should block ability reactivation.
 * Casting tags may be used to prevent overlapping ability activation.
+* Build state, upgrade ownership, and status synergy should be represented with GameplayTags when practical, not scattered boolean variables.
+* Trigger tags should describe gameplay events that upgrade systems can listen for or route through GameplayEvents.
 
 ---
 
@@ -469,9 +517,9 @@ Wave data should include:
 
 ## Roguelike Upgrade System
 
-After each wave, show three random upgrades.
+After each wave, show three random upgrades that can grow into recognizable builds.
 
-Upgrade selection should be data-driven.
+Upgrade selection should be data-driven and server-validated.
 
 Recommended class:
 
@@ -479,15 +527,40 @@ Recommended class:
 
 Upgrade data should include:
 
-* Upgrade ID
-* Upgrade name
-* Upgrade description
-* Upgrade icon
-* Upgrade rarity
-* Granted GameplayEffect
-* Target ability tag
-* Numeric value
-* Whether it is stackable
+* `UpgradeID`
+* `UpgradeName`
+* `Description`
+* `Icon`
+* `Rarity`
+* `UpgradeTags`
+* `RequiredTags`
+* `BlockedTags`
+* `GrantedGameplayEffect`
+* `GrantedAbility`
+* `TargetAbilityTag`
+* `TriggerEventTag`
+* `DamageTypeTag`
+* `NumericValue`
+* `MaxStacks`
+* `bStackable`
+
+Upgrade categories:
+
+* Attribute upgrades: modify attributes through GameplayEffects.
+* Ability variants: change a specific GameplayAbility through tags, granted abilities, or upgrade state.
+* Trigger upgrades: react to gameplay events such as kill, crit, dash end, shield break, or ability cast.
+* Status synergies: reward combinations such as Fire plus Burning or Lightning plus Shocked.
+* Legendary upgrades: limited rule-changing upgrades that redefine a build without exploding project scope.
+
+Implementation ownership:
+
+* Attribute upgrades should use GameplayEffects.
+* Ability behavior changes should be handled by GameplayAbilities reading ASC tags, PlayerState upgrade state, or ability-specific data.
+* Trigger upgrades should use GameplayEvents and GameplayTags rather than direct UI or Character-owned logic.
+* Damage changes should go through `UExecCalc_Damage`, SetByCaller values, or GameplayEffect configuration.
+* Presentation changes should use GameplayCue or Blueprint visual hooks.
+* Upgrade ownership and stacks should live on `AArenaPlayerState`.
+* Upgrade candidate generation and validation should live in `AArenaGameMode`, `AArenaWaveManager`, or another server-owned upgrade manager.
 
 Upgrade examples:
 
@@ -501,6 +574,11 @@ Upgrade examples:
 * Shield value +30%
 * Kill restores Health
 * Critical hit restores Energy
+* Fireball applies Burning
+* Burning enemies explode on death
+* Dash leaves a lightning trail
+* Shield break causes an area blast
+* Lightning damage against Burning enemies causes an overload explosion
 
 For future multiplayer:
 
@@ -508,7 +586,7 @@ For future multiplayer:
 * PlayerController sends Server RPC.
 * Server validates the upgrade.
 * Server applies the corresponding GameplayEffect to that player.
-* PlayerState records that the player has selected an upgrade.
+* PlayerState records the selected upgrade, owned build tags, stack counts, and whether the player has selected an upgrade.
 * GameMode starts next wave after all players finish selection.
 
 ---
@@ -667,6 +745,9 @@ Avoid these mistakes:
 * Building matchmaking or online services too early.
 * Creating complex AI before the player combat loop works.
 * Creating too many abilities before damage and AttributeSet are stable.
+* Putting upgrade logic into large Character-level if/boolean branches.
+* Trying to support unlimited random item combinations in the first version.
+* Creating build upgrades that cannot be explained, tested, or shown clearly in a short demo.
 
 ---
 
@@ -710,13 +791,24 @@ Follow this order:
 5. Add WaveManager.
 6. Add wave completion detection.
 
-### Phase 5: Roguelike Upgrade
+### Phase 5A: Upgrade Foundation
 
 1. Add UpgradeDataAsset.
-2. Add three-choice upgrade UI.
-3. Add permanent upgrade GameplayEffects.
-4. Add upgrade phase after each wave.
-5. Add upgrade stacking rules.
+2. Add upgrade rarity, tags, stack limits, and eligibility rules.
+3. Add three-choice upgrade UI.
+4. Add server-side upgrade selection and validation.
+5. Apply upgrade GameplayEffects.
+6. Store selected upgrades, build tags, and stack counts on PlayerState.
+7. Add upgrade phase after each wave.
+
+### Phase 5B: Build Synergy
+
+1. Add Fire, Lightning, Crit, Shield, and Dash build tags.
+2. Add trigger events for OnKill, OnCrit, OnDashEnd, OnShieldBreak, and OnAbilityCast.
+3. Add skill-specific upgrades for Fireball, Dash, Shield, and LightningStorm.
+4. Add combo upgrades that use RequiredTags and BlockedTags.
+5. Add at least one legendary rule-changing upgrade.
+6. Verify that each build path has a visible combat identity.
 
 ### Phase 6: Boss and Polish
 
@@ -755,6 +847,8 @@ The project should be explainable with these points:
 * Used GameplayTags for state control.
 * Built wave-based Roguelike combat loop.
 * Added data-driven upgrade system.
+* Implemented GameplayTag-driven Roguelike build paths.
+* Implemented ability variants, trigger upgrades, and data-driven upgrade pools.
 * Designed architecture to support future Listen Server multiplayer.
 * Implemented server-authoritative combat logic for multiplayer readiness.
 
