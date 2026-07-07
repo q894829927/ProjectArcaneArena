@@ -4,6 +4,7 @@
 #include "Blueprint/UserWidget.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
+#include "TimerManager.h"
 #include "ArenaPlayerHUDWidget.generated.h"
 
 class UArenaAbilitySystemComponent;
@@ -33,9 +34,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetEnergyValues(float InEnergy, float InMaxEnergy);
 
-	// 根据冷却标签有无刷新普攻状态，后续可替换为倒计时显示。
+	// 根据冷却标签有无刷新普攻状态，兼容没有倒计时数据的蓝图调用。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetBasicAttackCooldownActive(bool bInCooldownActive);
+
+	// 刷新普攻冷却秒数和进度，显示数据只来自 ASC 上的 Active GameplayEffect。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetBasicAttackCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
 
 protected:
 	// Widget 销毁时解绑 GAS 委托，避免回调悬挂到已销毁 UI。
@@ -61,6 +66,24 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> BasicAttackCooldownText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> BasicAttackSlotText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> FireballSlotText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> DashSlotText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> ShieldSlotText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> UltimateSlotText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UProgressBar> BasicAttackCooldownProgressBar;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float CurrentHealth = 0.0f;
@@ -92,12 +115,36 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	bool bBasicAttackCooldownActive = false;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float BasicAttackCooldownRemaining = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float BasicAttackCooldownDuration = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float BasicAttackCooldownPercent = 0.0f;
+
 private:
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
 
 	// 初次绑定后立即用当前 AttributeSet 值刷新 UI，避免等下一次属性变化。
 	void RefreshAttributeValues();
+
+	// 初始化未实现技能的占位文本，后续接入 Ability 后再替换成真实状态。
+	void RefreshSkillSlotPlaceholders();
+
+	// 从 ASC 查询普攻冷却 ActiveGE 的剩余时间，并刷新 HUD。
+	void RefreshBasicAttackCooldownFromAbilitySystem();
+
+	// 冷却期间用定时器刷新秒数，避免把整个 HUD 放进 Tick。
+	void StartBasicAttackCooldownTimer();
+
+	// 冷却结束或 Widget 销毁时停止刷新定时器。
+	void StopBasicAttackCooldownTimer();
+
+	// 查询拥有 Cooldown.BasicAttack 标签的 ActiveGE，返回最长剩余时间。
+	bool GetBasicAttackCooldownTime(float& OutRemainingTime, float& OutDuration) const;
 
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
@@ -117,4 +164,6 @@ private:
 	FDelegateHandle EnergyChangedDelegateHandle;
 	FDelegateHandle MaxEnergyChangedDelegateHandle;
 	FDelegateHandle BasicAttackCooldownTagDelegateHandle;
+
+	FTimerHandle BasicAttackCooldownTimerHandle;
 };

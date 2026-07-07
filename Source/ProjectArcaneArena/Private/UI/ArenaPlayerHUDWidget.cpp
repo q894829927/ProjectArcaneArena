@@ -5,6 +5,7 @@
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayTags.h"
+#include "GameplayEffect.h"
 
 namespace
 {
@@ -15,12 +16,40 @@ namespace
 			: 0.0f;
 	}
 
-	FText MakeAttributeValueText(float CurrentValue, float MaxValue)
+	FText MakeAttributeValueText(const FText& Label, float CurrentValue, float MaxValue)
 	{
 		return FText::Format(
-			NSLOCTEXT("ArenaPlayerHUDWidget", "AttributeValueFormat", "{0} / {1}"),
+			NSLOCTEXT("ArenaPlayerHUDWidget", "AttributeValueFormat", "{0} {1} / {2}"),
+			Label,
 			FText::AsNumber(FMath::RoundToInt(CurrentValue)),
 			FText::AsNumber(FMath::RoundToInt(MaxValue)));
+	}
+
+	FText MakeCooldownSecondsText(float RemainingTime)
+	{
+		FNumberFormattingOptions NumberFormat;
+		NumberFormat.MinimumFractionalDigits = 1;
+		NumberFormat.MaximumFractionalDigits = 1;
+
+		return FText::AsNumber(FMath::Max(RemainingTime, 0.0f), &NumberFormat);
+	}
+
+	FText MakeBasicAttackFullText(bool bIsCooldownActive, float RemainingTime)
+	{
+		return bIsCooldownActive
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackCooldownFormat", "LMB Basic {0}s"),
+				MakeCooldownSecondsText(RemainingTime))
+			: NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackReady", "LMB Basic Ready");
+	}
+
+	FText MakeBasicAttackSlotText(bool bIsCooldownActive, float RemainingTime)
+	{
+		return bIsCooldownActive
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackSlotCooldownFormat", "{0}s"),
+				MakeCooldownSecondsText(RemainingTime))
+			: NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackSlotReady", "Basic Ready");
 	}
 }
 
@@ -45,7 +74,8 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	MaxEnergyChangedDelegateHandle = InAbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetMaxEnergyAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleMaxEnergyChanged);
 
 	// RegisterAndCall 只会在标签 count > 0 时立即回调，所以这里先主动刷新一次可用状态。
-	SetBasicAttackCooldownActive(InAbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::Cooldown_BasicAttack));
+	RefreshSkillSlotPlaceholders();
+	RefreshBasicAttackCooldownFromAbilitySystem();
 	BasicAttackCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
 		ArenaGameplayTags::Cooldown_BasicAttack,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBasicAttackCooldownChanged),
@@ -67,7 +97,7 @@ void UArenaPlayerHUDWidget::SetHealthValues(float InHealth, float InMaxHealth)
 
 	if (HealthText)
 	{
-		HealthText->SetText(MakeAttributeValueText(CurrentHealth, CurrentMaxHealth));
+		HealthText->SetText(MakeAttributeValueText(NSLOCTEXT("ArenaPlayerHUDWidget", "HealthLabel", "HP"), CurrentHealth, CurrentMaxHealth));
 	}
 }
 
@@ -84,7 +114,7 @@ void UArenaPlayerHUDWidget::SetShieldValues(float InShield, float InMaxShield)
 
 	if (ShieldText)
 	{
-		ShieldText->SetText(MakeAttributeValueText(CurrentShield, CurrentMaxShield));
+		ShieldText->SetText(MakeAttributeValueText(NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldLabel", "Shield"), CurrentShield, CurrentMaxShield));
 	}
 }
 
@@ -101,19 +131,37 @@ void UArenaPlayerHUDWidget::SetEnergyValues(float InEnergy, float InMaxEnergy)
 
 	if (EnergyText)
 	{
-		EnergyText->SetText(MakeAttributeValueText(CurrentEnergy, CurrentMaxEnergy));
+		EnergyText->SetText(MakeAttributeValueText(NSLOCTEXT("ArenaPlayerHUDWidget", "EnergyLabel", "Energy"), CurrentEnergy, CurrentMaxEnergy));
 	}
 }
 
 void UArenaPlayerHUDWidget::SetBasicAttackCooldownActive(bool bInCooldownActive)
 {
+	SetBasicAttackCooldownValues(bInCooldownActive, 0.0f, 0.0f);
+}
+
+void UArenaPlayerHUDWidget::SetBasicAttackCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration)
+{
 	bBasicAttackCooldownActive = bInCooldownActive;
+	BasicAttackCooldownRemaining = bBasicAttackCooldownActive ? FMath::Max(InRemainingTime, 0.0f) : 0.0f;
+	BasicAttackCooldownDuration = bBasicAttackCooldownActive ? FMath::Max(InDuration, 0.0f) : 0.0f;
+	BasicAttackCooldownPercent = BasicAttackCooldownDuration > 0.0f
+		? FMath::Clamp(BasicAttackCooldownRemaining / BasicAttackCooldownDuration, 0.0f, 1.0f)
+		: 0.0f;
 
 	if (BasicAttackCooldownText)
 	{
-		BasicAttackCooldownText->SetText(bBasicAttackCooldownActive
-			? NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackCooldown", "Basic Attack: Cooldown")
-			: NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackReady", "Basic Attack: Ready"));
+		BasicAttackCooldownText->SetText(MakeBasicAttackFullText(bBasicAttackCooldownActive, BasicAttackCooldownRemaining));
+	}
+
+	if (BasicAttackSlotText)
+	{
+		BasicAttackSlotText->SetText(MakeBasicAttackSlotText(bBasicAttackCooldownActive, BasicAttackCooldownRemaining));
+	}
+
+	if (BasicAttackCooldownProgressBar)
+	{
+		BasicAttackCooldownProgressBar->SetPercent(BasicAttackCooldownPercent);
 	}
 }
 
@@ -126,6 +174,8 @@ void UArenaPlayerHUDWidget::NativeDestruct()
 
 void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 {
+	StopBasicAttackCooldownTimer();
+
 	if (UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get())
 	{
 		// Attribute 和 Tag 委托都挂在 ASC 上，Widget 重建或销毁时必须移除。
@@ -189,6 +239,113 @@ void UArenaPlayerHUDWidget::RefreshAttributeValues()
 	}
 }
 
+void UArenaPlayerHUDWidget::RefreshSkillSlotPlaceholders()
+{
+	if (FireballSlotText)
+	{
+		FireballSlotText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "FireballSlotLocked", "Locked"));
+	}
+
+	if (DashSlotText)
+	{
+		DashSlotText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "DashSlotLocked", "Locked"));
+	}
+
+	if (ShieldSlotText)
+	{
+		ShieldSlotText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldSlotLocked", "Locked"));
+	}
+
+	if (UltimateSlotText)
+	{
+		UltimateSlotText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "UltimateSlotLocked", "Locked"));
+	}
+}
+
+void UArenaPlayerHUDWidget::RefreshBasicAttackCooldownFromAbilitySystem()
+{
+	float RemainingTime = 0.0f;
+	float Duration = 0.0f;
+	const bool bHasCooldownTime = GetBasicAttackCooldownTime(RemainingTime, Duration);
+
+	if (const UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get())
+	{
+		const bool bHasCooldownTag = AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::Cooldown_BasicAttack);
+		SetBasicAttackCooldownValues(bHasCooldownTag, bHasCooldownTime ? RemainingTime : 0.0f, bHasCooldownTime ? Duration : 0.0f);
+
+		if (bHasCooldownTag)
+		{
+			StartBasicAttackCooldownTimer();
+		}
+		else
+		{
+			StopBasicAttackCooldownTimer();
+		}
+	}
+	else
+	{
+		SetBasicAttackCooldownValues(false, 0.0f, 0.0f);
+		StopBasicAttackCooldownTimer();
+	}
+}
+
+void UArenaPlayerHUDWidget::StartBasicAttackCooldownTimer()
+{
+	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(BasicAttackCooldownTimerHandle))
+	{
+		return;
+	}
+
+	// 冷却数字是纯表现数据，0.05 秒刷新足够平滑，也避免每帧 Tick。
+	GetWorld()->GetTimerManager().SetTimer(
+		BasicAttackCooldownTimerHandle,
+		this,
+		&UArenaPlayerHUDWidget::RefreshBasicAttackCooldownFromAbilitySystem,
+		0.05f,
+		true);
+}
+
+void UArenaPlayerHUDWidget::StopBasicAttackCooldownTimer()
+{
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(BasicAttackCooldownTimerHandle);
+	}
+}
+
+bool UArenaPlayerHUDWidget::GetBasicAttackCooldownTime(float& OutRemainingTime, float& OutDuration) const
+{
+	OutRemainingTime = 0.0f;
+	OutDuration = 0.0f;
+
+	const UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get();
+	if (!AbilitySystemComponent)
+	{
+		return false;
+	}
+
+	FGameplayTagContainer CooldownTags;
+	CooldownTags.AddTag(ArenaGameplayTags::Cooldown_BasicAttack);
+	const FGameplayEffectQuery CooldownQuery = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(CooldownTags);
+	const TArray<TPair<float, float>> DurationAndTimeRemaining = AbilitySystemComponent->GetActiveEffectsTimeRemainingAndDuration(CooldownQuery);
+	if (DurationAndTimeRemaining.Num() == 0)
+	{
+		return false;
+	}
+
+	// 与 GameplayAbility 默认冷却查询一致：多个冷却效果存在时显示剩余时间最长的一个。
+	for (const TPair<float, float>& CooldownTime : DurationAndTimeRemaining)
+	{
+		if (CooldownTime.Key > OutRemainingTime)
+		{
+			OutRemainingTime = CooldownTime.Key;
+			OutDuration = CooldownTime.Value;
+		}
+	}
+
+	return true;
+}
+
 void UArenaPlayerHUDWidget::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
 	SetHealthValues(Data.NewValue, CurrentMaxHealth);
@@ -221,5 +378,12 @@ void UArenaPlayerHUDWidget::HandleMaxEnergyChanged(const FOnAttributeChangeData&
 
 void UArenaPlayerHUDWidget::HandleBasicAttackCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
-	SetBasicAttackCooldownActive(NewCount > 0);
+	if (CallbackTag == ArenaGameplayTags::Cooldown_BasicAttack && NewCount <= 0)
+	{
+		SetBasicAttackCooldownValues(false, 0.0f, 0.0f);
+		StopBasicAttackCooldownTimer();
+		return;
+	}
+
+	RefreshBasicAttackCooldownFromAbilitySystem();
 }
