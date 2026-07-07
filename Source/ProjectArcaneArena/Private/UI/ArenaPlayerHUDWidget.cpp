@@ -51,6 +51,20 @@ namespace
 				MakeCooldownSecondsText(RemainingTime))
 			: NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackSlotReady", "Basic Ready");
 	}
+
+	FText MakeFireballSlotText(bool bHasFireballAbility, bool bIsCooldownActive, float RemainingTime)
+	{
+		if (!bHasFireballAbility)
+		{
+			return NSLOCTEXT("ArenaPlayerHUDWidget", "FireballSlotLocked", "Locked");
+		}
+
+		return bIsCooldownActive
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "FireballSlotCooldownFormat", "{0}s"),
+				MakeCooldownSecondsText(RemainingTime))
+			: NSLOCTEXT("ArenaPlayerHUDWidget", "FireballSlotReady", "Fireball Ready");
+	}
 }
 
 void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* InAbilitySystemComponent, UArenaAttributeSet* InAttributeSet)
@@ -76,9 +90,14 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	// RegisterAndCall 只会在标签 count > 0 时立即回调，所以这里先主动刷新一次可用状态。
 	RefreshSkillSlotPlaceholders();
 	RefreshBasicAttackCooldownFromAbilitySystem();
+	RefreshFireballCooldownFromAbilitySystem();
 	BasicAttackCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
 		ArenaGameplayTags::Cooldown_BasicAttack,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBasicAttackCooldownChanged),
+		EGameplayTagEventType::NewOrRemoved);
+	FireballCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::Cooldown_Fireball,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleFireballCooldownChanged),
 		EGameplayTagEventType::NewOrRemoved);
 
 	RefreshAttributeValues();
@@ -165,6 +184,27 @@ void UArenaPlayerHUDWidget::SetBasicAttackCooldownValues(bool bInCooldownActive,
 	}
 }
 
+void UArenaPlayerHUDWidget::SetFireballCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration)
+{
+	const bool bHasFireballAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Fireball);
+	bFireballCooldownActive = bHasFireballAbility && bInCooldownActive;
+	FireballCooldownRemaining = bFireballCooldownActive ? FMath::Max(InRemainingTime, 0.0f) : 0.0f;
+	FireballCooldownDuration = bFireballCooldownActive ? FMath::Max(InDuration, 0.0f) : 0.0f;
+	FireballCooldownPercent = FireballCooldownDuration > 0.0f
+		? FMath::Clamp(FireballCooldownRemaining / FireballCooldownDuration, 0.0f, 1.0f)
+		: 0.0f;
+
+	if (FireballSlotText)
+	{
+		FireballSlotText->SetText(MakeFireballSlotText(bHasFireballAbility, bFireballCooldownActive, FireballCooldownRemaining));
+	}
+
+	if (FireballCooldownProgressBar)
+	{
+		FireballCooldownProgressBar->SetPercent(FireballCooldownPercent);
+	}
+}
+
 void UArenaPlayerHUDWidget::NativeDestruct()
 {
 	UnbindFromAbilitySystem();
@@ -175,6 +215,7 @@ void UArenaPlayerHUDWidget::NativeDestruct()
 void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 {
 	StopBasicAttackCooldownTimer();
+	StopFireballCooldownTimer();
 
 	if (UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get())
 	{
@@ -223,6 +264,15 @@ void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 				EGameplayTagEventType::NewOrRemoved);
 			BasicAttackCooldownTagDelegateHandle.Reset();
 		}
+
+		if (FireballCooldownTagDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent->UnregisterGameplayTagEvent(
+				FireballCooldownTagDelegateHandle,
+				ArenaGameplayTags::Cooldown_Fireball,
+				EGameplayTagEventType::NewOrRemoved);
+			FireballCooldownTagDelegateHandle.Reset();
+		}
 	}
 
 	BoundAbilitySystemComponent.Reset();
@@ -243,7 +293,8 @@ void UArenaPlayerHUDWidget::RefreshSkillSlotPlaceholders()
 {
 	if (FireballSlotText)
 	{
-		FireballSlotText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "FireballSlotLocked", "Locked"));
+		const bool bHasFireballAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Fireball);
+		FireballSlotText->SetText(MakeFireballSlotText(bHasFireballAbility, false, 0.0f));
 	}
 
 	if (DashSlotText)
@@ -289,6 +340,33 @@ void UArenaPlayerHUDWidget::RefreshBasicAttackCooldownFromAbilitySystem()
 	}
 }
 
+void UArenaPlayerHUDWidget::RefreshFireballCooldownFromAbilitySystem()
+{
+	float RemainingTime = 0.0f;
+	float Duration = 0.0f;
+	const bool bHasCooldownTime = GetCooldownTimeForTag(ArenaGameplayTags::Cooldown_Fireball, RemainingTime, Duration);
+
+	if (const UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get())
+	{
+		const bool bHasCooldownTag = AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::Cooldown_Fireball);
+		SetFireballCooldownValues(bHasCooldownTag, bHasCooldownTime ? RemainingTime : 0.0f, bHasCooldownTime ? Duration : 0.0f);
+
+		if (bHasCooldownTag)
+		{
+			StartFireballCooldownTimer();
+		}
+		else
+		{
+			StopFireballCooldownTimer();
+		}
+	}
+	else
+	{
+		SetFireballCooldownValues(false, 0.0f, 0.0f);
+		StopFireballCooldownTimer();
+	}
+}
+
 void UArenaPlayerHUDWidget::StartBasicAttackCooldownTimer()
 {
 	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(BasicAttackCooldownTimerHandle))
@@ -305,6 +383,22 @@ void UArenaPlayerHUDWidget::StartBasicAttackCooldownTimer()
 		true);
 }
 
+void UArenaPlayerHUDWidget::StartFireballCooldownTimer()
+{
+	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(FireballCooldownTimerHandle))
+	{
+		return;
+	}
+
+	// Fireball 使用独立定时器，后续不同技能冷却刷新频率可以单独调。
+	GetWorld()->GetTimerManager().SetTimer(
+		FireballCooldownTimerHandle,
+		this,
+		&UArenaPlayerHUDWidget::RefreshFireballCooldownFromAbilitySystem,
+		0.05f,
+		true);
+}
+
 void UArenaPlayerHUDWidget::StopBasicAttackCooldownTimer()
 {
 	if (GetWorld())
@@ -313,19 +407,32 @@ void UArenaPlayerHUDWidget::StopBasicAttackCooldownTimer()
 	}
 }
 
+void UArenaPlayerHUDWidget::StopFireballCooldownTimer()
+{
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(FireballCooldownTimerHandle);
+	}
+}
+
 bool UArenaPlayerHUDWidget::GetBasicAttackCooldownTime(float& OutRemainingTime, float& OutDuration) const
+{
+	return GetCooldownTimeForTag(ArenaGameplayTags::Cooldown_BasicAttack, OutRemainingTime, OutDuration);
+}
+
+bool UArenaPlayerHUDWidget::GetCooldownTimeForTag(const FGameplayTag& CooldownTag, float& OutRemainingTime, float& OutDuration) const
 {
 	OutRemainingTime = 0.0f;
 	OutDuration = 0.0f;
 
 	const UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get();
-	if (!AbilitySystemComponent)
+	if (!AbilitySystemComponent || !CooldownTag.IsValid())
 	{
 		return false;
 	}
 
 	FGameplayTagContainer CooldownTags;
-	CooldownTags.AddTag(ArenaGameplayTags::Cooldown_BasicAttack);
+	CooldownTags.AddTag(CooldownTag);
 	const FGameplayEffectQuery CooldownQuery = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(CooldownTags);
 	const TArray<TPair<float, float>> DurationAndTimeRemaining = AbilitySystemComponent->GetActiveEffectsTimeRemainingAndDuration(CooldownQuery);
 	if (DurationAndTimeRemaining.Num() == 0)
@@ -344,6 +451,25 @@ bool UArenaPlayerHUDWidget::GetBasicAttackCooldownTime(float& OutRemainingTime, 
 	}
 
 	return true;
+}
+
+bool UArenaPlayerHUDWidget::HasGrantedAbilityForInputTag(const FGameplayTag& InputTag) const
+{
+	const UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get();
+	if (!AbilitySystemComponent || !InputTag.IsValid())
+	{
+		return false;
+	}
+
+	for (const FGameplayAbilitySpec& AbilitySpec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		if (AbilitySpec.Ability && AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 void UArenaPlayerHUDWidget::HandleHealthChanged(const FOnAttributeChangeData& Data)
@@ -386,4 +512,16 @@ void UArenaPlayerHUDWidget::HandleBasicAttackCooldownChanged(const FGameplayTag 
 	}
 
 	RefreshBasicAttackCooldownFromAbilitySystem();
+}
+
+void UArenaPlayerHUDWidget::HandleFireballCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	if (CallbackTag == ArenaGameplayTags::Cooldown_Fireball && NewCount <= 0)
+	{
+		SetFireballCooldownValues(false, 0.0f, 0.0f);
+		StopFireballCooldownTimer();
+		return;
+	}
+
+	RefreshFireballCooldownFromAbilitySystem();
 }

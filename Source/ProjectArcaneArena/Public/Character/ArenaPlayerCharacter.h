@@ -53,7 +53,7 @@ private:
 	void Input_Move(const FInputActionValue& Value);
 	// 基础攻击输入入口，当前只发送 Ability.BasicAttack 标签。
 	void Input_BasicAttack();
-	// 预留技能输入入口，后续接入对应 GameplayAbility。
+	// Fireball 输入入口，只发送 Ability.Fireball 标签，具体技能逻辑由 GAS 处理。
 	void Input_Fireball();
 	// 预留技能输入入口，后续接入对应 GameplayAbility。
 	void Input_Dash();

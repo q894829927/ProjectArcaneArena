@@ -42,6 +42,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetBasicAttackCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
 
+	// 刷新 Fireball 冷却秒数和进度，显示数据只来自 ASC 上的 Active GameplayEffect。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetFireballCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
+
 protected:
 	// Widget 销毁时解绑 GAS 委托，避免回调悬挂到已销毁 UI。
 	virtual void NativeDestruct() override;
@@ -85,6 +89,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> BasicAttackCooldownProgressBar;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UProgressBar> FireballCooldownProgressBar;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float CurrentHealth = 0.0f;
 
@@ -124,6 +131,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float BasicAttackCooldownPercent = 0.0f;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	bool bFireballCooldownActive = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float FireballCooldownRemaining = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float FireballCooldownDuration = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float FireballCooldownPercent = 0.0f;
+
 private:
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
@@ -137,14 +156,29 @@ private:
 	// 从 ASC 查询普攻冷却 ActiveGE 的剩余时间，并刷新 HUD。
 	void RefreshBasicAttackCooldownFromAbilitySystem();
 
+	// 从 ASC 查询 Fireball 冷却 ActiveGE 的剩余时间，并刷新 HUD。
+	void RefreshFireballCooldownFromAbilitySystem();
+
 	// 冷却期间用定时器刷新秒数，避免把整个 HUD 放进 Tick。
 	void StartBasicAttackCooldownTimer();
+
+	// Fireball 冷却期间单独刷新秒数，避免互相影响。
+	void StartFireballCooldownTimer();
 
 	// 冷却结束或 Widget 销毁时停止刷新定时器。
 	void StopBasicAttackCooldownTimer();
 
+	// 冷却结束或 Widget 销毁时停止刷新定时器。
+	void StopFireballCooldownTimer();
+
 	// 查询拥有 Cooldown.BasicAttack 标签的 ActiveGE，返回最长剩余时间。
 	bool GetBasicAttackCooldownTime(float& OutRemainingTime, float& OutDuration) const;
+
+	// 查询指定 Cooldown 标签的 ActiveGE，返回最长剩余时间。
+	bool GetCooldownTimeForTag(const FGameplayTag& CooldownTag, float& OutRemainingTime, float& OutDuration) const;
+
+	// 根据 AbilitySpec 输入标签判断技能是否已经授予，用于技能槽占位显示。
+	bool HasGrantedAbilityForInputTag(const FGameplayTag& InputTag) const;
 
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
@@ -153,6 +187,7 @@ private:
 	void HandleEnergyChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxEnergyChanged(const FOnAttributeChangeData& Data);
 	void HandleBasicAttackCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	void HandleFireballCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
 	TWeakObjectPtr<UArenaAttributeSet> BoundAttributeSet;
@@ -164,6 +199,8 @@ private:
 	FDelegateHandle EnergyChangedDelegateHandle;
 	FDelegateHandle MaxEnergyChangedDelegateHandle;
 	FDelegateHandle BasicAttackCooldownTagDelegateHandle;
+	FDelegateHandle FireballCooldownTagDelegateHandle;
 
 	FTimerHandle BasicAttackCooldownTimerHandle;
+	FTimerHandle FireballCooldownTimerHandle;
 };

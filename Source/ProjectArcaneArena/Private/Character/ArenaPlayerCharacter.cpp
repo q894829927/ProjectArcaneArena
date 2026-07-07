@@ -261,7 +261,7 @@ void AArenaPlayerCharacter::Input_BasicAttack()
 
 void AArenaPlayerCharacter::Input_Fireball()
 {
-	// TODO: Route to the AbilitySystemComponent input flow in the GAS pass.
+	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_Fireball);
 }
 
 void AArenaPlayerCharacter::Input_Dash()
