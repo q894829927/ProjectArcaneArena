@@ -25,6 +25,13 @@ namespace
 			FText::AsNumber(FMath::RoundToInt(MaxValue)));
 	}
 
+	FText MakeShieldValueText(float CurrentValue)
+	{
+		return FText::Format(
+			NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldValueFormat", "Shield {0}"),
+			FText::AsNumber(FMath::RoundToInt(CurrentValue)));
+	}
+
 	FText MakeCooldownSecondsText(float RemainingTime)
 	{
 		FNumberFormattingOptions NumberFormat;
@@ -79,6 +86,20 @@ namespace
 				MakeCooldownSecondsText(RemainingTime))
 			: NSLOCTEXT("ArenaPlayerHUDWidget", "DashSlotReady", "Dash Ready");
 	}
+
+	FText MakeShieldSlotText(bool bHasShieldAbility, bool bIsCooldownActive, float RemainingTime)
+	{
+		if (!bHasShieldAbility)
+		{
+			return NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldSlotLocked", "Locked");
+		}
+
+		return bIsCooldownActive
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldSlotCooldownFormat", "{0}s"),
+				MakeCooldownSecondsText(RemainingTime))
+			: NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldSlotReady", "Shield Ready");
+	}
 }
 
 void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* InAbilitySystemComponent, UArenaAttributeSet* InAttributeSet)
@@ -97,7 +118,6 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	HealthChangedDelegateHandle = InAbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetHealthAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleHealthChanged);
 	MaxHealthChangedDelegateHandle = InAbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetMaxHealthAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleMaxHealthChanged);
 	ShieldChangedDelegateHandle = InAbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetShieldAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleShieldChanged);
-	MaxShieldChangedDelegateHandle = InAbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetMaxShieldAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleMaxShieldChanged);
 	EnergyChangedDelegateHandle = InAbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetEnergyAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleEnergyChanged);
 	MaxEnergyChangedDelegateHandle = InAbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetMaxEnergyAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleMaxEnergyChanged);
 
@@ -106,6 +126,7 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	RefreshBasicAttackCooldownFromAbilitySystem();
 	RefreshFireballCooldownFromAbilitySystem();
 	RefreshDashCooldownFromAbilitySystem();
+	RefreshShieldCooldownFromAbilitySystem();
 	BasicAttackCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
 		ArenaGameplayTags::Cooldown_BasicAttack,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBasicAttackCooldownChanged),
@@ -117,6 +138,10 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	DashCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
 		ArenaGameplayTags::Cooldown_Dash,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleDashCooldownChanged),
+		EGameplayTagEventType::NewOrRemoved);
+	ShieldCooldownTagDelegateHandle = InAbilitySystemComponent->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::Cooldown_Shield,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleShieldCooldownChanged),
 		EGameplayTagEventType::NewOrRemoved);
 
 	RefreshAttributeValues();
@@ -139,20 +164,20 @@ void UArenaPlayerHUDWidget::SetHealthValues(float InHealth, float InMaxHealth)
 	}
 }
 
-void UArenaPlayerHUDWidget::SetShieldValues(float InShield, float InMaxShield)
+void UArenaPlayerHUDWidget::SetShieldValues(float InShield)
 {
 	CurrentShield = FMath::Max(InShield, 0.0f);
-	CurrentMaxShield = FMath::Max(InMaxShield, 0.0f);
-	ShieldPercent = CalculatePercent(CurrentShield, CurrentMaxShield);
+	ShieldPercent = CurrentShield > 0.0f ? 1.0f : 0.0f;
 
 	if (ShieldProgressBar)
 	{
+		// Shield 没有最大值，进度条暂时只表示是否存在护盾。
 		ShieldProgressBar->SetPercent(ShieldPercent);
 	}
 
 	if (ShieldText)
 	{
-		ShieldText->SetText(MakeAttributeValueText(NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldLabel", "Shield"), CurrentShield, CurrentMaxShield));
+		ShieldText->SetText(MakeShieldValueText(CurrentShield));
 	}
 }
 
@@ -245,6 +270,27 @@ void UArenaPlayerHUDWidget::SetDashCooldownValues(bool bInCooldownActive, float 
 	}
 }
 
+void UArenaPlayerHUDWidget::SetShieldCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration)
+{
+	const bool bHasShieldAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Shield);
+	bShieldCooldownActive = bHasShieldAbility && bInCooldownActive;
+	ShieldCooldownRemaining = bShieldCooldownActive ? FMath::Max(InRemainingTime, 0.0f) : 0.0f;
+	ShieldCooldownDuration = bShieldCooldownActive ? FMath::Max(InDuration, 0.0f) : 0.0f;
+	ShieldCooldownPercent = ShieldCooldownDuration > 0.0f
+		? FMath::Clamp(ShieldCooldownRemaining / ShieldCooldownDuration, 0.0f, 1.0f)
+		: 0.0f;
+
+	if (ShieldSlotText)
+	{
+		ShieldSlotText->SetText(MakeShieldSlotText(bHasShieldAbility, bShieldCooldownActive, ShieldCooldownRemaining));
+	}
+
+	if (ShieldCooldownProgressBar)
+	{
+		ShieldCooldownProgressBar->SetPercent(ShieldCooldownPercent);
+	}
+}
+
 void UArenaPlayerHUDWidget::NativeDestruct()
 {
 	UnbindFromAbilitySystem();
@@ -257,6 +303,7 @@ void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 	StopBasicAttackCooldownTimer();
 	StopFireballCooldownTimer();
 	StopDashCooldownTimer();
+	StopShieldCooldownTimer();
 
 	if (UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get())
 	{
@@ -277,12 +324,6 @@ void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 		{
 			AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetShieldAttribute()).Remove(ShieldChangedDelegateHandle);
 			ShieldChangedDelegateHandle.Reset();
-		}
-
-		if (MaxShieldChangedDelegateHandle.IsValid())
-		{
-			AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetMaxShieldAttribute()).Remove(MaxShieldChangedDelegateHandle);
-			MaxShieldChangedDelegateHandle.Reset();
 		}
 
 		if (EnergyChangedDelegateHandle.IsValid())
@@ -323,6 +364,15 @@ void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 				EGameplayTagEventType::NewOrRemoved);
 			DashCooldownTagDelegateHandle.Reset();
 		}
+
+		if (ShieldCooldownTagDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent->UnregisterGameplayTagEvent(
+				ShieldCooldownTagDelegateHandle,
+				ArenaGameplayTags::Cooldown_Shield,
+				EGameplayTagEventType::NewOrRemoved);
+			ShieldCooldownTagDelegateHandle.Reset();
+		}
 	}
 
 	BoundAbilitySystemComponent.Reset();
@@ -334,7 +384,7 @@ void UArenaPlayerHUDWidget::RefreshAttributeValues()
 	if (const UArenaAttributeSet* AttributeSet = BoundAttributeSet.Get())
 	{
 		SetHealthValues(AttributeSet->GetHealth(), AttributeSet->GetMaxHealth());
-		SetShieldValues(AttributeSet->GetShield(), AttributeSet->GetMaxShield());
+		SetShieldValues(AttributeSet->GetShield());
 		SetEnergyValues(AttributeSet->GetEnergy(), AttributeSet->GetMaxEnergy());
 	}
 }
@@ -355,7 +405,8 @@ void UArenaPlayerHUDWidget::RefreshSkillSlotPlaceholders()
 
 	if (ShieldSlotText)
 	{
-		ShieldSlotText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldSlotLocked", "Locked"));
+		const bool bHasShieldAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Shield);
+		ShieldSlotText->SetText(MakeShieldSlotText(bHasShieldAbility, false, 0.0f));
 	}
 
 	if (UltimateSlotText)
@@ -445,6 +496,33 @@ void UArenaPlayerHUDWidget::RefreshDashCooldownFromAbilitySystem()
 	}
 }
 
+void UArenaPlayerHUDWidget::RefreshShieldCooldownFromAbilitySystem()
+{
+	float RemainingTime = 0.0f;
+	float Duration = 0.0f;
+	const bool bHasCooldownTime = GetCooldownTimeForTag(ArenaGameplayTags::Cooldown_Shield, RemainingTime, Duration);
+
+	if (const UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get())
+	{
+		const bool bHasCooldownTag = AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::Cooldown_Shield);
+		SetShieldCooldownValues(bHasCooldownTag, bHasCooldownTime ? RemainingTime : 0.0f, bHasCooldownTime ? Duration : 0.0f);
+
+		if (bHasCooldownTag)
+		{
+			StartShieldCooldownTimer();
+		}
+		else
+		{
+			StopShieldCooldownTimer();
+		}
+	}
+	else
+	{
+		SetShieldCooldownValues(false, 0.0f, 0.0f);
+		StopShieldCooldownTimer();
+	}
+}
+
 void UArenaPlayerHUDWidget::StartBasicAttackCooldownTimer()
 {
 	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(BasicAttackCooldownTimerHandle))
@@ -492,6 +570,22 @@ void UArenaPlayerHUDWidget::StartDashCooldownTimer()
 		true);
 }
 
+void UArenaPlayerHUDWidget::StartShieldCooldownTimer()
+{
+	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(ShieldCooldownTimerHandle))
+	{
+		return;
+	}
+
+	// Shield 使用独立定时器，后续若加入护盾表现或音效可单独调整刷新策略。
+	GetWorld()->GetTimerManager().SetTimer(
+		ShieldCooldownTimerHandle,
+		this,
+		&UArenaPlayerHUDWidget::RefreshShieldCooldownFromAbilitySystem,
+		0.05f,
+		true);
+}
+
 void UArenaPlayerHUDWidget::StopBasicAttackCooldownTimer()
 {
 	if (GetWorld())
@@ -513,6 +607,14 @@ void UArenaPlayerHUDWidget::StopDashCooldownTimer()
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(DashCooldownTimerHandle);
+	}
+}
+
+void UArenaPlayerHUDWidget::StopShieldCooldownTimer()
+{
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(ShieldCooldownTimerHandle);
 	}
 }
 
@@ -585,12 +687,7 @@ void UArenaPlayerHUDWidget::HandleMaxHealthChanged(const FOnAttributeChangeData&
 
 void UArenaPlayerHUDWidget::HandleShieldChanged(const FOnAttributeChangeData& Data)
 {
-	SetShieldValues(Data.NewValue, CurrentMaxShield);
-}
-
-void UArenaPlayerHUDWidget::HandleMaxShieldChanged(const FOnAttributeChangeData& Data)
-{
-	SetShieldValues(CurrentShield, Data.NewValue);
+	SetShieldValues(Data.NewValue);
 }
 
 void UArenaPlayerHUDWidget::HandleEnergyChanged(const FOnAttributeChangeData& Data)
@@ -637,4 +734,16 @@ void UArenaPlayerHUDWidget::HandleDashCooldownChanged(const FGameplayTag Callbac
 	}
 
 	RefreshDashCooldownFromAbilitySystem();
+}
+
+void UArenaPlayerHUDWidget::HandleShieldCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	if (CallbackTag == ArenaGameplayTags::Cooldown_Shield && NewCount <= 0)
+	{
+		SetShieldCooldownValues(false, 0.0f, 0.0f);
+		StopShieldCooldownTimer();
+		return;
+	}
+
+	RefreshShieldCooldownFromAbilitySystem();
 }

@@ -10,7 +10,6 @@ UArenaAttributeSet::UArenaAttributeSet()
 	InitMaxHealth(100.0f);
 	InitHealth(100.0f);
 
-	InitMaxShield(50.0f);
 	InitShield(0.0f);
 
 	InitMaxEnergy(100.0f);
@@ -32,7 +31,6 @@ void UArenaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, Health, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, Shield, COND_None, REPNOTIFY_Always);
-	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, MaxShield, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, Energy, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, MaxEnergy, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
@@ -98,9 +96,9 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		SetHealth(GetHealth());
 		UpdateDeadTag();
 	}
-	else if (Data.EvaluatedData.Attribute == GetShieldAttribute()
-		|| Data.EvaluatedData.Attribute == GetMaxShieldAttribute())
+	else if (Data.EvaluatedData.Attribute == GetShieldAttribute())
 	{
+		// Shield 是可叠加的临时吸收量，没有最大护盾属性，只限制不能低于 0。
 		SetShield(GetShield());
 	}
 	else if (Data.EvaluatedData.Attribute == GetEnergyAttribute()
@@ -123,10 +121,7 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 	else if (Attribute == GetShieldAttribute())
 	{
-		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxShield());
-	}
-	else if (Attribute == GetMaxShieldAttribute())
-	{
+		// 护盾池可以被技能和升级持续叠加，只限制不能低于 0。
 		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 	else if (Attribute == GetEnergyAttribute())
@@ -200,11 +195,6 @@ void UArenaAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldValue)
 void UArenaAttributeSet::OnRep_Shield(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Shield, OldValue);
-}
-
-void UArenaAttributeSet::OnRep_MaxShield(const FGameplayAttributeData& OldValue)
-{
-	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MaxShield, OldValue);
 }
 
 void UArenaAttributeSet::OnRep_Energy(const FGameplayAttributeData& OldValue)

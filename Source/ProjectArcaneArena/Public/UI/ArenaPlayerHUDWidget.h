@@ -28,7 +28,7 @@ public:
 
 	// 刷新护盾显示，数值来自 GAS Attribute delegate。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
-	void SetShieldValues(float InShield, float InMaxShield);
+	void SetShieldValues(float InShield);
 
 	// 刷新能源显示，数值来自 GAS Attribute delegate。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
@@ -48,6 +48,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetDashCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
+
+	// 刷新 Shield 冷却秒数和进度，显示数据只来自 ASC 上的 Active GameplayEffect。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetShieldCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
 
 protected:
 	// Widget 销毁时解绑 GAS 委托，避免回调悬挂到已销毁 UI。
@@ -98,6 +102,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> DashCooldownProgressBar;
 
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UProgressBar> ShieldCooldownProgressBar;
+
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float CurrentHealth = 0.0f;
 
@@ -109,9 +116,6 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float CurrentShield = 0.0f;
-
-	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
-	float CurrentMaxShield = 0.0f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float ShieldPercent = 0.0f;
@@ -161,6 +165,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float DashCooldownPercent = 0.0f;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	bool bShieldCooldownActive = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float ShieldCooldownRemaining = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float ShieldCooldownDuration = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float ShieldCooldownPercent = 0.0f;
+
 private:
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
@@ -179,6 +195,9 @@ private:
 
 	void RefreshDashCooldownFromAbilitySystem();
 
+	// 从 ASC 查询 Shield 冷却 ActiveGE 的剩余时间，并刷新 HUD。
+	void RefreshShieldCooldownFromAbilitySystem();
+
 	// 冷却期间用定时器刷新秒数，避免把整个 HUD 放进 Tick。
 	void StartBasicAttackCooldownTimer();
 
@@ -187,6 +206,9 @@ private:
 
 	void StartDashCooldownTimer();
 
+	// Shield 冷却期间单独刷新秒数，避免依赖 Widget Tick。
+	void StartShieldCooldownTimer();
+
 	// 冷却结束或 Widget 销毁时停止刷新定时器。
 	void StopBasicAttackCooldownTimer();
 
@@ -194,6 +216,9 @@ private:
 	void StopFireballCooldownTimer();
 
 	void StopDashCooldownTimer();
+
+	// 冷却结束或 Widget 销毁时停止刷新定时器。
+	void StopShieldCooldownTimer();
 
 	// 查询拥有 Cooldown.BasicAttack 标签的 ActiveGE，返回最长剩余时间。
 	bool GetBasicAttackCooldownTime(float& OutRemainingTime, float& OutDuration) const;
@@ -207,12 +232,12 @@ private:
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxHealthChanged(const FOnAttributeChangeData& Data);
 	void HandleShieldChanged(const FOnAttributeChangeData& Data);
-	void HandleMaxShieldChanged(const FOnAttributeChangeData& Data);
 	void HandleEnergyChanged(const FOnAttributeChangeData& Data);
 	void HandleMaxEnergyChanged(const FOnAttributeChangeData& Data);
 	void HandleBasicAttackCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleFireballCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleDashCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	void HandleShieldCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
 	TWeakObjectPtr<UArenaAttributeSet> BoundAttributeSet;
@@ -220,14 +245,15 @@ private:
 	FDelegateHandle HealthChangedDelegateHandle;
 	FDelegateHandle MaxHealthChangedDelegateHandle;
 	FDelegateHandle ShieldChangedDelegateHandle;
-	FDelegateHandle MaxShieldChangedDelegateHandle;
 	FDelegateHandle EnergyChangedDelegateHandle;
 	FDelegateHandle MaxEnergyChangedDelegateHandle;
 	FDelegateHandle BasicAttackCooldownTagDelegateHandle;
 	FDelegateHandle FireballCooldownTagDelegateHandle;
 	FDelegateHandle DashCooldownTagDelegateHandle;
+	FDelegateHandle ShieldCooldownTagDelegateHandle;
 
 	FTimerHandle BasicAttackCooldownTimerHandle;
 	FTimerHandle FireballCooldownTimerHandle;
 	FTimerHandle DashCooldownTimerHandle;
+	FTimerHandle ShieldCooldownTimerHandle;
 };

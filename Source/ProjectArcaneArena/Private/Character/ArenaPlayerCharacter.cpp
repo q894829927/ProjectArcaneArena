@@ -282,7 +282,7 @@ void AArenaPlayerCharacter::Input_Dash()
 
 void AArenaPlayerCharacter::Input_Shield()
 {
-	// TODO: Route to the AbilitySystemComponent input flow in the GAS pass.
+	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_Shield);
 }
 
 void AArenaPlayerCharacter::Input_Ultimate()

@@ -33,7 +33,6 @@ public:
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Health);
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, MaxHealth);
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Shield);
-	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, MaxShield);
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Energy);
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, MaxEnergy);
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, AttackPower);
@@ -53,9 +52,6 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Shield, Category = "Arena|Attributes")
 	FGameplayAttributeData Shield;
-
-	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_MaxShield, Category = "Arena|Attributes")
-	FGameplayAttributeData MaxShield;
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Energy, Category = "Arena|Attributes")
 	FGameplayAttributeData Energy;
@@ -92,9 +88,6 @@ protected:
 
 	UFUNCTION()
 	void OnRep_Shield(const FGameplayAttributeData& OldValue);
-
-	UFUNCTION()
-	void OnRep_MaxShield(const FGameplayAttributeData& OldValue);
 
 	UFUNCTION()
 	void OnRep_Energy(const FGameplayAttributeData& OldValue);

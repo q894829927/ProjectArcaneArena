@@ -192,7 +192,6 @@ Use this architecture unless there is a strong reason to change it.
   * Health
   * MaxHealth
   * Shield
-  * MaxShield
   * Energy
   * MaxEnergy
   * AttackPower
@@ -388,7 +387,7 @@ Each replicated attribute should have:
 Clamp attributes where needed:
 
 * `Health` between `0` and `MaxHealth`
-* `Shield` between `0` and `MaxShield`
+* `Shield` not lower than `0`; current Shield has no hard upper limit and no `MaxShield` attribute.
 * `Energy` between `0` and `MaxEnergy`
 
 Use:

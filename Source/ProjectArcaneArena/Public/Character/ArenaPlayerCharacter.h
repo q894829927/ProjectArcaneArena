@@ -60,9 +60,9 @@ private:
 	void Input_BasicAttack();
 	// Fireball 输入入口，只发送 Ability.Fireball 标签，具体技能逻辑由 GAS 处理。
 	void Input_Fireball();
-	// 预留技能输入入口，后续接入对应 GameplayAbility。
+	// Dash 输入入口，只发送 Ability.Dash 标签，具体技能逻辑由 GAS 处理。
 	void Input_Dash();
-	// 预留技能输入入口，后续接入对应 GameplayAbility。
+	// Shield 输入入口，只发送 Ability.Shield 标签，具体护盾逻辑由 GAS 处理。
 	void Input_Shield();
 	// 预留技能输入入口，后续接入对应 GameplayAbility。
 	void Input_Ultimate();
