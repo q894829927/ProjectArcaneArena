@@ -7,6 +7,7 @@
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "GameplayEffect.h"
 
+// 构造火球投射物，配置复制、碰撞和无重力直线飞行。
 AArenaFireballProjectile::AArenaFireballProjectile()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -38,6 +39,7 @@ AArenaFireballProjectile::AArenaFireballProjectile()
 	InitialLifeSpan = ProjectileLifeSpan;
 }
 
+// 由火球技能在服务端生成后写入伤害来源、伤害 GE 和 SetByCaller 数值。
 void AArenaFireballProjectile::InitializeProjectile(
 	UAbilitySystemComponent* InSourceASC,
 	AActor* InSourceActor,
@@ -54,6 +56,7 @@ void AArenaFireballProjectile::InitializeProjectile(
 	SkillMultiplier = FMath::Max(InSkillMultiplier, 0.0f);
 }
 
+// 开始播放时同步碰撞半径、速度和生命周期。
 void AArenaFireballProjectile::BeginPlay()
 {
 	Super::BeginPlay();
@@ -67,6 +70,7 @@ void AArenaFireballProjectile::BeginPlay()
 	SetLifeSpan(ProjectileLifeSpan);
 }
 
+// 服务端处理 Pawn overlap，命中可伤害目标后应用伤害并销毁投射物。
 void AArenaFireballProjectile::OnProjectileOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,
@@ -90,6 +94,7 @@ void AArenaFireballProjectile::OnProjectileOverlap(
 	FinishProjectile();
 }
 
+// 服务端处理阻挡命中，通常用于撞墙后结束投射物。
 void AArenaFireballProjectile::OnProjectileHit(
 	UPrimitiveComponent* HitComponent,
 	AActor* OtherActor,
@@ -106,6 +111,7 @@ void AArenaFireballProjectile::OnProjectileHit(
 	FinishProjectile();
 }
 
+// 过滤无效目标、自己、来源 ASC 和已死亡目标，避免错误伤害。
 bool AArenaFireballProjectile::CanDamageTarget(AActor* TargetActor, UAbilitySystemComponent* TargetASC) const
 {
 	if (!TargetActor || TargetActor == this || TargetActor == SourceActor.Get() || !TargetASC)
@@ -126,6 +132,7 @@ bool AArenaFireballProjectile::CanDamageTarget(AActor* TargetActor, UAbilitySyst
 	return true;
 }
 
+// 构造并应用服务端权威伤害 Spec，伤害计算交给 GE/ExecCalc。
 void AArenaFireballProjectile::ApplyDamageToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult)
 {
 	UAbilitySystemComponent* SourceASC = SourceAbilitySystemComponent.Get();
@@ -157,6 +164,7 @@ void AArenaFireballProjectile::ApplyDamageToTarget(UAbilitySystemComponent* Targ
 	SourceASC->ApplyGameplayEffectSpecToTarget(*DamageSpec, TargetASC);
 }
 
+// 结束投射物生命周期，防止重复命中后关闭碰撞并销毁。
 void AArenaFireballProjectile::FinishProjectile()
 {
 	if (bHasImpacted)

@@ -15,6 +15,7 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 
+// 构造玩家角色，配置顶视角相机、基础移动参数和默认输入资产。
 AArenaPlayerCharacter::AArenaPlayerCharacter()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -48,12 +49,14 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 	CreateDefaultInputMappings();
 }
 
+// 从 PlayerState 取得玩家 ASC，保持角色重生时 GAS 状态不丢失。
 UAbilitySystemComponent* AArenaPlayerCharacter::GetAbilitySystemComponent() const
 {
 	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
 	return ArenaPlayerState ? ArenaPlayerState->GetAbilitySystemComponent() : nullptr;
 }
 
+// 服务端 Possess 后初始化 GAS Avatar，并授予服务器权威的默认数据。
 void AArenaPlayerCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
@@ -61,6 +64,7 @@ void AArenaPlayerCharacter::PossessedBy(AController* NewController)
 	InitializeAbilityActorInfo();
 }
 
+// 客户端收到 PlayerState 后重新绑定 ASC 到当前角色实例。
 void AArenaPlayerCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
@@ -68,6 +72,7 @@ void AArenaPlayerCharacter::OnRep_PlayerState()
 	InitializeAbilityActorInfo();
 }
 
+// 统一初始化玩家 ASC 的 Owner/Avatar，并在服务端补齐默认属性和技能。
 void AArenaPlayerCharacter::InitializeAbilityActorInfo()
 {
 	AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
@@ -93,6 +98,7 @@ void AArenaPlayerCharacter::InitializeAbilityActorInfo()
 	}
 }
 
+// 应用玩家初始属性 GameplayEffect，避免绕过 GAS 直接改属性。
 void AArenaPlayerCharacter::ApplyDefaultAttributes(AArenaPlayerState* ArenaPlayerState, UArenaAbilitySystemComponent* ArenaASC)
 {
 	if (!ArenaPlayerState || !ArenaASC || ArenaPlayerState->HasAppliedDefaultAttributes() || !DefaultAttributeEffect)
@@ -112,6 +118,7 @@ void AArenaPlayerCharacter::ApplyDefaultAttributes(AArenaPlayerState* ArenaPlaye
 	}
 }
 
+// 授予玩家初始技能，并把输入标签写入 AbilitySpec 供 ASC 路由。
 void AArenaPlayerCharacter::GrantStartupAbilities(AArenaPlayerState* ArenaPlayerState, UArenaAbilitySystemComponent* ArenaASC)
 {
 	if (!ArenaPlayerState || !ArenaASC || ArenaPlayerState->HasGrantedStartupAbilities())
@@ -140,6 +147,7 @@ void AArenaPlayerCharacter::GrantStartupAbilities(AArenaPlayerState* ArenaPlayer
 	ArenaPlayerState->SetGrantedStartupAbilities(true);
 }
 
+// 绑定 Enhanced Input，把按键输入转交给移动或 GAS 输入标签流程。
 void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
@@ -162,6 +170,7 @@ void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	EnhancedInputComponent->BindAction(UltimateAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Ultimate);
 }
 
+// 将默认 MappingContext 添加到本地玩家输入子系统。
 void AArenaPlayerCharacter::AddDefaultMappingContext() const
 {
 	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
@@ -185,6 +194,7 @@ void AArenaPlayerCharacter::AddDefaultMappingContext() const
 	InputSubsystem->AddMappingContext(DefaultMappingContext, InputMappingPriority);
 }
 
+// 创建 C++ 默认输入映射，便于早期原型不依赖外部输入资产。
 void AArenaPlayerCharacter::CreateDefaultInputMappings()
 {
 	DefaultMappingContext = CreateDefaultSubobject<UInputMappingContext>(TEXT("DefaultMappingContext"));
@@ -231,6 +241,7 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	DefaultMappingContext->MapKey(UltimateAction, EKeys::R);
 }
 
+// 将本地技能输入转换为 GameplayTag，让 ASC 决定能否激活技能。
 void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
 	// Character 只负责把本地输入转成标签，是否能激活由 ASC/GAS 判断。
@@ -243,6 +254,7 @@ void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& Inp
 	ArenaASC->AbilityInputTagPressed(InputTag);
 }
 
+// 处理 WASD 移动，并缓存移动方向供 Dash 等技能读取。
 void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 {
 	const FVector2D MovementVector = Value.Get<FVector2D>();
@@ -260,32 +272,38 @@ void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 	AddMovementInput(FVector::RightVector, MovementVector.X);
 }
 
+// 移动输入结束时清空缓存方向，避免后续技能使用过期方向。
 void AArenaPlayerCharacter::Input_MoveStopped(const FInputActionValue& Value)
 {
 	LastMovementInputDirection = FVector::ZeroVector;
 }
 
+// 基础攻击输入入口，仅发送 Ability.BasicAttack 标签。
 void AArenaPlayerCharacter::Input_BasicAttack()
 {
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_BasicAttack);
 }
 
+// 火球技能输入入口，仅发送 Ability.Fireball 标签。
 void AArenaPlayerCharacter::Input_Fireball()
 {
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_Fireball);
 }
 
+// 冲刺技能输入入口，仅发送 Ability.Dash 标签。
 void AArenaPlayerCharacter::Input_Dash()
 {
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_Dash);
 }
 
+// 护盾技能输入入口，仅发送 Ability.Shield 标签。
 void AArenaPlayerCharacter::Input_Shield()
 {
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_Shield);
 }
 
+// 终极技能预留入口，后续接入 LightningStorm 或其他 GameplayAbility。
 void AArenaPlayerCharacter::Input_Ultimate()
 {
-	// TODO: Route to the AbilitySystemComponent input flow in the GAS pass.
+	// TODO: 在 GAS 技能补齐后路由到对应输入标签。
 }

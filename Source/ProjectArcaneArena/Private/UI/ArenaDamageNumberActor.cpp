@@ -3,6 +3,7 @@
 #include "Components/WidgetComponent.h"
 #include "UI/ArenaDamageNumberWidget.h"
 
+// 构造伤害数字表现 Actor，创建屏幕空间 Widget 并关闭复制。
 AArenaDamageNumberActor::AArenaDamageNumberActor()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -20,6 +21,7 @@ AArenaDamageNumberActor::AArenaDamageNumberActor()
 	InitialLifeSpan = LifeSpan;
 }
 
+// 开始播放时设置生命周期，并把当前伤害数值写入 Widget。
 void AArenaDamageNumberActor::BeginPlay()
 {
 	Super::BeginPlay();
@@ -28,6 +30,7 @@ void AArenaDamageNumberActor::BeginPlay()
 	SetDamageAmount(DamageAmount);
 }
 
+// 每帧驱动伤害数字上浮表现，后续可替换为动画。
 void AArenaDamageNumberActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -36,6 +39,7 @@ void AArenaDamageNumberActor::Tick(float DeltaSeconds)
 	AddActorWorldOffset(FVector::UpVector * FloatSpeed * DeltaSeconds, false);
 }
 
+// 设置伤害数字数值，并同步到内部 Widget。
 void AArenaDamageNumberActor::SetDamageAmount(float InDamageAmount)
 {
 	DamageAmount = FMath::Max(InDamageAmount, 0.0f);

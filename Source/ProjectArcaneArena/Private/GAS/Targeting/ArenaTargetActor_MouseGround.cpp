@@ -4,6 +4,7 @@
 #include "Engine/EngineTypes.h"
 #include "GameFramework/PlayerController.h"
 
+// 构造鼠标地面目标 Actor，配置客户端产出 TargetData 的即时目标选择。
 AArenaTargetActor_MouseGround::AArenaTargetActor_MouseGround()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -13,6 +14,7 @@ AArenaTargetActor_MouseGround::AArenaTargetActor_MouseGround()
 	bDestroyOnConfirmation = true;
 }
 
+// 开始目标选择时缓存 Avatar，供鼠标未命中时计算后备目标点。
 void AArenaTargetActor_MouseGround::StartTargeting(UGameplayAbility* Ability)
 {
 	Super::StartTargeting(Ability);
@@ -20,6 +22,7 @@ void AArenaTargetActor_MouseGround::StartTargeting(UGameplayAbility* Ability)
 	SourceActor = Ability ? Ability->GetAvatarActorFromActorInfo() : nullptr;
 }
 
+// 确认目标选择，将鼠标地面位置打包成 TargetData 广播给 Ability。
 void AArenaTargetActor_MouseGround::ConfirmTargetingAndContinue()
 {
 	FVector TargetLocation = FVector::ZeroVector;
@@ -32,6 +35,7 @@ void AArenaTargetActor_MouseGround::ConfirmTargetingAndContinue()
 	TargetDataReadyDelegate.Broadcast(MakeLocationTargetData(TargetLocation));
 }
 
+// 获取鼠标下方地面命中点，失败时回退到角色前方位置。
 bool AArenaTargetActor_MouseGround::GetMouseGroundLocation(FVector& OutTargetLocation) const
 {
 	const UGameplayAbility* Ability = OwningAbility;
@@ -60,6 +64,7 @@ bool AArenaTargetActor_MouseGround::GetMouseGroundLocation(FVector& OutTargetLoc
 	return true;
 }
 
+// 将目标世界坐标封装为 GAS Location TargetData。
 FGameplayAbilityTargetDataHandle AArenaTargetActor_MouseGround::MakeLocationTargetData(const FVector& TargetLocation) const
 {
 	FGameplayAbilityTargetingLocationInfo SourceLocation;

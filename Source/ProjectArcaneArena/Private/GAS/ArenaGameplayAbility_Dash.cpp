@@ -10,6 +10,7 @@
 #include "GameFramework/RootMotionSource.h"
 #include "TimerManager.h"
 
+// 构造冲刺技能，配置服务端执行、输入标签和状态/冷却阻断条件。
 UArenaGameplayAbility_Dash::UArenaGameplayAbility_Dash()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
@@ -22,6 +23,7 @@ UArenaGameplayAbility_Dash::UArenaGameplayAbility_Dash()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Dash);
 }
 
+// 激活冲刺：提交冷却后添加冲刺/无敌标签，并用 RootMotion 推动角色。
 void UArenaGameplayAbility_Dash::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -95,6 +97,7 @@ void UArenaGameplayAbility_Dash::ActivateAbility(
 		false);
 }
 
+// 结束冲刺技能时清理定时器、停止移动并移除冲刺状态标签。
 void UArenaGameplayAbility_Dash::EndAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -117,6 +120,7 @@ void UArenaGameplayAbility_Dash::EndAbility(
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
+// 解析冲刺方向，优先使用移动输入，缺省时回退到角色朝向。
 FVector UArenaGameplayAbility_Dash::ResolveDashDirection(AActor* AvatarActor) const
 {
 	if (!AvatarActor)
@@ -150,6 +154,7 @@ FVector UArenaGameplayAbility_Dash::ResolveDashDirection(AActor* AvatarActor) co
 	return DashDirection.GetSafeNormal();
 }
 
+// 播放冲刺表现 Montage，权威位移仍由 RootMotion 任务控制。
 void UArenaGameplayAbility_Dash::PlayDashMontage()
 {
 	if (!DashMontage)
@@ -157,7 +162,7 @@ void UArenaGameplayAbility_Dash::PlayDashMontage()
 		return;
 	}
 
-	// Dash montage is visual only; the movement task controls authoritative dash movement.
+	// Dash Montage 只负责表现，权威位移由移动任务控制。
 	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,
 		FName(TEXT("DashMontage")),
@@ -172,6 +177,7 @@ void UArenaGameplayAbility_Dash::PlayDashMontage()
 	}
 }
 
+// 添加 State.Dashing 和 State.Invincible 标签，限定冲刺窗口内的状态。
 void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC)
 {
 	if (!ASC || bAppliedDashStateTags)
@@ -179,7 +185,7 @@ void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC
 		return;
 	}
 
-	// Ability-owned state tags keep dash immunity scoped to the active dash window.
+	// Ability 拥有的状态标签让无敌时间严格绑定在当前冲刺窗口。
 	ASC->AddLooseGameplayTag(ArenaGameplayTags::State_Dashing);
 	ASC->AddLooseGameplayTag(ArenaGameplayTags::State_Invincible);
 	ASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dashing);
@@ -187,6 +193,7 @@ void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC
 	bAppliedDashStateTags = true;
 }
 
+// 移除冲刺期间添加的 loose/replicated loose tags，并清理缓存引用。
 void UArenaGameplayAbility_Dash::RemoveDashStateTags()
 {
 	UAbilitySystemComponent* ASC = ActiveDashASC.Get();
@@ -205,6 +212,7 @@ void UArenaGameplayAbility_Dash::RemoveDashStateTags()
 	ActiveDashCharacter.Reset();
 }
 
+// 定时器回调：结束 RootMotion 位移并正常结束 Ability。
 void UArenaGameplayAbility_Dash::FinishDash()
 {
 	if (ActiveDashCharacter.IsValid())
@@ -215,6 +223,7 @@ void UArenaGameplayAbility_Dash::FinishDash()
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
 }
 
+// 停止角色当前移动，避免冲刺结束后残留速度。
 void UArenaGameplayAbility_Dash::StopDashMovement(ACharacter* Character) const
 {
 	if (!Character)

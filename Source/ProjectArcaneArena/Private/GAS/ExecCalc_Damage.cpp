@@ -12,6 +12,7 @@ struct FArenaDamageStatics
 	FGameplayEffectAttributeCaptureDefinition CritDamageDef;
 	FGameplayEffectAttributeCaptureDefinition DefenseDef;
 
+	// 构造伤害捕获定义，声明 Source 攻击属性和 Target 防御属性。
 	FArenaDamageStatics()
 	{
 		// Source 捕获攻击/暴击属性，Target 捕获防御属性，保持伤害计算服务端权威。
@@ -34,12 +35,14 @@ struct FArenaDamageStatics
 	}
 };
 
+// 获取伤害计算捕获定义的单例，避免每次执行重复构建。
 static const FArenaDamageStatics& DamageStatics()
 {
 	static FArenaDamageStatics Statics;
 	return Statics;
 }
 
+// 构造伤害执行计算，注册 Source/Target 需要捕获的属性。
 UExecCalc_Damage::UExecCalc_Damage()
 {
 	// 注册捕获属性后，GE 执行时才能从 Source/Target ASC 读取聚合后的属性值。
@@ -49,6 +52,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(DamageStatics().DefenseDef);
 }
 
+// 服务端执行最终伤害计算，并把结果输出到 Damage 元属性。
 void UExecCalc_Damage::Execute_Implementation(
 	const FGameplayEffectCustomExecutionParameters& ExecutionParams,
 	FGameplayEffectCustomExecutionOutput& OutExecutionOutput) const

@@ -6,6 +6,7 @@
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
 
+// 构造基础攻击技能，配置服务端执行、输入标签和激活阻断标签。
 UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
@@ -19,6 +20,7 @@ UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_BasicAttack);
 }
 
+// 激活基础攻击：提交冷却后扫前方目标，并通过 GE/ExecCalc 应用物理伤害。
 void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -129,6 +131,7 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
+// 绘制基础攻击调试范围，帮助确认扫描方向和是否命中目标。
 void UArenaGameplayAbility_BasicAttack::DrawAttackRangeDebug(UWorld* World, const FVector& Start, const FVector& End, bool bHitTarget) const
 {
 	if (!bDrawDebugAttackRange || !World)

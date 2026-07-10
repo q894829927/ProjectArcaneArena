@@ -9,6 +9,7 @@
 
 namespace
 {
+	// 计算当前值相对最大值的 UI 百分比，最大值无效时显示为空。
 	float CalculatePercent(float CurrentValue, float MaxValue)
 	{
 		return MaxValue > 0.0f
@@ -16,6 +17,7 @@ namespace
 			: 0.0f;
 	}
 
+	// 生成生命/能量这类 Current/Max 属性的显示文本。
 	FText MakeAttributeValueText(const FText& Label, float CurrentValue, float MaxValue)
 	{
 		return FText::Format(
@@ -25,6 +27,7 @@ namespace
 			FText::AsNumber(FMath::RoundToInt(MaxValue)));
 	}
 
+	// 生成护盾显示文本，护盾当前没有 MaxShield。
 	FText MakeShieldValueText(float CurrentValue)
 	{
 		return FText::Format(
@@ -32,6 +35,7 @@ namespace
 			FText::AsNumber(FMath::RoundToInt(CurrentValue)));
 	}
 
+	// 将冷却剩余时间格式化为一位小数秒数。
 	FText MakeCooldownSecondsText(float RemainingTime)
 	{
 		FNumberFormattingOptions NumberFormat;
@@ -41,6 +45,7 @@ namespace
 		return FText::AsNumber(FMath::Max(RemainingTime, 0.0f), &NumberFormat);
 	}
 
+	// 生成基础攻击完整冷却文本，用于主冷却提示。
 	FText MakeBasicAttackFullText(bool bIsCooldownActive, float RemainingTime)
 	{
 		return bIsCooldownActive
@@ -50,6 +55,7 @@ namespace
 			: NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackReady", "LMB Basic Ready");
 	}
 
+	// 生成基础攻击技能槽文本，用于槽位上的简短状态。
 	FText MakeBasicAttackSlotText(bool bIsCooldownActive, float RemainingTime)
 	{
 		return bIsCooldownActive
@@ -59,6 +65,7 @@ namespace
 			: NSLOCTEXT("ArenaPlayerHUDWidget", "BasicAttackSlotReady", "Basic Ready");
 	}
 
+	// 生成火球技能槽文本，兼顾未解锁和冷却状态。
 	FText MakeFireballSlotText(bool bHasFireballAbility, bool bIsCooldownActive, float RemainingTime)
 	{
 		if (!bHasFireballAbility)
@@ -73,6 +80,7 @@ namespace
 			: NSLOCTEXT("ArenaPlayerHUDWidget", "FireballSlotReady", "Fireball Ready");
 	}
 
+	// 生成冲刺技能槽文本，兼顾未解锁和冷却状态。
 	FText MakeDashSlotText(bool bHasDashAbility, bool bIsCooldownActive, float RemainingTime)
 	{
 		if (!bHasDashAbility)
@@ -87,6 +95,7 @@ namespace
 			: NSLOCTEXT("ArenaPlayerHUDWidget", "DashSlotReady", "Dash Ready");
 	}
 
+	// 生成护盾技能槽文本，兼顾未解锁和冷却状态。
 	FText MakeShieldSlotText(bool bHasShieldAbility, bool bIsCooldownActive, float RemainingTime)
 	{
 		if (!bHasShieldAbility)
@@ -102,6 +111,7 @@ namespace
 	}
 }
 
+// 绑定玩家 HUD 到 ASC/AttributeSet，并注册属性和冷却标签监听。
 void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* InAbilitySystemComponent, UArenaAttributeSet* InAttributeSet)
 {
 	UnbindFromAbilitySystem();
@@ -147,6 +157,7 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	RefreshAttributeValues();
 }
 
+// 设置生命条和生命文本显示，UI 不直接修改 Health 属性。
 void UArenaPlayerHUDWidget::SetHealthValues(float InHealth, float InMaxHealth)
 {
 	CurrentHealth = FMath::Max(InHealth, 0.0f);
@@ -164,6 +175,7 @@ void UArenaPlayerHUDWidget::SetHealthValues(float InHealth, float InMaxHealth)
 	}
 }
 
+// 设置护盾显示值，进度条暂时只表达是否存在护盾。
 void UArenaPlayerHUDWidget::SetShieldValues(float InShield)
 {
 	CurrentShield = FMath::Max(InShield, 0.0f);
@@ -181,6 +193,7 @@ void UArenaPlayerHUDWidget::SetShieldValues(float InShield)
 	}
 }
 
+// 设置能量条和能量文本显示，UI 只观察 GAS 属性。
 void UArenaPlayerHUDWidget::SetEnergyValues(float InEnergy, float InMaxEnergy)
 {
 	CurrentEnergy = FMath::Max(InEnergy, 0.0f);
@@ -198,11 +211,13 @@ void UArenaPlayerHUDWidget::SetEnergyValues(float InEnergy, float InMaxEnergy)
 	}
 }
 
+// 快速设置基础攻击冷却激活状态，供蓝图或简单状态刷新调用。
 void UArenaPlayerHUDWidget::SetBasicAttackCooldownActive(bool bInCooldownActive)
 {
 	SetBasicAttackCooldownValues(bInCooldownActive, 0.0f, 0.0f);
 }
 
+// 设置基础攻击冷却显示，包括文本和进度条。
 void UArenaPlayerHUDWidget::SetBasicAttackCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration)
 {
 	bBasicAttackCooldownActive = bInCooldownActive;
@@ -228,6 +243,7 @@ void UArenaPlayerHUDWidget::SetBasicAttackCooldownValues(bool bInCooldownActive,
 	}
 }
 
+// 设置火球冷却显示，并在未授予技能时显示锁定状态。
 void UArenaPlayerHUDWidget::SetFireballCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration)
 {
 	const bool bHasFireballAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Fireball);
@@ -249,6 +265,7 @@ void UArenaPlayerHUDWidget::SetFireballCooldownValues(bool bInCooldownActive, fl
 	}
 }
 
+// 设置冲刺冷却显示，并在未授予技能时显示锁定状态。
 void UArenaPlayerHUDWidget::SetDashCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration)
 {
 	const bool bHasDashAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Dash);
@@ -270,6 +287,7 @@ void UArenaPlayerHUDWidget::SetDashCooldownValues(bool bInCooldownActive, float 
 	}
 }
 
+// 设置护盾冷却显示，并在未授予技能时显示锁定状态。
 void UArenaPlayerHUDWidget::SetShieldCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration)
 {
 	const bool bHasShieldAbility = HasGrantedAbilityForInputTag(ArenaGameplayTags::Ability_Shield);
@@ -291,6 +309,7 @@ void UArenaPlayerHUDWidget::SetShieldCooldownValues(bool bInCooldownActive, floa
 	}
 }
 
+// Widget 销毁时解绑 GAS 委托，避免 ASC 回调悬挂对象。
 void UArenaPlayerHUDWidget::NativeDestruct()
 {
 	UnbindFromAbilitySystem();
@@ -298,6 +317,7 @@ void UArenaPlayerHUDWidget::NativeDestruct()
 	Super::NativeDestruct();
 }
 
+// 解绑所有属性/标签委托并停止冷却刷新定时器。
 void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 {
 	StopBasicAttackCooldownTimer();
@@ -379,6 +399,7 @@ void UArenaPlayerHUDWidget::UnbindFromAbilitySystem()
 	BoundAttributeSet.Reset();
 }
 
+// 从当前绑定的 AttributeSet 拉取一次属性快照刷新 HUD。
 void UArenaPlayerHUDWidget::RefreshAttributeValues()
 {
 	if (const UArenaAttributeSet* AttributeSet = BoundAttributeSet.Get())
@@ -389,6 +410,7 @@ void UArenaPlayerHUDWidget::RefreshAttributeValues()
 	}
 }
 
+// 刷新技能槽基础文本，显示已授予技能或锁定状态。
 void UArenaPlayerHUDWidget::RefreshSkillSlotPlaceholders()
 {
 	if (FireballSlotText)
@@ -415,6 +437,7 @@ void UArenaPlayerHUDWidget::RefreshSkillSlotPlaceholders()
 	}
 }
 
+// 从 ASC 查询基础攻击冷却剩余时间，并维护对应刷新定时器。
 void UArenaPlayerHUDWidget::RefreshBasicAttackCooldownFromAbilitySystem()
 {
 	float RemainingTime = 0.0f;
@@ -442,6 +465,7 @@ void UArenaPlayerHUDWidget::RefreshBasicAttackCooldownFromAbilitySystem()
 	}
 }
 
+// 从 ASC 查询火球冷却剩余时间，并维护对应刷新定时器。
 void UArenaPlayerHUDWidget::RefreshFireballCooldownFromAbilitySystem()
 {
 	float RemainingTime = 0.0f;
@@ -469,6 +493,7 @@ void UArenaPlayerHUDWidget::RefreshFireballCooldownFromAbilitySystem()
 	}
 }
 
+// 从 ASC 查询冲刺冷却剩余时间，并维护对应刷新定时器。
 void UArenaPlayerHUDWidget::RefreshDashCooldownFromAbilitySystem()
 {
 	float RemainingTime = 0.0f;
@@ -496,6 +521,7 @@ void UArenaPlayerHUDWidget::RefreshDashCooldownFromAbilitySystem()
 	}
 }
 
+// 从 ASC 查询护盾冷却剩余时间，并维护对应刷新定时器。
 void UArenaPlayerHUDWidget::RefreshShieldCooldownFromAbilitySystem()
 {
 	float RemainingTime = 0.0f;
@@ -523,6 +549,7 @@ void UArenaPlayerHUDWidget::RefreshShieldCooldownFromAbilitySystem()
 	}
 }
 
+// 启动基础攻击冷却 UI 刷新定时器。
 void UArenaPlayerHUDWidget::StartBasicAttackCooldownTimer()
 {
 	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(BasicAttackCooldownTimerHandle))
@@ -539,6 +566,7 @@ void UArenaPlayerHUDWidget::StartBasicAttackCooldownTimer()
 		true);
 }
 
+// 启动火球冷却 UI 刷新定时器。
 void UArenaPlayerHUDWidget::StartFireballCooldownTimer()
 {
 	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(FireballCooldownTimerHandle))
@@ -555,6 +583,7 @@ void UArenaPlayerHUDWidget::StartFireballCooldownTimer()
 		true);
 }
 
+// 启动冲刺冷却 UI 刷新定时器。
 void UArenaPlayerHUDWidget::StartDashCooldownTimer()
 {
 	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(DashCooldownTimerHandle))
@@ -570,6 +599,7 @@ void UArenaPlayerHUDWidget::StartDashCooldownTimer()
 		true);
 }
 
+// 启动护盾冷却 UI 刷新定时器。
 void UArenaPlayerHUDWidget::StartShieldCooldownTimer()
 {
 	if (!GetWorld() || GetWorld()->GetTimerManager().IsTimerActive(ShieldCooldownTimerHandle))
@@ -586,6 +616,7 @@ void UArenaPlayerHUDWidget::StartShieldCooldownTimer()
 		true);
 }
 
+// 停止基础攻击冷却 UI 刷新定时器。
 void UArenaPlayerHUDWidget::StopBasicAttackCooldownTimer()
 {
 	if (GetWorld())
@@ -594,6 +625,7 @@ void UArenaPlayerHUDWidget::StopBasicAttackCooldownTimer()
 	}
 }
 
+// 停止火球冷却 UI 刷新定时器。
 void UArenaPlayerHUDWidget::StopFireballCooldownTimer()
 {
 	if (GetWorld())
@@ -602,6 +634,7 @@ void UArenaPlayerHUDWidget::StopFireballCooldownTimer()
 	}
 }
 
+// 停止冲刺冷却 UI 刷新定时器。
 void UArenaPlayerHUDWidget::StopDashCooldownTimer()
 {
 	if (GetWorld())
@@ -610,6 +643,7 @@ void UArenaPlayerHUDWidget::StopDashCooldownTimer()
 	}
 }
 
+// 停止护盾冷却 UI 刷新定时器。
 void UArenaPlayerHUDWidget::StopShieldCooldownTimer()
 {
 	if (GetWorld())
@@ -618,11 +652,13 @@ void UArenaPlayerHUDWidget::StopShieldCooldownTimer()
 	}
 }
 
+// 查询基础攻击冷却剩余时间和总时长。
 bool UArenaPlayerHUDWidget::GetBasicAttackCooldownTime(float& OutRemainingTime, float& OutDuration) const
 {
 	return GetCooldownTimeForTag(ArenaGameplayTags::Cooldown_BasicAttack, OutRemainingTime, OutDuration);
 }
 
+// 根据冷却标签查询当前 ASC 上最长的冷却剩余时间。
 bool UArenaPlayerHUDWidget::GetCooldownTimeForTag(const FGameplayTag& CooldownTag, float& OutRemainingTime, float& OutDuration) const
 {
 	OutRemainingTime = 0.0f;
@@ -656,6 +692,7 @@ bool UArenaPlayerHUDWidget::GetCooldownTimeForTag(const FGameplayTag& CooldownTa
 	return true;
 }
 
+// 检查玩家是否已获得带有指定输入标签的 Ability。
 bool UArenaPlayerHUDWidget::HasGrantedAbilityForInputTag(const FGameplayTag& InputTag) const
 {
 	const UArenaAbilitySystemComponent* AbilitySystemComponent = BoundAbilitySystemComponent.Get();
@@ -675,31 +712,37 @@ bool UArenaPlayerHUDWidget::HasGrantedAbilityForInputTag(const FGameplayTag& Inp
 	return false;
 }
 
+// Health 属性变化回调，刷新生命显示。
 void UArenaPlayerHUDWidget::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
 	SetHealthValues(Data.NewValue, CurrentMaxHealth);
 }
 
+// MaxHealth 属性变化回调，刷新生命最大值显示。
 void UArenaPlayerHUDWidget::HandleMaxHealthChanged(const FOnAttributeChangeData& Data)
 {
 	SetHealthValues(CurrentHealth, Data.NewValue);
 }
 
+// Shield 属性变化回调，刷新护盾显示。
 void UArenaPlayerHUDWidget::HandleShieldChanged(const FOnAttributeChangeData& Data)
 {
 	SetShieldValues(Data.NewValue);
 }
 
+// Energy 属性变化回调，刷新能量显示。
 void UArenaPlayerHUDWidget::HandleEnergyChanged(const FOnAttributeChangeData& Data)
 {
 	SetEnergyValues(Data.NewValue, CurrentMaxEnergy);
 }
 
+// MaxEnergy 属性变化回调，刷新能量最大值显示。
 void UArenaPlayerHUDWidget::HandleMaxEnergyChanged(const FOnAttributeChangeData& Data)
 {
 	SetEnergyValues(CurrentEnergy, Data.NewValue);
 }
 
+// 基础攻击冷却标签变化回调，启动或停止对应冷却显示。
 void UArenaPlayerHUDWidget::HandleBasicAttackCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag == ArenaGameplayTags::Cooldown_BasicAttack && NewCount <= 0)
@@ -712,6 +755,7 @@ void UArenaPlayerHUDWidget::HandleBasicAttackCooldownChanged(const FGameplayTag 
 	RefreshBasicAttackCooldownFromAbilitySystem();
 }
 
+// 火球冷却标签变化回调，启动或停止对应冷却显示。
 void UArenaPlayerHUDWidget::HandleFireballCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag == ArenaGameplayTags::Cooldown_Fireball && NewCount <= 0)
@@ -724,6 +768,7 @@ void UArenaPlayerHUDWidget::HandleFireballCooldownChanged(const FGameplayTag Cal
 	RefreshFireballCooldownFromAbilitySystem();
 }
 
+// 冲刺冷却标签变化回调，启动或停止对应冷却显示。
 void UArenaPlayerHUDWidget::HandleDashCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag == ArenaGameplayTags::Cooldown_Dash && NewCount <= 0)
@@ -736,6 +781,7 @@ void UArenaPlayerHUDWidget::HandleDashCooldownChanged(const FGameplayTag Callbac
 	RefreshDashCooldownFromAbilitySystem();
 }
 
+// 护盾冷却标签变化回调，启动或停止对应冷却显示。
 void UArenaPlayerHUDWidget::HandleShieldCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag == ArenaGameplayTags::Cooldown_Shield && NewCount <= 0)
