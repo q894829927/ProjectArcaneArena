@@ -49,6 +49,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Replicated, Category = "Arena|LightningStorm", meta = (ClampMin = "0.01"))
 	float DamageTickInterval = 0.5f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|LightningStorm|Debug")
+	bool bDrawDebugRadius = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|LightningStorm|Debug")
+	FColor DebugRadiusColor = FColor::Cyan;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|LightningStorm|Debug", meta = (ClampMin = "0.0"))
+	float DebugRadiusThickness = 4.0f;
+
 private:
 	UFUNCTION()
 	void OnRep_StormRadius();
@@ -58,6 +67,7 @@ private:
 	bool CanDamageTarget(AActor* TargetActor, UAbilitySystemComponent* TargetASC) const;
 	void ApplyDamageToTarget(UAbilitySystemComponent* TargetASC);
 	void RefreshAreaRadius() const;
+	void DrawDebugDamageRadius() const;
 
 	FTimerHandle DamageTickTimerHandle;
 

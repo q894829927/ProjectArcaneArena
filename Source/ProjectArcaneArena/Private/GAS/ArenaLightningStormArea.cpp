@@ -3,6 +3,7 @@
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Components/SphereComponent.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GAS/ArenaGameplayTags.h"
@@ -51,6 +52,7 @@ void AArenaLightningStormArea::BeginPlay()
 	Super::BeginPlay();
 
 	RefreshAreaRadius();
+	DrawDebugDamageRadius();
 
 	if (!HasAuthority())
 	{
@@ -159,6 +161,13 @@ bool AArenaLightningStormArea::CanDamageTarget(AActor* TargetActor, UAbilitySyst
 		return false;
 	}
 
+	// Overlap 查询用于快速收集候选目标；再按角色中心做二维圆形校验，避免 Capsule 边缘在圈外仍被命中。
+	const FVector TargetOffset = TargetActor->GetActorLocation() - GetActorLocation();
+	if (TargetOffset.SizeSquared2D() > FMath::Square(StormRadius))
+	{
+		return false;
+	}
+
 	if (SourceAbilitySystemComponent.IsValid() && TargetASC == SourceAbilitySystemComponent.Get())
 	{
 		return false;
@@ -208,4 +217,31 @@ void AArenaLightningStormArea::RefreshAreaRadius() const
 	{
 		AreaComponent->SetSphereRadius(StormRadius, true);
 	}
+}
+
+// 在开发构建中绘制与服务器二维伤害判定一致的地面圆环。
+void AArenaLightningStormArea::DrawDebugDamageRadius() const
+{
+#if ENABLE_DRAW_DEBUG
+	UWorld* World = GetWorld();
+	if (!bDrawDebugRadius || !World || GetNetMode() == NM_DedicatedServer || StormRadius <= 0.0f)
+	{
+		return;
+	}
+
+	const FVector CircleCenter = GetActorLocation() + FVector(0.0f, 0.0f, 10.0f);
+	DrawDebugCircle(
+		World,
+		CircleCenter,
+		StormRadius,
+		64,
+		DebugRadiusColor,
+		false,
+		StormDuration,
+		0,
+		DebugRadiusThickness,
+		FVector::ForwardVector,
+		FVector::RightVector,
+		false);
+#endif
 }

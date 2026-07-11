@@ -302,7 +302,7 @@ void AArenaPlayerCharacter::Input_Shield()
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_Shield);
 }
 
-// 终极技能预留入口，后续接入 LightningStorm 或其他 GameplayAbility。
+// 闪电风暴输入入口，仅发送 Ability.LightningStorm 标签。
 void AArenaPlayerCharacter::Input_Ultimate()
 {
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_LightningStorm);

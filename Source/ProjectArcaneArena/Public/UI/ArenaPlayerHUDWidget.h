@@ -53,6 +53,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetShieldCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
 
+	// 刷新 LightningStorm 冷却状态，未授予技能时显示锁定。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetLightningStormCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
+
 protected:
 	// Widget 销毁时解绑 GAS 委托，避免回调悬挂到已销毁 UI。
 	virtual void NativeDestruct() override;
@@ -177,6 +181,18 @@ protected:
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float ShieldCooldownPercent = 0.0f;
 
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	bool bLightningStormCooldownActive = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float LightningStormCooldownRemaining = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float LightningStormCooldownDuration = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	float LightningStormCooldownPercent = 0.0f;
+
 private:
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
@@ -198,6 +214,9 @@ private:
 	// 从 ASC 查询 Shield 冷却 ActiveGE 的剩余时间，并刷新 HUD。
 	void RefreshShieldCooldownFromAbilitySystem();
 
+	// 从 ASC 查询 LightningStorm 冷却 ActiveGE 的剩余时间，并刷新 R 槽。
+	void RefreshLightningStormCooldownFromAbilitySystem();
+
 	// 冷却期间用定时器刷新秒数，避免把整个 HUD 放进 Tick。
 	void StartBasicAttackCooldownTimer();
 
@@ -209,6 +228,9 @@ private:
 	// Shield 冷却期间单独刷新秒数，避免依赖 Widget Tick。
 	void StartShieldCooldownTimer();
 
+	// LightningStorm 冷却期间单独刷新秒数。
+	void StartLightningStormCooldownTimer();
+
 	// 冷却结束或 Widget 销毁时停止刷新定时器。
 	void StopBasicAttackCooldownTimer();
 
@@ -219,6 +241,9 @@ private:
 
 	// 冷却结束或 Widget 销毁时停止刷新定时器。
 	void StopShieldCooldownTimer();
+
+	// 冷却结束或 Widget 销毁时停止 LightningStorm 刷新定时器。
+	void StopLightningStormCooldownTimer();
 
 	// 查询拥有 Cooldown.BasicAttack 标签的 ActiveGE，返回最长剩余时间。
 	bool GetBasicAttackCooldownTime(float& OutRemainingTime, float& OutDuration) const;
@@ -238,6 +263,7 @@ private:
 	void HandleFireballCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleDashCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleShieldCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	void HandleLightningStormCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
 	TWeakObjectPtr<UArenaAttributeSet> BoundAttributeSet;
@@ -251,9 +277,11 @@ private:
 	FDelegateHandle FireballCooldownTagDelegateHandle;
 	FDelegateHandle DashCooldownTagDelegateHandle;
 	FDelegateHandle ShieldCooldownTagDelegateHandle;
+	FDelegateHandle LightningStormCooldownTagDelegateHandle;
 
 	FTimerHandle BasicAttackCooldownTimerHandle;
 	FTimerHandle FireballCooldownTimerHandle;
 	FTimerHandle DashCooldownTimerHandle;
 	FTimerHandle ShieldCooldownTimerHandle;
+	FTimerHandle LightningStormCooldownTimerHandle;
 };
