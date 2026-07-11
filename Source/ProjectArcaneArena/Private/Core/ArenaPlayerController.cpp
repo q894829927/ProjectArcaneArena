@@ -17,12 +17,8 @@ void AArenaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	FInputModeGameOnly InputMode;
-	// 鼠标第一次点击可能同时用于捕获视口，不能吞掉这次战斗输入。
-	InputMode.SetConsumeCaptureMouseDown(false);
-	SetInputMode(InputMode);
-
 	CreatePlayerHUD();
+	SetThirdPersonInputMode(false);
 	TryBindPlayerHUD();
 }
 
@@ -46,6 +42,40 @@ void AArenaPlayerController::CreatePlayerHUD()
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->AddToViewport();
+		PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
+	}
+}
+
+// 在顶视角显示鼠标，在第三人称隐藏鼠标并显示屏幕中心准星。
+void AArenaPlayerController::SetThirdPersonInputMode(bool bEnableThirdPerson)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	bThirdPersonInputMode = bEnableThirdPerson;
+	bShowMouseCursor = !bThirdPersonInputMode;
+
+	FInputModeGameOnly InputMode;
+	// 顶视角保留第一次鼠标点击，第三人称由 GameOnly 模式持续捕获鼠标增量。
+	InputMode.SetConsumeCaptureMouseDown(false);
+	SetInputMode(InputMode);
+
+	if (!bThirdPersonInputMode)
+	{
+		int32 ViewportSizeX = 0;
+		int32 ViewportSizeY = 0;
+		GetViewportSize(ViewportSizeX, ViewportSizeY);
+		if (ViewportSizeX > 0 && ViewportSizeY > 0)
+		{
+			SetMouseLocation(ViewportSizeX / 2, ViewportSizeY / 2);
+		}
+	}
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
 	}
 }
 

@@ -152,7 +152,7 @@ void AArenaLightningStormArea::ApplyDamageTick()
 	{
 		GetWorldTimerManager().ClearTimer(DamageTickTimerHandle);
 	}
-}
+  }
 
 bool AArenaLightningStormArea::CanDamageTarget(AActor* TargetActor, UAbilitySystemComponent* TargetASC) const
 {

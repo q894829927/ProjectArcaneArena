@@ -1,6 +1,7 @@
 #include "Character/ArenaPlayerCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Core/ArenaPlayerController.h"
 #include "Core/ArenaPlayerState.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
@@ -18,7 +19,8 @@
 // 构造玩家角色，配置顶视角相机、基础移动参数和默认输入资产。
 AArenaPlayerCharacter::AArenaPlayerCharacter()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 
 	// 角色当前仍按移动方向旋转；后续鼠标朝向应独立驱动角色朝向。
 	bUseControllerRotationPitch = false;
@@ -33,9 +35,9 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 	// 顶视角相机使用绝对旋转，避免角色朝向影响镜头。
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
-	CameraBoom->TargetArmLength = 900.0f;
+	CameraBoom->TargetArmLength = TopDownArmLength;
 	CameraBoom->SetUsingAbsoluteRotation(true);
-	CameraBoom->SetRelativeRotation(FRotator(-60.0f, 0.0f, 0.0f));
+	CameraBoom->SetRelativeRotation(TopDownCameraRotation);
 	CameraBoom->bUsePawnControlRotation = false;
 	CameraBoom->bInheritPitch = false;
 	CameraBoom->bInheritYaw = false;
@@ -47,6 +49,23 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 	TopDownCamera->bUsePawnControlRotation = false;
 
 	CreateDefaultInputMappings();
+}
+
+// 在切换过程中平滑推进视角混合值，到达目标后停止不必要的 Tick。
+void AArenaPlayerCharacter::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	const float TargetAlpha = bThirdPersonView ? 1.0f : 0.0f;
+	const float BlendSpeed = CameraTransitionDuration > KINDA_SMALL_NUMBER ? 1.0f / CameraTransitionDuration : BIG_NUMBER;
+	CameraBlendAlpha = FMath::FInterpConstantTo(CameraBlendAlpha, TargetAlpha, DeltaSeconds, BlendSpeed);
+	UpdateCameraTransform();
+
+	if (FMath::IsNearlyEqual(CameraBlendAlpha, TargetAlpha, KINDA_SMALL_NUMBER))
+	{
+		CameraBlendAlpha = TargetAlpha;
+		SetActorTickEnabled(false);
+	}
 }
 
 // 从 PlayerState 取得玩家 ASC，保持角色重生时 GAS 状态不丢失。
@@ -168,6 +187,8 @@ void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	EnhancedInputComponent->BindAction(DashAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Dash);
 	EnhancedInputComponent->BindAction(ShieldAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Shield);
 	EnhancedInputComponent->BindAction(UltimateAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Ultimate);
+	EnhancedInputComponent->BindAction(ViewToggleAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_ToggleView);
+	EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AArenaPlayerCharacter::Input_Look);
 }
 
 // 将默认 MappingContext 添加到本地玩家输入子系统。
@@ -217,6 +238,12 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	UltimateAction = CreateDefaultSubobject<UInputAction>(TEXT("Ultimate"));
 	UltimateAction->ValueType = EInputActionValueType::Boolean;
 
+	ViewToggleAction = CreateDefaultSubobject<UInputAction>(TEXT("ToggleView"));
+	ViewToggleAction->ValueType = EInputActionValueType::Boolean;
+
+	LookAction = CreateDefaultSubobject<UInputAction>(TEXT("Look"));
+	LookAction->ValueType = EInputActionValueType::Axis2D;
+
 	UInputModifierSwizzleAxis* MoveSwizzle = CreateDefaultSubobject<UInputModifierSwizzleAxis>(TEXT("MoveSwizzle"));
 	MoveSwizzle->Order = EInputAxisSwizzle::YXZ;
 
@@ -239,6 +266,9 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	DefaultMappingContext->MapKey(DashAction, EKeys::E);
 	DefaultMappingContext->MapKey(ShieldAction, EKeys::F);
 	DefaultMappingContext->MapKey(UltimateAction, EKeys::R);
+	DefaultMappingContext->MapKey(ViewToggleAction, EKeys::Zero);
+	DefaultMappingContext->MapKey(ViewToggleAction, EKeys::NumPadZero);
+	DefaultMappingContext->MapKey(LookAction, EKeys::Mouse2D);
 }
 
 // 将本地技能输入转换为 GameplayTag，让 ASC 决定能否激活技能。
@@ -265,11 +295,20 @@ void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 		return;
 	}
 
-	const FVector MoveDirection = (FVector::ForwardVector * MovementVector.Y + FVector::RightVector * MovementVector.X).GetSafeNormal();
+	FVector ForwardDirection = FVector::ForwardVector;
+	FVector RightDirection = FVector::RightVector;
+	if (bThirdPersonView)
+	{
+		const FRotator ControlYawRotation(0.0f, Controller->GetControlRotation().Yaw, 0.0f);
+		ForwardDirection = FRotationMatrix(ControlYawRotation).GetUnitAxis(EAxis::X);
+		RightDirection = FRotationMatrix(ControlYawRotation).GetUnitAxis(EAxis::Y);
+	}
+
+	const FVector MoveDirection = (ForwardDirection * MovementVector.Y + RightDirection * MovementVector.X).GetSafeNormal();
 	LastMovementInputDirection = MoveDirection;
 
-	AddMovementInput(FVector::ForwardVector, MovementVector.Y);
-	AddMovementInput(FVector::RightVector, MovementVector.X);
+	AddMovementInput(ForwardDirection, MovementVector.Y);
+	AddMovementInput(RightDirection, MovementVector.X);
 }
 
 // 移动输入结束时清空缓存方向，避免后续技能使用过期方向。
@@ -306,4 +345,70 @@ void AArenaPlayerCharacter::Input_Shield()
 void AArenaPlayerCharacter::Input_Ultimate()
 {
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_LightningStorm);
+}
+
+// 切换本地视角，并初始化第三人称控制角度或恢复顶视角鼠标模式。
+void AArenaPlayerCharacter::Input_ToggleView()
+{
+	if (!IsLocallyControlled() || !Controller)
+	{
+		return;
+	}
+
+	bThirdPersonView = !bThirdPersonView;
+	if (bThirdPersonView)
+	{
+		Controller->SetControlRotation(FRotator(ThirdPersonInitialPitch, GetActorRotation().Yaw, 0.0f));
+	}
+
+	CameraBoom->bDoCollisionTest = bThirdPersonView;
+	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
+	{
+		ArenaPlayerController->SetThirdPersonInputMode(bThirdPersonView);
+	}
+
+	SetActorTickEnabled(true);
+	UpdateCameraTransform();
+}
+
+// 第三人称下把鼠标增量转换为受限的 ControlRotation，并立即刷新相机。
+void AArenaPlayerCharacter::Input_Look(const FInputActionValue& Value)
+{
+	if (!bThirdPersonView || !Controller)
+	{
+		return;
+	}
+
+	const FVector2D LookAxis = Value.Get<FVector2D>();
+	FRotator ControlRotation = Controller->GetControlRotation();
+	ControlRotation.Yaw += LookAxis.X * LookYawSensitivity;
+	ControlRotation.Pitch = FMath::Clamp(
+		FRotator::NormalizeAxis(ControlRotation.Pitch + LookAxis.Y * LookPitchSensitivity),
+		ThirdPersonMinPitch,
+		ThirdPersonMaxPitch);
+	ControlRotation.Roll = 0.0f;
+	Controller->SetControlRotation(ControlRotation);
+	UpdateCameraTransform();
+}
+
+// 用同一套 SpringArm 在固定顶视角和控制器驱动的第三人称之间插值。
+void AArenaPlayerCharacter::UpdateCameraTransform()
+{
+	if (!CameraBoom)
+	{
+		return;
+	}
+
+	const float SmoothedAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, CameraBlendAlpha, 2.0f);
+	CameraBoom->TargetArmLength = FMath::Lerp(TopDownArmLength, ThirdPersonArmLength, SmoothedAlpha);
+	CameraBoom->TargetOffset = FMath::Lerp(FVector::ZeroVector, ThirdPersonTargetOffset, SmoothedAlpha);
+
+	const FRotator ThirdPersonRotation = Controller
+		? Controller->GetControlRotation()
+		: FRotator(ThirdPersonInitialPitch, GetActorRotation().Yaw, 0.0f);
+	const FQuat BlendedRotation = FQuat::Slerp(
+		TopDownCameraRotation.Quaternion(),
+		ThirdPersonRotation.Quaternion(),
+		SmoothedAlpha);
+	CameraBoom->SetWorldRotation(BlendedRotation);
 }

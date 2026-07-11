@@ -2,16 +2,19 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
 #include "DrawDebugHelpers.h"
 #include "GAS/ArenaGameplayTags.h"
+#include "GAS/Targeting/ArenaTargetActor_MouseGround.h"
 #include "GameplayEffect.h"
 
-// 构造基础攻击技能，配置服务端执行、输入标签和激活阻断标签。
+// 构造基础攻击技能，配置本地预测瞄准、输入标签和激活阻断标签。
 UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 {
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	InputTag = ArenaGameplayTags::Ability_BasicAttack;
 	DamageTypeTag = ArenaGameplayTags::Damage_Physical;
+	TargetActorClass = AArenaTargetActor_MouseGround::StaticClass();
 
 	// Ability Tag 和阻断标签都交给 GAS CanActivate/Commit 路径统一判断。
 	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_BasicAttack));
@@ -20,38 +23,154 @@ UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_BasicAttack);
 }
 
-// 激活基础攻击：提交冷却后扫前方目标，并通过 GE/ExecCalc 应用物理伤害。
+// 激活基础攻击，启动视角感知的即时 TargetData 采集。
 void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
-	if (!ActorInfo || !ActorInfo->AvatarActor.IsValid())
+	if (!ActorInfo || !ActorInfo->AvatarActor.IsValid() || !ActorInfo->AbilitySystemComponent.IsValid())
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
+	if (!TargetActorClass || !DamageEffectClass)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
+	UAbilityTask_WaitTargetData* TargetDataTask = UAbilityTask_WaitTargetData::WaitTargetData(
+		this,
+		FName(TEXT("BasicAttackTargetData")),
+		EGameplayTargetingConfirmation::Instant,
+		TargetActorClass);
+	if (!TargetDataTask)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
+	ActiveTargetDataTask = TargetDataTask;
+	TargetDataTask->ValidData.AddDynamic(this, &UArenaGameplayAbility_BasicAttack::OnTargetDataReady);
+	TargetDataTask->Cancelled.AddDynamic(this, &UArenaGameplayAbility_BasicAttack::OnTargetDataCancelled);
+	TargetDataTask->ReadyForActivation();
+
+	AGameplayAbilityTargetActor* SpawnedTargetActor = nullptr;
+	const bool bSpawnedTargetActor = TargetDataTask->BeginSpawningActor(this, TargetActorClass, SpawnedTargetActor);
+	if (bSpawnedTargetActor)
+	{
+		TargetDataTask->FinishSpawningActor(this, SpawnedTargetActor);
+	}
+	else if (ActorInfo->IsLocallyControlled())
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+	}
+}
+
+// 收到目标点后客户端只预测转身，服务器提交冷却并执行权威近战扫描。
+void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
+{
+	ActiveTargetDataTask = nullptr;
+
+	const FGameplayAbilitySpecHandle Handle = GetCurrentAbilitySpecHandle();
+	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+	const FGameplayAbilityActivationInfo ActivationInfo = GetCurrentActivationInfo();
+	if (!ActorInfo || !ActorInfo->AvatarActor.IsValid() || !ActorInfo->AbilitySystemComponent.IsValid())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
 	AActor* AvatarActor = ActorInfo->AvatarActor.Get();
-	UWorld* World = AvatarActor->GetWorld();
-	if (!World || !DamageEffectClass)
+	FVector AimDirection = FVector::ZeroVector;
+	if (!ExtractAimDirection(TargetData, AvatarActor, AimDirection))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	// Commit 会检查并应用冷却/消耗，失败时不继续做攻击扫描。
+	// 本地立即转身改善输入反馈；服务器收到相同 TargetData 后会设置权威旋转。
+	if (ActorInfo->IsLocallyControlled())
+	{
+		AvatarActor->SetActorRotation(AimDirection.Rotation());
+	}
+
+	if (!ActorInfo->IsNetAuthority())
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+		return;
+	}
+
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
 
-	const FVector Start = AvatarActor->GetActorLocation();
-	const FVector End = Start + AvatarActor->GetActorForwardVector() * AttackRange;
+	AvatarActor->SetActorRotation(AimDirection.Rotation());
+	ExecuteServerAttack(AvatarActor, ActorInfo->AbilitySystemComponent.Get(), AimDirection);
+	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+}
 
-	// 当前 BasicAttack 使用角色 ForwardVector，后续若改鼠标/TargetData 可替换这里。
+// TargetData 取消时清理任务并取消当前普攻。
+void UArenaGameplayAbility_BasicAttack::OnTargetDataCancelled(const FGameplayAbilityTargetDataHandle& TargetData)
+{
+	ActiveTargetDataTask = nullptr;
+	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+}
+
+// 从客户端 Location TargetData 提取水平瞄准方向，拒绝无效或 NaN 输入。
+bool UArenaGameplayAbility_BasicAttack::ExtractAimDirection(
+	const FGameplayAbilityTargetDataHandle& TargetData,
+	AActor* AvatarActor,
+	FVector& OutAimDirection) const
+{
+	if (!AvatarActor)
+	{
+		return false;
+	}
+
+	const FGameplayAbilityTargetData* FirstTargetData = TargetData.Get(0);
+	if (!FirstTargetData || !FirstTargetData->HasEndPoint())
+	{
+		return false;
+	}
+
+	const FVector TargetLocation = FirstTargetData->GetEndPoint();
+	if (TargetLocation.ContainsNaN())
+	{
+		return false;
+	}
+
+	OutAimDirection = TargetLocation - AvatarActor->GetActorLocation();
+	OutAimDirection.Z = 0.0f;
+	OutAimDirection = OutAimDirection.GetSafeNormal();
+	return !OutAimDirection.IsNearlyZero();
+}
+
+// 仅在服务器沿最终瞄准方向扫描目标，并通过 GE/ExecCalc 应用物理伤害。
+void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
+	AActor* AvatarActor,
+	UAbilitySystemComponent* SourceASC,
+	const FVector& AimDirection)
+{
+	if (!AvatarActor || !SourceASC || !DamageEffectClass)
+	{
+		return;
+	}
+
+	UWorld* World = AvatarActor->GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const FVector Start = AvatarActor->GetActorLocation();
+	const FVector End = Start + AimDirection * AttackRange;
+
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ArenaBasicAttack), false, AvatarActor);
 	QueryParams.AddIgnoredActor(AvatarActor);
 
@@ -84,7 +203,7 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 		}
 
 		// 避免命中自身 ASC，玩家 ASC 位于 PlayerState 时仍需要这个保护。
-		if (ActorInfo->AbilitySystemComponent.IsValid() && TargetASC == ActorInfo->AbilitySystemComponent.Get())
+		if (TargetASC == SourceASC)
 		{
 			continue;
 		}
@@ -109,9 +228,9 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	if (BestTarget && BestTargetASC)
 	{
 		// 伤害数值以 SetByCaller 写入 GE Spec，实际计算由 ExecCalc_Damage 完成。
-		FGameplayEffectSpecHandle DamageSpecHandle = MakeOutgoingGameplayEffectSpec(
-			DamageEffectClass,
-			GetAbilityLevel(Handle, ActorInfo));
+		FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
+		EffectContext.AddSourceObject(this);
+		FGameplayEffectSpecHandle DamageSpecHandle = SourceASC->MakeOutgoingSpec(DamageEffectClass, GetAbilityLevel(), EffectContext);
 
 		if (DamageSpecHandle.IsValid())
 		{
@@ -128,7 +247,6 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 		}
 	}
 
-	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
 // 绘制基础攻击调试范围，帮助确认扫描方向和是否命中目标。

@@ -1,5 +1,8 @@
 #include "UI/ArenaPlayerHUDWidget.h"
 
+#include "Blueprint/WidgetTree.h"
+#include "Components/CanvasPanel.h"
+#include "Components/CanvasPanelSlot.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
@@ -123,6 +126,46 @@ namespace
 				NSLOCTEXT("ArenaPlayerHUDWidget", "LightningStormSlotCooldownFormat", "{0}s"),
 				MakeCooldownSecondsText(RemainingTime))
 			: NSLOCTEXT("ArenaPlayerHUDWidget", "LightningStormSlotReady", "Storm Ready");
+	}
+}
+
+// 初始化 HUD，并在蓝图未提供准星时向根 Canvas 添加居中的简洁加号。
+void UArenaPlayerHUDWidget::NativeConstruct()
+{
+	Super::NativeConstruct();
+
+	if (!AimReticleText && WidgetTree)
+	{
+		if (UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(GetRootWidget()))
+		{
+			AimReticleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("AimReticleText_Runtime"));
+			AimReticleText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "ThirdPersonReticle", "+"));
+			AimReticleText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+
+			FSlateFontInfo ReticleFont = AimReticleText->GetFont();
+			ReticleFont.Size = 24;
+			ReticleFont.OutlineSettings.OutlineSize = 1;
+			AimReticleText->SetFont(ReticleFont);
+
+			if (UCanvasPanelSlot* ReticleSlot = RootCanvas->AddChildToCanvas(AimReticleText))
+			{
+				ReticleSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+				ReticleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+				ReticleSlot->SetPosition(FVector2D::ZeroVector);
+				ReticleSlot->SetAutoSize(true);
+			}
+		}
+	}
+
+	SetThirdPersonReticleVisible(false);
+}
+
+// 切换准星显示；HitTestInvisible 保证它不会拦截任何战斗输入。
+void UArenaPlayerHUDWidget::SetThirdPersonReticleVisible(bool bVisible)
+{
+	if (AimReticleText)
+	{
+		AimReticleText->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
 }
 

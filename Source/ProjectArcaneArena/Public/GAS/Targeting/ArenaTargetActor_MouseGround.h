@@ -16,7 +16,7 @@ public:
 	// 初始化目标选择上下文，缓存当前 Avatar 作为 TargetData 的源位置。
 	virtual void StartTargeting(UGameplayAbility* Ability) override;
 
-	// 立即采集鼠标地面位置，并广播 LocationInfo TargetData 给 WaitTargetData。
+	// 按当前视角采集鼠标或中心准星位置，并广播 LocationInfo TargetData 给 WaitTargetData。
 	virtual void ConfirmTargetingAndContinue() override;
 
 protected:
@@ -26,9 +26,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Targeting")
 	TEnumAsByte<ECollisionChannel> TraceChannel = ECC_Visibility;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Targeting", meta = (ClampMin = "0.0"))
+	float CenterScreenTraceDistance = 10000.0f;
+
 private:
-	// 优先读取鼠标所在世界位置，失败时使用角色朝向生成一个兜底点。
-	bool GetMouseGroundLocation(FVector& OutTargetLocation) const;
+	// 顶视角读取鼠标命中，第三人称读取屏幕中心命中，失败时使用水平前方兜底点。
+	bool GetViewAimLocation(FVector& OutTargetLocation) const;
 
 	// 只包装源点和目标点，不在 TargetActor 中保存玩法状态或执行伤害。
 	FGameplayAbilityTargetDataHandle MakeLocationTargetData(const FVector& TargetLocation) const;

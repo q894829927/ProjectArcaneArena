@@ -15,6 +15,9 @@ class PROJECTARCANEARENA_API AArenaPlayerController : public APlayerController
 public:
 	AArenaPlayerController();
 
+	// 切换本地鼠标捕获和第三人称准星，不复制任何相机表现状态。
+	void SetThirdPersonInputMode(bool bEnableThirdPerson);
+
 protected:
 	// 初始化本地输入模式，确保第一次鼠标点击不会被视口捕获吞掉。
 	virtual void BeginPlay() override;
@@ -45,4 +48,5 @@ private:
 	float PlayerHUDBindingRetryInterval = 0.1f;
 
 	FTimerHandle PlayerHUDBindingRetryTimerHandle;
+	bool bThirdPersonInputMode = false;
 };

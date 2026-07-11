@@ -18,6 +18,10 @@ class PROJECTARCANEARENA_API UArenaPlayerHUDWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	// 仅切换第三人称中心准星的表现可见性，不参与目标或伤害判定。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetThirdPersonReticleVisible(bool bVisible);
+
 	// 绑定玩家 PlayerState 上的 GAS 数据源，HUD 只监听变化，不拥有玩法状态。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void BindToAbilitySystem(UArenaAbilitySystemComponent* InAbilitySystemComponent, UArenaAttributeSet* InAttributeSet);
@@ -58,6 +62,8 @@ public:
 	void SetLightningStormCooldownValues(bool bInCooldownActive, float InRemainingTime, float InDuration);
 
 protected:
+	// 蓝图未提供准星控件时创建一个轻量居中占位，保证第三人称可直接使用。
+	virtual void NativeConstruct() override;
 	// Widget 销毁时解绑 GAS 委托，避免回调悬挂到已销毁 UI。
 	virtual void NativeDestruct() override;
 
@@ -96,6 +102,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> UltimateSlotText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> AimReticleText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> BasicAttackCooldownProgressBar;
