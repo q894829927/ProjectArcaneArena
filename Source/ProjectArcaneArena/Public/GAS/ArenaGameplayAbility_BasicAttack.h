@@ -8,6 +8,7 @@
 class AGameplayAbilityTargetActor;
 class UAbilitySystemComponent;
 class UAbilityTask_WaitTargetData;
+class UAnimMontage;
 class UGameplayEffect;
 
 UCLASS(Blueprintable)
@@ -56,6 +57,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Targeting")
 	TSubclassOf<AGameplayAbilityTargetActor> TargetActorClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Animation")
+	TObjectPtr<UAnimMontage> AttackMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Animation", meta = (ClampMin = "0.01"))
+	float MontagePlayRate = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Animation")
+	FName MontageStartSection = NAME_None;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Debug")
 	bool bDrawDebugAttackRange = true;
 
@@ -70,6 +80,8 @@ protected:
 
 private:
 	bool ExtractAimDirection(const FGameplayAbilityTargetDataHandle& TargetData, AActor* AvatarActor, FVector& OutAimDirection) const;
+	// 播放预测普攻 Montage；伤害判定仍由服务器 Sweep 独立完成。
+	void PlayAttackMontage();
 	void ExecuteServerAttack(AActor* AvatarActor, UAbilitySystemComponent* SourceASC, const FVector& AimDirection);
 
 	UPROPERTY(Transient)

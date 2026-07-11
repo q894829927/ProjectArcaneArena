@@ -2,7 +2,9 @@
 
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
+#include "Animation/AnimMontage.h"
 #include "DrawDebugHelpers.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GAS/Targeting/ArenaTargetActor_MouseGround.h"
@@ -70,7 +72,7 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	}
 }
 
-// 收到目标点后客户端只预测转身，服务器提交冷却并执行权威近战扫描。
+// TargetData 有效后先同步朝向和预测 Montage，再由服务器 Commit 并执行权威 Sweep。
 void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
@@ -100,6 +102,7 @@ void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbility
 
 	if (!ActorInfo->IsNetAuthority())
 	{
+		PlayAttackMontage();
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 		return;
 	}
@@ -111,6 +114,7 @@ void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbility
 	}
 
 	AvatarActor->SetActorRotation(AimDirection.Rotation());
+	PlayAttackMontage();
 	ExecuteServerAttack(AvatarActor, ActorInfo->AbilitySystemComponent.Get(), AimDirection);
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
@@ -149,6 +153,28 @@ bool UArenaGameplayAbility_BasicAttack::ExtractAimDirection(
 	OutAimDirection.Z = 0.0f;
 	OutAimDirection = OutAimDirection.GetSafeNormal();
 	return !OutAimDirection.IsNearlyZero();
+}
+
+// 本地预测端即时播放，服务器端通过 ASC Montage 状态复制给其他客户端；Ability 结束后动画继续播完。
+void UArenaGameplayAbility_BasicAttack::PlayAttackMontage()
+{
+	if (!AttackMontage)
+	{
+		return;
+	}
+
+	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
+		this,
+		FName(TEXT("PlayerBasicAttackMontage")),
+		AttackMontage,
+		FMath::Max(MontagePlayRate, 0.01f),
+		MontageStartSection,
+		false,
+		0.0f);
+	if (MontageTask)
+	{
+		MontageTask->ReadyForActivation();
+	}
 }
 
 // 仅在服务器沿最终瞄准方向扫描目标，并通过 GE/ExecCalc 应用物理伤害。

@@ -55,6 +55,8 @@ Status meanings:
 
 * `LMB` activates a LocalPredicted TargetData flow; top-down aims at the cursor and third-person aims at the center reticle.
 * The local player predicts facing direction, while the server commits cooldown, performs the melee Sweep, selects a valid target, and applies physical damage through GAS.
+* `GA_BasicAttack` supports a configurable predicted Attack Montage, play rate, and start section; the Montage continues after the short targeting Ability ends while damage remains server-authoritative.
+* Editor setup pending after the reflection build: assign an unarmed DefaultSlot Montage such as `AM_EnemyMeleeAttack` to `GA_BasicAttack`, then duplicate it as `AM_PlayerBasicAttack` when player-specific timing is needed.
 * A configurable debug capsule/line/sphere can display the authority attack range.
 
 ### Fireball — Implemented
