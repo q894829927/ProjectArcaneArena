@@ -3,6 +3,7 @@
 #include "Core/ArenaPlayerState.h"
 #include "UI/ArenaPlayerHUDWidget.h"
 
+// 构造玩家控制器，设置鼠标显示和基础输入交互选项。
 AArenaPlayerController::AArenaPlayerController()
 {
 	bShowMouseCursor = true;
@@ -11,6 +12,7 @@ AArenaPlayerController::AArenaPlayerController()
 	DefaultMouseCursor = EMouseCursor::Default;
 }
 
+// 本地控制器开始时设置输入模式，并创建/绑定玩家 HUD。
 void AArenaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -24,6 +26,7 @@ void AArenaPlayerController::BeginPlay()
 	TryBindPlayerHUD();
 }
 
+// Possess 新 Pawn 后再次尝试绑定 HUD，处理 PlayerState 或 ASC 稍后就绪的情况。
 void AArenaPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
@@ -31,6 +34,7 @@ void AArenaPlayerController::OnPossess(APawn* InPawn)
 	TryBindPlayerHUD();
 }
 
+// 仅在本地控制器上创建玩家 HUD，并加入视口。
 void AArenaPlayerController::CreatePlayerHUD()
 {
 	if (!IsLocalController() || PlayerHUDWidget || !PlayerHUDWidgetClass)
@@ -45,6 +49,7 @@ void AArenaPlayerController::CreatePlayerHUD()
 	}
 }
 
+// 尝试把 HUD 绑定到 PlayerState 上的 ASC 和 AttributeSet。
 void AArenaPlayerController::TryBindPlayerHUD()
 {
 	if (!IsLocalController())
@@ -73,6 +78,7 @@ void AArenaPlayerController::TryBindPlayerHUD()
 	ClearPlayerHUDBindingRetry();
 }
 
+// 当客户端 GAS 数据尚未复制完成时，安排短间隔重试绑定 HUD。
 void AArenaPlayerController::SchedulePlayerHUDBindingRetry()
 {
 	if (!GetWorld() || GetWorldTimerManager().IsTimerActive(PlayerHUDBindingRetryTimerHandle))
@@ -89,6 +95,7 @@ void AArenaPlayerController::SchedulePlayerHUDBindingRetry()
 		true);
 }
 
+// HUD 成功绑定或不再需要重试时清理定时器。
 void AArenaPlayerController::ClearPlayerHUDBindingRetry()
 {
 	if (GetWorld())

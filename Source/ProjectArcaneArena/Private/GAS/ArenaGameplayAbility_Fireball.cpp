@@ -9,6 +9,7 @@
 #include "GameplayEffect.h"
 #include "Projectile/ArenaFireballProjectile.h"
 
+// 构造火球技能，配置预测输入、火焰伤害类型和目标选择/投射物类型。
 UArenaGameplayAbility_Fireball::UArenaGameplayAbility_Fireball()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
@@ -23,6 +24,7 @@ UArenaGameplayAbility_Fireball::UArenaGameplayAbility_Fireball()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Fireball);
 }
 
+// 激活火球技能，启动鼠标目标数据采集并等待客户端/服务端 TargetData 流程。
 void UArenaGameplayAbility_Fireball::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -73,6 +75,7 @@ void UArenaGameplayAbility_Fireball::ActivateAbility(
 	}
 }
 
+// 收到目标数据后，服务端提交消耗/冷却并生成权威火球投射物。
 void UArenaGameplayAbility_Fireball::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
@@ -120,6 +123,7 @@ void UArenaGameplayAbility_Fireball::OnTargetDataReady(const FGameplayAbilityTar
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
+// 目标选择取消时清理 TargetData task，并取消当前技能。
 void UArenaGameplayAbility_Fireball::OnTargetDataCancelled(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
@@ -127,6 +131,7 @@ void UArenaGameplayAbility_Fireball::OnTargetDataCancelled(const FGameplayAbilit
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 }
 
+// 从 TargetData 中提取鼠标命中的世界位置。
 bool UArenaGameplayAbility_Fireball::ExtractTargetLocation(const FGameplayAbilityTargetDataHandle& TargetData, FVector& OutTargetLocation) const
 {
 	const FGameplayAbilityTargetData* FirstTargetData = TargetData.Get(0);
@@ -139,6 +144,7 @@ bool UArenaGameplayAbility_Fireball::ExtractTargetLocation(const FGameplayAbilit
 	return true;
 }
 
+// 根据角色位置和目标点计算水平发射方向与生成变换。
 bool UArenaGameplayAbility_Fireball::BuildProjectileSpawnTransform(AActor* AvatarActor, const FVector& TargetLocation, FTransform& OutSpawnTransform) const
 {
 	if (!AvatarActor)
@@ -169,6 +175,7 @@ bool UArenaGameplayAbility_Fireball::BuildProjectileSpawnTransform(AActor* Avata
 	return true;
 }
 
+// 服务端延迟生成火球投射物，并注入伤害 GE 与 SetByCaller 参数。
 void UArenaGameplayAbility_Fireball::SpawnFireballProjectile(AActor* AvatarActor, UAbilitySystemComponent* SourceASC, const FTransform& SpawnTransform) const
 {
 	if (!AvatarActor || !SourceASC || !ProjectileClass || !DamageEffectClass)

@@ -5,6 +5,7 @@
 #include "Core/ArenaPlayerController.h"
 #include "Core/ArenaPlayerState.h"
 
+// 构造游戏模式，指定项目默认的 GameState、Controller、PlayerState 和 Pawn。
 AArenaGameMode::AArenaGameMode()
 {
 	GameStateClass = AArenaGameState::StaticClass();

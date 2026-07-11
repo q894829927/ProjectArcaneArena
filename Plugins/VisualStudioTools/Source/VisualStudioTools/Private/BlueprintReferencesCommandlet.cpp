@@ -17,6 +17,7 @@
 
 namespace VisualStudioTools
 {
+// 去掉 UE 类型名前缀，便于和蓝图调用图中的原生类名匹配。
 static FString StripClassPrefix(const FString& InClassName)
 {
 	if (InClassName.IsEmpty())
@@ -58,6 +59,7 @@ static FString StripClassPrefix(const FString& InClassName)
 /**
 * Retrieves the asset data matching the given FindInBlueprints query.
 */
+// 使用 FindInBlueprints 查询可能引用目标函数的蓝图资产。
 TArray<FAssetData> SearchForCandidateAssets(const FString& SearchQuery)
 {
 	IAssetRegistry& AssetRegistry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
@@ -94,6 +96,7 @@ TArray<FAssetData> SearchForCandidateAssets(const FString& SearchQuery)
 * Loads each blueprint asset and filters the collection to items which use the 
 * target UFunction in their call graph, matching the native class and function names.
 */
+// 加载候选蓝图并确认其调用图中确实引用目标原生函数。
 TMap<FString, FAssetData> GetConfirmedAssets(
 	const FString& FunctionName, const FString& ClassNameWithoutPrefix, const TArray<FAssetData>& InAssets)
 {
@@ -120,6 +123,7 @@ TMap<FString, FAssetData> GetConfirmedAssets(
 }
 using JsonWriter = TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>;
 
+// 将单个蓝图引用记录写入 JSON。
 static void SerializeBlueprintReference(
 	TSharedRef<JsonWriter>& Json, const FString& BlueprintClassName, const FAssetData& Asset)
 {
@@ -138,6 +142,7 @@ static void SerializeBlueprintReference(
 	Json->WriteObjectEnd();
 }
 
+// 将蓝图引用集合写入 JSON 数组。
 static void SerializeBlueprints(
 	TSharedRef<JsonWriter>& Json, const TMap<FString, FAssetData>& InAssets)
 {
@@ -154,6 +159,7 @@ static void SerializeBlueprints(
 	Json->WriteArrayEnd();
 }
 
+// 写入搜索结果的元数据。
 static void SerializeMetadata(
 	TSharedRef<JsonWriter>& Json, int TotalAssetCount)
 {
@@ -165,6 +171,7 @@ static void SerializeMetadata(
 	Json->WriteObjectEnd();
 }
 
+// 将蓝图引用结果和元数据写入输出归档。
 static void SerializeResults(
 	const TMap<FString, FAssetData>& InAssets,
 	FArchive& OutArchive,
@@ -183,6 +190,7 @@ static void SerializeResults(
 
 static constexpr auto SymbolParamVal = TEXT("symbol");
 
+// 构造蓝图引用查询命令行工具，配置 symbol 参数帮助。
 UVsBlueprintReferencesCommandlet::UVsBlueprintReferencesCommandlet()
 	: Super()
 {
@@ -194,6 +202,7 @@ UVsBlueprintReferencesCommandlet::UVsBlueprintReferencesCommandlet()
 	HelpUsage = TEXT("<Editor-Cmd.exe> <path_to_uproject> -run=VsBlueprintReferences -output=<path_to_output_file> -symbol=<ClassName::FunctionName> [-unattended -noshadercompile -nosound -nullrhi -nocpuprofilertrace -nocrashreports -nosplash]");
 }
 
+// 执行蓝图引用查询，并把匹配结果序列化到输出文件。
 int32 UVsBlueprintReferencesCommandlet::Run(
 	TArray<FString>& Tokens,
 	TArray<FString>& Switches,

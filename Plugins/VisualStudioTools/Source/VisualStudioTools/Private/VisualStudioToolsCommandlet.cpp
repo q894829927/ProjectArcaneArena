@@ -21,6 +21,7 @@ namespace VisualStudioTools
 static const FName CategoryFName = TEXT("Category");
 static const FName ModuleNameFName = TEXT("ModuleName");
 
+// 比较对象数据和默认对象数据，收集当前类中被蓝图改写的属性。
 static TArray<FProperty*> GetChangedPropertiesList(
 	UStruct* InStruct, const uint8* DataPtr, const uint8* DefaultDataPtr)
 {
@@ -48,6 +49,7 @@ static TArray<FProperty*> GetChangedPropertiesList(
 	return Result;
 }
 
+// 遍历蓝图生成类的原生父类，并把每个有效父类交给回调处理。
 static bool FindBlueprintNativeParents(
 	const UClass* BlueprintGeneratedClass, TFunctionRef<void(UClass*)> Callback)
 {
@@ -93,6 +95,7 @@ struct FAssetIndex
 	ClassMap Classes;
 	TArray<const UClass*> Blueprints;
 
+	// 处理单个蓝图生成类，记录其原生父类、改写属性和实现函数。
 	void ProcessBlueprint(const UBlueprintGeneratedClass* BlueprintGeneratedClass)
 	{
 		if (BlueprintGeneratedClass == nullptr)
@@ -164,6 +167,7 @@ struct FAssetIndex
 
 using JsonWriter = TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>;
 
+// 判断属性值是否适合序列化到 Visual Studio 使用的索引 JSON。
 static bool ShouldSerializePropertyValue(FProperty* Property)
 {
 	if (Property->ArrayDim > 1) // Skip properties that are not scalars
@@ -208,6 +212,7 @@ static bool ShouldSerializePropertyValue(FProperty* Property)
 	return false;
 }
 
+// 将蓝图类列表序列化为 JSON 数组。
 static void SerializeBlueprints(TSharedRef<JsonWriter>& Json, TArray<const UClass*> Items)
 {
 	Json->WriteArrayStart();
@@ -222,6 +227,7 @@ static void SerializeBlueprints(TSharedRef<JsonWriter>& Json, TArray<const UClas
 	Json->WriteArrayEnd();
 }
 
+// 将某个原生类相关的蓝图改写属性序列化为 JSON。
 static void SerializeProperties(TSharedRef<JsonWriter>& Json, FClassEntry& Entry, TArray<const UClass*>& Blueprints)
 {
 	Json->WriteArrayStart();
@@ -273,6 +279,7 @@ static void SerializeProperties(TSharedRef<JsonWriter>& Json, FClassEntry& Entry
 	Json->WriteArrayEnd();
 }
 
+// 将某个原生类相关的蓝图实现函数序列化为 JSON。
 static void SerializeFunctions(TSharedRef<JsonWriter>& Json, FClassEntry& Entry)
 {
 	Json->WriteArrayStart();
@@ -288,6 +295,7 @@ static void SerializeFunctions(TSharedRef<JsonWriter>& Json, FClassEntry& Entry)
 	Json->WriteArrayEnd();
 }
 
+// 将所有原生类索引数据序列化为 JSON。
 static void SerializeClasses(TSharedRef<JsonWriter>& Json, ClassMap& Items, TArray<const UClass*> Blueprints)
 {
 	Json->WriteArrayStart();
@@ -311,6 +319,7 @@ static void SerializeClasses(TSharedRef<JsonWriter>& Json, ClassMap& Items, TArr
 	Json->WriteArrayEnd();
 }
 
+// 将完整蓝图资产索引写入输出文件。
 static void SerializeToIndex(FAssetIndex Index, FArchive& IndexFile)
 {
 	TSharedRef<JsonWriter> Json = JsonWriter::Create(&IndexFile);
@@ -327,6 +336,7 @@ static void SerializeToIndex(FAssetIndex Index, FArchive& IndexFile)
 	Json->Close();
 }
 
+// 根据源码目录查找对应的模块名列表。
 static TArray<FString> GetModulesByPath(const FString& InDir)
 {
 	TArray<FString> OutResult;
@@ -351,6 +361,7 @@ static TArray<FString> GetModulesByPath(const FString& InDir)
 	return OutResult;
 }
 
+// 收集指定目录下模块中的原生 UClass，作为蓝图扫描基类过滤条件。
 static void GetNativeClassesByPath(const FString& InDir, TArray<TWeakObjectPtr<UClass>>& OutClasses)
 {
 	TArray<FString> Modules = GetModulesByPath(InDir);
@@ -373,6 +384,7 @@ static void GetNativeClassesByPath(const FString& InDir, TArray<TWeakObjectPtr<U
 	}
 }
 
+// 根据原生基类过滤条件扫描蓝图资产，并填充索引数据。
 static void RunAssetScan(
 	FAssetIndex& Index,
 	const TArray<TWeakObjectPtr<UClass>>& FilterBaseClasses)
@@ -424,6 +436,7 @@ static void RunAssetScan(
 static constexpr auto FilterSwitch = TEXT("filter");
 static constexpr auto FullSwitch = TEXT("full");
 
+// 构造 VisualStudioTools 索引命令行工具，配置扫描参数帮助。
 UVisualStudioToolsCommandlet::UVisualStudioToolsCommandlet()
 	: Super()
 {
@@ -438,6 +451,7 @@ UVisualStudioToolsCommandlet::UVisualStudioToolsCommandlet()
 	HelpUsage = TEXT("<Editor-Cmd.exe> <path_to_uproject> -run=VisualStudioTools -output=<path_to_output_file> [-filter=<subdir_native_classes>|-full] [-unattended -noshadercompile -nosound -nullrhi -nocpuprofilertrace -nocrashreports -nosplash]");
 }
 
+// 执行蓝图索引扫描，并把扫描结果序列化到输出归档。
 int32 UVisualStudioToolsCommandlet::Run(
 	TArray<FString>& Tokens,
 	TArray<FString>& Switches,

@@ -4,6 +4,7 @@
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
 
+// 构造护盾技能，配置服务端执行、输入标签和激活阻断标签。
 UArenaGameplayAbility_Shield::UArenaGameplayAbility_Shield()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
@@ -15,6 +16,7 @@ UArenaGameplayAbility_Shield::UArenaGameplayAbility_Shield()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Shield);
 }
 
+// 激活护盾技能，提交消耗/冷却后通过 GE 给自身添加护盾值。
 void UArenaGameplayAbility_Shield::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,

@@ -656,6 +656,7 @@ Rules:
 * Prefer timers, delegates, GAS tasks, or event-driven logic.
 * Keep functions short and focused.
 * Add a brief Chinese comment for newly added functions to state their purpose or extension point.
+* When modifying an existing function, add or update its Chinese comment so the comment reflects the new behavior, responsibility, or extension point.
 * Add Chinese comments for complex logic, especially GAS, replication, input routing, damage, death, or server-authoritative flow.
 * When changing code, update any affected comments so they continue to match the implementation.
 * Avoid redundant comments that merely repeat obvious code.

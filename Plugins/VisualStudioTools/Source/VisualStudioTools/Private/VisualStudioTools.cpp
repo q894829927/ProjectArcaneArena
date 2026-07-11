@@ -11,9 +11,11 @@ DEFINE_LOG_CATEGORY(LogVisualStudioTools);
 class FVisualStudioToolsModule : public IModuleInterface
 {
 public:
-	/** IModuleInterface implementation */
+	// 模块启动入口，当前插件不需要额外初始化。
 	virtual void StartupModule() override {}
+	// 模块关闭入口，当前插件不需要额外清理。
 	virtual void ShutdownModule() override {}
 };
 
+// 注册 VisualStudioTools 编辑器插件模块。
 IMPLEMENT_MODULE(FVisualStudioToolsModule, VisualStudioTools)

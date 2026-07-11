@@ -16,12 +16,14 @@ static constexpr auto RunTestsParam = TEXT("runtests");
 static constexpr auto TestResultsFileParam = TEXT("testresultfile");
 static constexpr auto HelpParam = TEXT("help");
 
+// 从 AutomationTestFramework 收集当前可用测试列表。
 static void GetAllTests(TArray<FAutomationTestInfo>& OutTestList)
 {
 	FAutomationTestFramework& Framework = FAutomationTestFramework::GetInstance();
 	Framework.GetValidTestNames(OutTestList);
 }
 
+// 从文件读取测试名称，并过滤出需要运行的自动化测试。
 static void ReadTestsFromFile(const FString& InFile, TArray<FAutomationTestInfo>& OutTestList)
 {
 	TSet<FString> TestCommands;
@@ -55,6 +57,7 @@ static void ReadTestsFromFile(const FString& InFile, TArray<FAutomationTestInfo>
 	}
 }
 
+// 将当前可用测试列表写入 Visual Studio 测试适配器需要的文件格式。
 static int32 ListTests(const FString& TargetFile)
 {
 	std::wofstream OutFile(*TargetFile);
@@ -85,6 +88,7 @@ static int32 ListTests(const FString& TargetFile)
 	return 0;
 }
 
+// 执行指定测试集合，并把结果写入测试适配器结果文件。
 static int32 RunTests(const FString& TestListFile, const FString& ResultsFile)
 {
 	std::wofstream OutFile(*ResultsFile);
@@ -167,6 +171,7 @@ static int32 RunTests(const FString& TestListFile, const FString& ResultsFile)
 	return AllSuccessful ? 0 : 1;
 }
 
+// 构造 VS 测试适配命令行工具，配置列出/运行测试参数帮助。
 UVSTestAdapterCommandlet::UVSTestAdapterCommandlet()
 {
 	HelpDescription = TEXT("Commandlet for generating data used by Blueprint support in Visual Studio.");
@@ -188,6 +193,7 @@ UVSTestAdapterCommandlet::UVSTestAdapterCommandlet()
 	HelpParamDescriptions.Add(TEXT("[Optional] Print this help message and quit the commandlet immediately."));
 }
 
+// 输出测试适配命令行工具的帮助说明。
 void UVSTestAdapterCommandlet::PrintHelp() const
 {
 	UE_LOG(LogVisualStudioTools, Display, TEXT("%s"), *HelpDescription);
@@ -199,6 +205,7 @@ void UVSTestAdapterCommandlet::PrintHelp() const
 	}
 }
 
+// 解析测试适配器参数，按请求列出测试或运行测试。
 int32 UVSTestAdapterCommandlet::Main(const FString& Params)
 {
 	TArray<FString> Tokens;

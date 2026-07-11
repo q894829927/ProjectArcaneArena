@@ -5,6 +5,7 @@
 #include "GameplayEffectExtension.h"
 #include "Net/UnrealNetwork.h"
 
+// 构造属性集，设置玩家和敌人可共用的基础默认值。
 UArenaAttributeSet::UArenaAttributeSet()
 {
 	InitMaxHealth(100.0f);
@@ -24,6 +25,7 @@ UArenaAttributeSet::UArenaAttributeSet()
 	InitHealing(0.0f);
 }
 
+// 注册需要复制的 GameplayAttribute，配合 RepNotify 驱动客户端 UI。
 void UArenaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -40,6 +42,7 @@ void UArenaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, CritDamage, COND_None, REPNOTIFY_Always);
 }
 
+// CurrentValue 改变前做边界限制，处理 Max 属性影响下的即时 clamp。
 void UArenaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
 	Super::PreAttributeChange(Attribute, NewValue);
@@ -47,6 +50,7 @@ void UArenaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 	ClampAttribute(Attribute, NewValue);
 }
 
+// BaseValue 改变前做边界限制，覆盖 Instant GE 等修改基础值的路径。
 void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const
 {
 	Super::PreAttributeBaseChange(Attribute, NewValue);
@@ -54,6 +58,7 @@ void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attrib
 	ClampAttribute(Attribute, NewValue);
 }
 
+// GE 执行后消费 Damage/Healing 元属性，并同步护盾、生命和死亡标签。
 void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -108,6 +113,7 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	}
 }
 
+// 根据属性类型统一限制数值范围，避免各处重复 clamp 规则。
 void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, float& NewValue) const
 {
 	if (Attribute == GetHealthAttribute())
@@ -162,6 +168,7 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 }
 
+// 服务端根据 Health 更新 State.Dead loose tag，供死亡流程和客户端观察。
 void UArenaAttributeSet::UpdateDeadTag() const
 {
 	UAbilitySystemComponent* OwningASC = GetOwningAbilitySystemComponent();
@@ -182,51 +189,61 @@ void UArenaAttributeSet::UpdateDeadTag() const
 	OwningASC->SetReplicatedLooseGameplayTagCount(ArenaGameplayTags::State_Dead, DeadTagCount);
 }
 
+// Health 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Health, OldValue);
 }
 
+// MaxHealth 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MaxHealth, OldValue);
 }
 
+// Shield 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_Shield(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Shield, OldValue);
 }
 
+// Energy 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_Energy(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Energy, OldValue);
 }
 
+// MaxEnergy 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_MaxEnergy(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MaxEnergy, OldValue);
 }
 
+// AttackPower 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_AttackPower(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, AttackPower, OldValue);
 }
 
+// Defense 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_Defense(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Defense, OldValue);
 }
 
+// MoveSpeed 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_MoveSpeed(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MoveSpeed, OldValue);
 }
 
+// CritChance 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_CritChance(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, CritChance, OldValue);
 }
 
+// CritDamage 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_CritDamage(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, CritDamage, OldValue);

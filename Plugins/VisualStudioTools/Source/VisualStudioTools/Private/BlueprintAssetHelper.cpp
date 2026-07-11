@@ -23,12 +23,14 @@ namespace AssetHelpers
 */
 #if FILTER_ASSETS_BY_CLASS_PATH
 
+// 为 UE5.1+ 使用 ClassPath 方式设置蓝图资产过滤条件。
 void SetBlueprintClassFilter(FARFilter& InOutFilter)
 {
 	// UE5.1 deprecated the API to filter using class names
 	InOutFilter.ClassPaths.Add(UBlueprintCore::StaticClass()->GetClassPathName());
 }
 
+// 返回资产对象路径字符串，适配 UE5.1+ 的新 API。
 static FString GetObjectPathString(const FAssetData& InAssetData)
 {
 	// UE5.1 deprecated 'FAssetData::ObjectPath' in favor of 'FAssetData::GetObjectPathString()'
@@ -37,11 +39,13 @@ static FString GetObjectPathString(const FAssetData& InAssetData)
 
 #else // FILTER_ASSETS_BY_CLASS_PATH
 
+// 为旧版 UE 使用 ClassName 方式设置蓝图资产过滤条件。
 void SetBlueprintClassFilter(FARFilter& InOutFilter)
 {
 	InOutFilter.ClassNames.Add(UBlueprintCore::StaticClass()->GetFName());
 }
 
+// 返回资产对象路径字符串，适配旧版 FAssetData::ObjectPath。
 static FString GetObjectPathString(const FAssetData& InAssetData)
 {
 	return InAssetData.ObjectPath.ToString();
@@ -49,6 +53,7 @@ static FString GetObjectPathString(const FAssetData& InAssetData)
 
 #endif // FILTER_ASSETS_BY_CLASS_PATH
 
+// 遍历蓝图资产并加载其生成类，然后把结果交给调用方回调处理。
 void ForEachAsset(
 	const TArray<FAssetData>& TargetAssets,
 	TFunctionRef<void(UBlueprintGeneratedClass*, const FAssetData& AssetData)> Callback)

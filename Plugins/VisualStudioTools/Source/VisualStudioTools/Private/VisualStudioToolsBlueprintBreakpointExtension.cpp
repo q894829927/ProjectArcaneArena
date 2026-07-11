@@ -35,6 +35,7 @@ DEFINE_LOG_CATEGORY(LogUVisualStudioToolsBlueprintBreakpointExtension);
 
 static const FName GraphEditorModuleName(TEXT("GraphEditor"));
 
+// 初始化编辑器子系统，注册蓝图图表右键菜单扩展。
 void UVisualStudioToolsBlueprintBreakpointExtension::Initialize(FSubsystemCollectionBase& Collection)
 {
 	FGraphEditorModule& GraphEditorModule = FModuleManager::LoadModuleChecked<FGraphEditorModule>(GraphEditorModuleName);
@@ -42,6 +43,7 @@ void UVisualStudioToolsBlueprintBreakpointExtension::Initialize(FSubsystemCollec
 		FGraphEditorModule::FGraphEditorMenuExtender_SelectedNode::CreateUObject(this, &ThisClass::HandleOnExtendGraphEditorContextMenu));
 }
 
+// 反初始化编辑器子系统，移除已注册的右键菜单扩展。
 void UVisualStudioToolsBlueprintBreakpointExtension::Deinitialize()
 {
 	FGraphEditorModule* GraphEditorModule = FModuleManager::GetModulePtr<FGraphEditorModule>(GraphEditorModuleName);
@@ -57,6 +59,7 @@ void UVisualStudioToolsBlueprintBreakpointExtension::Deinitialize()
 		});
 }
 
+// 根据当前蓝图节点决定是否添加 Visual Studio 断点菜单项。
 TSharedRef<FExtender> UVisualStudioToolsBlueprintBreakpointExtension::HandleOnExtendGraphEditorContextMenu(
 	const TSharedRef<FUICommandList> CommandList,
 	const UEdGraph* Graph,
@@ -80,6 +83,7 @@ TSharedRef<FExtender> UVisualStudioToolsBlueprintBreakpointExtension::HandleOnEx
 	return Extender;
 }
 
+// 向蓝图节点右键菜单添加“在 Visual Studio 设置断点”的操作。
 void UVisualStudioToolsBlueprintBreakpointExtension::AddVisualStudioBlueprintBreakpointMenuOption(FMenuBuilder& MenuBuilder, const UEdGraphNode *Node)
 {
 	MenuBuilder.BeginSection(TEXT("VisualStudioTools"), FText::FromString("Visual Studio Tools"));
@@ -91,6 +95,7 @@ void UVisualStudioToolsBlueprintBreakpointExtension::AddVisualStudioBlueprintBre
 	MenuBuilder.EndSection();
 }
 
+// 推断当前项目对应的 Visual Studio 解决方案路径。
 FString UVisualStudioToolsBlueprintBreakpointExtension::GetProjectPath(const FString &ProjectDir)
 {
 	FString ProjectPath;
@@ -116,6 +121,7 @@ FString UVisualStudioToolsBlueprintBreakpointExtension::GetProjectPath(const FSt
 	return ProjectPath;
 }
 
+// 从 Running Object Table 查找打开当前项目解决方案的 Visual Studio DTE。
 bool UVisualStudioToolsBlueprintBreakpointExtension::GetRunningVisualStudioDTE(TComPtr<EnvDTE::_DTE>& OutDTE)
 {
 	IRunningObjectTable* RunningObjectTable;
@@ -191,6 +197,7 @@ bool UVisualStudioToolsBlueprintBreakpointExtension::GetRunningVisualStudioDTE(T
 	return bResult;
 }
 
+// 检查蓝图节点是否对应原生函数，并返回拥有类和函数指针。
 bool UVisualStudioToolsBlueprintBreakpointExtension::CanAddVisualStudioBreakpoint(const UEdGraphNode* Node, UClass **OutOwnerClass, UFunction **OutFunction)
 {
 	const UK2Node_CallFunction* K2Node = Cast<const UK2Node_CallFunction>(Node);
@@ -230,6 +237,7 @@ bool UVisualStudioToolsBlueprintBreakpointExtension::CanAddVisualStudioBreakpoin
 			FPlatformMisc::GetSystemErrorMessage(_ErrorBuffer, MAX_SPRINTF, 0)); \
 	} while (0)
 
+// UE4 路径下预加载模块符号，确保后续可以查询函数源码位置。
 bool UVisualStudioToolsBlueprintBreakpointExtension::PreloadModule(HANDLE ProcessHandle, HMODULE ModuleHandle, const FString& RemoteStorage)
 {
 	int32 ErrorCode = 0;
@@ -317,6 +325,7 @@ bool UVisualStudioToolsBlueprintBreakpointExtension::PreloadModule(HANDLE Proces
 	return true;
 }
 
+// UE4 路径下通过 DbgHelp 查询函数定义所在源文件和行号。
 bool UVisualStudioToolsBlueprintBreakpointExtension::GetFunctionDefinitionLocation(const FString& FunctionSymbolName, const FString& FunctionModuleName, FString& SourceFilePath, uint32& SourceLineNumber)
 {
 	const HANDLE ProcessHandle = GetCurrentProcess();
@@ -360,6 +369,7 @@ bool UVisualStudioToolsBlueprintBreakpointExtension::GetFunctionDefinitionLocati
 
 #endif
 
+// 根据蓝图节点解析原生符号名，并查询对应源码位置。
 bool UVisualStudioToolsBlueprintBreakpointExtension::GetFunctionDefinitionLocation(const UEdGraphNode* Node, FString& SourceFilePath, FString& SymbolName, uint32& SourceLineNumber)
 {
 	UClass* OwningClass;
@@ -399,6 +409,7 @@ bool UVisualStudioToolsBlueprintBreakpointExtension::GetFunctionDefinitionLocati
 #endif
 }
 
+// 在 Visual Studio DTE 进程集合中按进程 ID 查找 UE 进程。
 bool UVisualStudioToolsBlueprintBreakpointExtension::GetProcessById(const TComPtr<EnvDTE::Processes>& Processes, DWORD CurrentProcessId, TComPtr<EnvDTE::Process>& OutProcess)
 {
 	long Count = 0;
@@ -430,6 +441,7 @@ bool UVisualStudioToolsBlueprintBreakpointExtension::GetProcessById(const TComPt
 	return true;
 }
 
+// 如果 Visual Studio 尚未调试当前 UE 进程，则自动附加调试器。
 void UVisualStudioToolsBlueprintBreakpointExtension::AttachDebuggerIfNecessary(const TComPtr<EnvDTE::Debugger>& Debugger)
 {
 	TComPtr<EnvDTE::Processes> Processes;
@@ -480,6 +492,7 @@ void UVisualStudioToolsBlueprintBreakpointExtension::AttachDebuggerIfNecessary(c
 	}
 }
 
+// 通过 Visual Studio DTE 在指定源文件行号设置断点。
 bool UVisualStudioToolsBlueprintBreakpointExtension::SetVisualStudioBreakpoint(const UEdGraphNode* Node, const FString& SourceFilePath, const FString& SymbolName, uint32 SourceLineNumber)
 {
 	TComPtr<EnvDTE::_DTE> DTE;
@@ -530,6 +543,7 @@ bool UVisualStudioToolsBlueprintBreakpointExtension::SetVisualStudioBreakpoint(c
 	return bBreakpointAdded;
 }
 
+// 蓝图菜单命令入口：解析源码位置、设置断点并显示结果通知。
 void UVisualStudioToolsBlueprintBreakpointExtension::AddVisualStudioBreakpoint(const UEdGraphNode* Node)
 {
 	FWindowsPlatformMisc::CoInitialize();
@@ -553,6 +567,7 @@ void UVisualStudioToolsBlueprintBreakpointExtension::AddVisualStudioBreakpoint(c
 	FWindowsPlatformMisc::CoUninitialize();
 }
 
+// 显示 Visual Studio 断点添加成功或失败的编辑器通知。
 void UVisualStudioToolsBlueprintBreakpointExtension::ShowOperationResultNotification(bool bBreakpointAdded, const FString &SymbolName)
 {
 	FNotificationInfo Info(bBreakpointAdded ? FText::FromString(FString::Printf(TEXT("Breakpoint added at %s"), *SymbolName)) : FText::FromString("Could not add Breakpoint in Visual Studio"));
