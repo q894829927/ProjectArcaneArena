@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Blueprint/UserWidget.h"
+#include "Core/ArenaGameState.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
 #include "TimerManager.h"
@@ -21,6 +22,14 @@ public:
 	// 仅切换第三人称中心准星的表现可见性，不参与目标或伤害判定。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetThirdPersonReticleVisible(bool bVisible);
+
+	// 显示复制的游戏阶段；Defeat 文本只属于表现层。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetGamePhase(EArenaGamePhase NewPhase);
+
+	// 显示复制的当前波次和剩余敌人数，不在 UI 内计算波次状态。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetWaveState(int32 CurrentWaveIndex, int32 RemainingEnemyCount);
 
 	// 绑定玩家 PlayerState 上的 GAS 数据源，HUD 只监听变化，不拥有玩法状态。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
@@ -105,6 +114,18 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> AimReticleText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> PhaseText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> WaveText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> RemainingEnemiesText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> DefeatText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> BasicAttackCooldownProgressBar;

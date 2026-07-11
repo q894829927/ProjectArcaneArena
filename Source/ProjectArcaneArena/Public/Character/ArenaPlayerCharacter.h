@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Character/ArenaCharacterBase.h"
+#include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "ArenaPlayerCharacter.generated.h"
@@ -40,8 +41,18 @@ protected:
 	virtual void PossessedBy(AController* NewController) override;
 	// 客户端收到 PlayerState 后重新初始化 AvatarActor，确保 ASC 指向当前角色。
 	virtual void OnRep_PlayerState() override;
+	// 角色销毁或换 Pawn 时解绑 PlayerState ASC 委托，避免旧 Avatar 接收回调。
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	// 绑定 Enhanced Input，本轮输入只路由到移动和 GAS 输入标签。
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+
+	// 玩家死亡表现入口；玩法状态和失败判定仍由 C++/服务器拥有。
+	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Player")
+	void K2_OnDeathStarted();
+
+	// 眩晕开始或结束的表现入口，不用于决定角色能否移动。
+	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Player")
+	void K2_OnStunnedChanged(bool bIsStunned);
 
 private:
 	// 统一初始化 PlayerState ASC 的 OwnerActor/AvatarActor。
@@ -50,6 +61,15 @@ private:
 	void ApplyDefaultAttributes(AArenaPlayerState* ArenaPlayerState, UArenaAbilitySystemComponent* ArenaASC);
 	// 服务端授予启动技能，并把技能输入标签写入 AbilitySpec。
 	void GrantStartupAbilities(AArenaPlayerState* ArenaPlayerState, UArenaAbilitySystemComponent* ArenaASC);
+	// 绑定死亡、眩晕和移速属性委托，支持 PlayerState ASC 在重生时重新指向 Avatar。
+	void BindAbilitySystemDelegates(UArenaAbilitySystemComponent* ArenaASC);
+	// 移除当前绑定的 GAS 委托，防止重复初始化和旧角色悬挂回调。
+	void UnbindAbilitySystemDelegates();
+	// 根据 Dead/Stunned 优先级统一刷新移动组件状态。
+	void RefreshMovementState();
+	void HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	void HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	void HandleMoveSpeedChanged(const FOnAttributeChangeData& Data);
 	// 将默认输入映射加入本地玩家的 Enhanced Input 子系统。
 	void AddDefaultMappingContext() const;
 	// 创建模板阶段使用的 C++ 默认输入资产，后续可迁移到项目资产。
@@ -154,4 +174,10 @@ private:
 	FVector LastMovementInputDirection = FVector::ZeroVector;
 	bool bThirdPersonView = false;
 	float CameraBlendAlpha = 0.0f;
+
+	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
+	FDelegateHandle DeadTagDelegateHandle;
+	FDelegateHandle StunnedTagDelegateHandle;
+	FDelegateHandle MoveSpeedDelegateHandle;
+	bool bDeathHandled = false;
 };

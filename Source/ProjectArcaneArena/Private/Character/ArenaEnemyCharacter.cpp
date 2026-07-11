@@ -1,11 +1,13 @@
 #include "Character/ArenaEnemyCharacter.h"
 
+#include "AI/ArenaEnemyAIController.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayTags.h"
+#include "GAS/ArenaGameplayAbility_EnemyMeleeAttack.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffect.h"
 #include "UI/ArenaDamageNumberActor.h"
@@ -32,12 +34,64 @@ AArenaEnemyCharacter::AArenaEnemyCharacter()
 	HealthBarWidgetComponent->SetGenerateOverlapEvents(false);
 
 	GetCharacterMovement()->MaxWalkSpeed = 350.0f;
+	AIControllerClass = AArenaEnemyAIController::StaticClass();
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 }
 
 // 返回敌人自身持有的 ASC，供伤害、标签和 AI 技能系统访问。
 UAbilitySystemComponent* AArenaEnemyCharacter::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
+}
+
+// 仅服务器保存 AI 当前目标，客户端不依赖该临时决策状态。
+void AArenaEnemyCharacter::SetCombatTarget(AActor* NewCombatTarget)
+{
+	if (HasAuthority())
+	{
+		CombatTarget = NewCombatTarget;
+	}
+}
+
+// 通过 AbilityTag 请求 ASC 激活近战技能，冷却和状态阻断继续由 GAS 判断。
+bool AArenaEnemyCharacter::TryActivateMeleeAttack()
+{
+	if (!HasAuthority() || !AbilitySystemComponent || IsDeadOrStunned())
+	{
+		return false;
+	}
+
+	FGameplayTagContainer AbilityTags;
+	AbilityTags.AddTag(ArenaGameplayTags::Ability_Enemy_MeleeAttack);
+	return AbilitySystemComponent->TryActivateAbilitiesByTag(AbilityTags);
+}
+
+// 从启动技能 CDO 读取攻击距离，避免 AI 追击距离与 Ability 默认值分叉。
+float AArenaEnemyCharacter::GetMeleeAttackRange() const
+{
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : StartupAbilities)
+	{
+		if (const UArenaGameplayAbility_EnemyMeleeAttack* AbilityCDO = Cast<UArenaGameplayAbility_EnemyMeleeAttack>(AbilityClass.GetDefaultObject()))
+		{
+			return AbilityCDO->GetAttackRange();
+		}
+	}
+
+	return 170.0f;
+}
+
+bool AArenaEnemyCharacter::IsDeadOrStunned() const
+{
+	return !AbilitySystemComponent
+		|| AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+		|| AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
+}
+
+// 攻击状态来自 ASC Tag，AI 和表现层不保存重复布尔状态。
+bool AArenaEnemyCharacter::IsAttacking() const
+{
+	return AbilitySystemComponent
+		&& AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Attacking);
 }
 
 // BeginPlay 阶段初始化敌人 GAS、绑定反馈委托，并由服务端应用默认属性。
@@ -52,9 +106,28 @@ void AArenaEnemyCharacter::BeginPlay()
 	if (HasAuthority())
 	{
 		ApplyDefaultAttributes();
+		GrantStartupAbilities();
 	}
 
 	RefreshHealthBar();
+}
+
+// 服务器授予敌人配置的 GameplayAbility，客户端通过 ASC 复制获得必要状态。
+void AArenaEnemyCharacter::GrantStartupAbilities()
+{
+	if (bGrantedStartupAbilities || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : StartupAbilities)
+	{
+		if (AbilityClass)
+		{
+			AbilitySystemComponent->GiveAbility(FGameplayAbilitySpec(AbilityClass, 1, INDEX_NONE, this));
+		}
+	}
+	bGrantedStartupAbilities = true;
 }
 
 // 销毁前解绑 GAS 委托，避免属性或标签回调访问失效对象。
@@ -107,10 +180,20 @@ void AArenaEnemyCharacter::BindAbilitySystemDelegates()
 		ArenaGameplayTags::State_Dead,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &AArenaEnemyCharacter::HandleDeadTagChanged),
 		EGameplayTagEventType::NewOrRemoved);
+	StunnedTagDelegateHandle = AbilitySystemComponent->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::State_Stunned,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &AArenaEnemyCharacter::HandleStunnedTagChanged),
+		EGameplayTagEventType::NewOrRemoved);
 
 	// Health delegate 只驱动 UI 和反馈，真正死亡由 State.Dead 标签统一触发。
 	HealthChangedDelegateHandle = AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
 		UArenaAttributeSet::GetHealthAttribute()).AddUObject(this, &AArenaEnemyCharacter::HandleHealthChanged);
+	MoveSpeedDelegateHandle = AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+		UArenaAttributeSet::GetMoveSpeedAttribute()).AddUObject(this, &AArenaEnemyCharacter::HandleMoveSpeedChanged);
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->MaxWalkSpeed = FMath::Max(AttributeSet ? AttributeSet->GetMoveSpeed() : 0.0f, 0.0f);
+	}
 }
 
 // 解绑已注册的 GAS 标签和属性委托，配合 EndPlay 做生命周期清理。
@@ -136,6 +219,22 @@ void AArenaEnemyCharacter::UnbindAbilitySystemDelegates()
 			UArenaAttributeSet::GetHealthAttribute()).Remove(HealthChangedDelegateHandle);
 		HealthChangedDelegateHandle.Reset();
 	}
+
+	if (StunnedTagDelegateHandle.IsValid())
+	{
+		AbilitySystemComponent->UnregisterGameplayTagEvent(
+			StunnedTagDelegateHandle,
+			ArenaGameplayTags::State_Stunned,
+			EGameplayTagEventType::NewOrRemoved);
+		StunnedTagDelegateHandle.Reset();
+	}
+
+	if (MoveSpeedDelegateHandle.IsValid())
+	{
+		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
+			UArenaAttributeSet::GetMoveSpeedAttribute()).Remove(MoveSpeedDelegateHandle);
+		MoveSpeedDelegateHandle.Reset();
+	}
 }
 
 // 监听 State.Dead 标签新增，并把死亡处理集中到 HandleDeath。
@@ -144,6 +243,50 @@ void AArenaEnemyCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag, 
 	if (CallbackTag == ArenaGameplayTags::State_Dead && NewCount > 0)
 	{
 		HandleDeath();
+	}
+}
+
+// 眩晕期间停止移动和攻击，解除后若未死亡则恢复 Walking。
+void AArenaEnemyCharacter::HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	if (CallbackTag != ArenaGameplayTags::State_Stunned)
+	{
+		return;
+	}
+
+	RefreshMovementState();
+	if (NewCount > 0 && AbilitySystemComponent)
+	{
+		AbilitySystemComponent->CancelAllAbilities();
+	}
+}
+
+// 将敌人 MoveSpeed Attribute 同步到 CharacterMovement。
+void AArenaEnemyCharacter::HandleMoveSpeedChanged(const FOnAttributeChangeData& Data)
+{
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->MaxWalkSpeed = FMath::Max(Data.NewValue, 0.0f);
+	}
+}
+
+// Dead 优先于 Stunned；只有可行动状态才恢复敌人 Walking。
+void AArenaEnemyCharacter::RefreshMovementState()
+{
+	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	if (!MovementComponent || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	if (IsDeadOrStunned())
+	{
+		MovementComponent->StopMovementImmediately();
+		MovementComponent->DisableMovement();
+	}
+	else if (MovementComponent->MovementMode == MOVE_None)
+	{
+		MovementComponent->SetMovementMode(MOVE_Walking);
 	}
 }
 

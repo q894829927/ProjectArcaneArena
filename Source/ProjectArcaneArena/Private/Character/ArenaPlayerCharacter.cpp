@@ -1,11 +1,13 @@
 #include "Character/ArenaPlayerCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Core/ArenaGameMode.h"
 #include "Core/ArenaPlayerController.h"
 #include "Core/ArenaPlayerState.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "GAS/ArenaGameplayAbility.h"
+#include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -91,6 +93,13 @@ void AArenaPlayerCharacter::OnRep_PlayerState()
 	InitializeAbilityActorInfo();
 }
 
+// 销毁当前 Avatar 前解除 PlayerState ASC 上的角色级监听。
+void AArenaPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindAbilitySystemDelegates();
+	Super::EndPlay(EndPlayReason);
+}
+
 // 统一初始化玩家 ASC 的 Owner/Avatar，并在服务端补齐默认属性和技能。
 void AArenaPlayerCharacter::InitializeAbilityActorInfo()
 {
@@ -108,12 +117,155 @@ void AArenaPlayerCharacter::InitializeAbilityActorInfo()
 
 	// OwnerActor 是 PlayerState，AvatarActor 是当前 Character，这是玩家 GAS 的多人友好结构。
 	ArenaASC->InitAbilityActorInfo(ArenaPlayerState, this);
+	BindAbilitySystemDelegates(ArenaASC);
 
 	if (HasAuthority())
 	{
 		// 属性和技能只在服务端初始化，客户端通过 GAS 复制和 OnRep 接收结果。
 		ApplyDefaultAttributes(ArenaPlayerState, ArenaASC);
 		GrantStartupAbilities(ArenaPlayerState, ArenaASC);
+	}
+}
+
+// 绑定并立即同步角色状态，重复初始化时先解除旧绑定。
+void AArenaPlayerCharacter::BindAbilitySystemDelegates(UArenaAbilitySystemComponent* ArenaASC)
+{
+	UnbindAbilitySystemDelegates();
+	if (!ArenaASC)
+	{
+		return;
+	}
+
+	BoundAbilitySystemComponent = ArenaASC;
+	DeadTagDelegateHandle = ArenaASC->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::State_Dead,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &AArenaPlayerCharacter::HandleDeadTagChanged),
+		EGameplayTagEventType::NewOrRemoved);
+	StunnedTagDelegateHandle = ArenaASC->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::State_Stunned,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &AArenaPlayerCharacter::HandleStunnedTagChanged),
+		EGameplayTagEventType::NewOrRemoved);
+	MoveSpeedDelegateHandle = ArenaASC->GetGameplayAttributeValueChangeDelegate(
+		UArenaAttributeSet::GetMoveSpeedAttribute()).AddUObject(this, &AArenaPlayerCharacter::HandleMoveSpeedChanged);
+
+	if (const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>())
+	{
+		if (const UArenaAttributeSet* AttributeSet = ArenaPlayerState->GetArenaAttributeSet())
+		{
+			if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+			{
+				MovementComponent->MaxWalkSpeed = FMath::Max(AttributeSet->GetMoveSpeed(), 0.0f);
+			}
+		}
+	}
+	RefreshMovementState();
+}
+
+// 解除 PlayerState ASC 上属于当前 Avatar 的状态与属性监听。
+void AArenaPlayerCharacter::UnbindAbilitySystemDelegates()
+{
+	UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get();
+	if (ArenaASC)
+	{
+		if (DeadTagDelegateHandle.IsValid())
+		{
+			ArenaASC->UnregisterGameplayTagEvent(DeadTagDelegateHandle, ArenaGameplayTags::State_Dead, EGameplayTagEventType::NewOrRemoved);
+			DeadTagDelegateHandle.Reset();
+		}
+		if (StunnedTagDelegateHandle.IsValid())
+		{
+			ArenaASC->UnregisterGameplayTagEvent(StunnedTagDelegateHandle, ArenaGameplayTags::State_Stunned, EGameplayTagEventType::NewOrRemoved);
+			StunnedTagDelegateHandle.Reset();
+		}
+		if (MoveSpeedDelegateHandle.IsValid())
+		{
+			ArenaASC->GetGameplayAttributeValueChangeDelegate(UArenaAttributeSet::GetMoveSpeedAttribute()).Remove(MoveSpeedDelegateHandle);
+			MoveSpeedDelegateHandle.Reset();
+		}
+	}
+
+	BoundAbilitySystemComponent.Reset();
+}
+
+// Dead 的优先级高于 Stunned；只有两个状态都不存在时才恢复 Walking。
+void AArenaPlayerCharacter::RefreshMovementState()
+{
+	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	const UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get();
+	if (!MovementComponent || !ArenaASC)
+	{
+		return;
+	}
+
+	const bool bIsDead = ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead);
+	const bool bIsStunned = ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
+	if (bIsDead || bIsStunned)
+	{
+		LastMovementInputDirection = FVector::ZeroVector;
+		MovementComponent->StopMovementImmediately();
+		MovementComponent->DisableMovement();
+	}
+	else if (MovementComponent->MovementMode == MOVE_None)
+	{
+		MovementComponent->SetMovementMode(MOVE_Walking);
+	}
+}
+
+// State.Dead 是玩家死亡的唯一入口，服务器额外通知 GameMode 评估全员失败。
+void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	if (CallbackTag != ArenaGameplayTags::State_Dead)
+	{
+		return;
+	}
+
+	RefreshMovementState();
+	if (NewCount <= 0 || bDeathHandled)
+	{
+		return;
+	}
+
+	bDeathHandled = true;
+	if (UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get())
+	{
+		ArenaASC->CancelAllAbilities();
+	}
+	K2_OnDeathStarted();
+
+	if (HasAuthority())
+	{
+		if (AArenaGameMode* ArenaGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AArenaGameMode>() : nullptr)
+		{
+			ArenaGameMode->NotifyPlayerDeath();
+		}
+	}
+}
+
+// 眩晕变化立即刷新移动并取消进行中的技能，解除后由统一状态函数恢复。
+void AArenaPlayerCharacter::HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	if (CallbackTag != ArenaGameplayTags::State_Stunned)
+	{
+		return;
+	}
+
+	RefreshMovementState();
+	if (NewCount > 0)
+	{
+		if (UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get())
+		{
+			ArenaASC->CancelAllAbilities();
+		}
+	}
+	K2_OnStunnedChanged(NewCount > 0);
+}
+
+// 将 GAS MoveSpeed 当前值同步到 CharacterMovement，服务器与客户端使用同一复制结果。
+void AArenaPlayerCharacter::HandleMoveSpeedChanged(const FOnAttributeChangeData& Data)
+{
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->MaxWalkSpeed = FMath::Max(Data.NewValue, 0.0f);
 	}
 }
 
@@ -276,7 +428,9 @@ void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& Inp
 {
 	// Character 只负责把本地输入转成标签，是否能激活由 ASC/GAS 判断。
 	UArenaAbilitySystemComponent* ArenaASC = Cast<UArenaAbilitySystemComponent>(GetAbilitySystemComponent());
-	if (!ArenaASC)
+	if (!ArenaASC
+		|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+		|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))
 	{
 		return;
 	}
@@ -288,8 +442,11 @@ void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& Inp
 void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 {
 	const FVector2D MovementVector = Value.Get<FVector2D>();
+	const UAbilitySystemComponent* ArenaASC = GetAbilitySystemComponent();
 
-	if (!Controller || MovementVector.IsNearlyZero())
+	if (!Controller || MovementVector.IsNearlyZero()
+		|| (ArenaASC && (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+			|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))))
 	{
 		LastMovementInputDirection = FVector::ZeroVector;
 		return;

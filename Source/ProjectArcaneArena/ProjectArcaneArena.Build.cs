@@ -16,6 +16,7 @@ public class ProjectArcaneArena : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"AIModule",
 			"UMG",
 			"MassEntity"
 		});

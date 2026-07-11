@@ -376,6 +376,7 @@ State.Stunned
 State.Invincible
 State.Dashing
 State.Casting
+State.Attacking
 
 Ability.BasicAttack
 Ability.Fireball
@@ -420,6 +421,7 @@ Rules:
 * A dead character cannot activate abilities.
 * A stunned character cannot move or attack.
 * An invincible character should not receive normal damage.
+* An attacking character should not start another attack or resume AI path movement until the active attack ends.
 * Cooldown tags should block ability reactivation.
 * Casting tags may be used to prevent overlapping ability activation.
 * Build state, upgrade ownership, and status synergy should be represented with GameplayTags when practical, not scattered boolean variables.

@@ -1,6 +1,7 @@
 #include "Core/ArenaPlayerController.h"
 
 #include "Core/ArenaPlayerState.h"
+#include "Core/ArenaGameState.h"
 #include "UI/ArenaPlayerHUDWidget.h"
 
 // 构造玩家控制器，设置鼠标显示和基础输入交互选项。
@@ -20,6 +21,7 @@ void AArenaPlayerController::BeginPlay()
 	CreatePlayerHUD();
 	SetThirdPersonInputMode(false);
 	TryBindPlayerHUD();
+	BindGameStateHUD();
 }
 
 // Possess 新 Pawn 后再次尝试绑定 HUD，处理 PlayerState 或 ASC 稍后就绪的情况。
@@ -44,6 +46,14 @@ void AArenaPlayerController::CreatePlayerHUD()
 		PlayerHUDWidget->AddToViewport();
 		PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
 	}
+}
+
+// Controller 销毁前解除 GameState 动态委托，避免旅行或重连后重复绑定。
+void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindGameStateHUD();
+	ClearPlayerHUDBindingRetry();
+	Super::EndPlay(EndPlayReason);
 }
 
 // 在顶视角显示鼠标，在第三人称隐藏鼠标并显示屏幕中心准星。
@@ -105,7 +115,72 @@ void AArenaPlayerController::TryBindPlayerHUD()
 	}
 
 	PlayerHUDWidget->BindToAbilitySystem(ArenaPlayerState->GetArenaAbilitySystemComponent(), ArenaPlayerState->GetArenaAttributeSet());
+	BindGameStateHUD();
 	ClearPlayerHUDBindingRetry();
+}
+
+// 绑定 GameState 的复制变化并先用当前快照刷新一次 HUD。
+void AArenaPlayerController::BindGameStateHUD()
+{
+	if (!IsLocalController() || !PlayerHUDWidget)
+	{
+		return;
+	}
+
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	if (!ArenaGameState)
+	{
+		return;
+	}
+
+	if (BoundArenaGameState.Get() != ArenaGameState)
+	{
+		UnbindGameStateHUD();
+		BoundArenaGameState = ArenaGameState;
+		ArenaGameState->OnGamePhaseChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleGamePhaseChanged);
+		ArenaGameState->OnCurrentWaveIndexChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleWaveIndexChanged);
+		ArenaGameState->OnRemainingEnemyCountChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleRemainingEnemyCountChanged);
+	}
+
+	PlayerHUDWidget->SetGamePhase(ArenaGameState->GetGamePhase());
+	PlayerHUDWidget->SetWaveState(ArenaGameState->GetCurrentWaveIndex(), ArenaGameState->GetRemainingEnemyCount());
+}
+
+void AArenaPlayerController::UnbindGameStateHUD()
+{
+	if (AArenaGameState* ArenaGameState = BoundArenaGameState.Get())
+	{
+		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(this, &AArenaPlayerController::HandleGamePhaseChanged);
+		ArenaGameState->OnCurrentWaveIndexChanged.RemoveDynamic(this, &AArenaPlayerController::HandleWaveIndexChanged);
+		ArenaGameState->OnRemainingEnemyCountChanged.RemoveDynamic(this, &AArenaPlayerController::HandleRemainingEnemyCountChanged);
+	}
+	BoundArenaGameState.Reset();
+}
+
+void AArenaPlayerController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
+{
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetGamePhase(NewPhase);
+	}
+}
+
+void AArenaPlayerController::HandleWaveIndexChanged(int32 OldValue, int32 NewValue)
+{
+	if (PlayerHUDWidget)
+	{
+		const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+		PlayerHUDWidget->SetWaveState(NewValue, ArenaGameState ? ArenaGameState->GetRemainingEnemyCount() : 0);
+	}
+}
+
+void AArenaPlayerController::HandleRemainingEnemyCountChanged(int32 OldValue, int32 NewValue)
+{
+	if (PlayerHUDWidget)
+	{
+		const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+		PlayerHUDWidget->SetWaveState(ArenaGameState ? ArenaGameState->GetCurrentWaveIndex() : 0, NewValue);
+	}
 }
 
 // 当客户端 GAS 数据尚未复制完成时，安排短间隔重试绑定 HUD。

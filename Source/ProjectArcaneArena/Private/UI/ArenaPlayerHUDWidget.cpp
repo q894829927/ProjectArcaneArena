@@ -5,6 +5,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
+#include "Core/ArenaGameState.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayTags.h"
@@ -158,6 +159,8 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 	}
 
 	SetThirdPersonReticleVisible(false);
+	SetGamePhase(EArenaGamePhase::Waiting);
+	SetWaveState(0, 0);
 }
 
 // 切换准星显示；HitTestInvisible 保证它不会拦截任何战斗输入。
@@ -166,6 +169,59 @@ void UArenaPlayerHUDWidget::SetThirdPersonReticleVisible(bool bVisible)
 	if (AimReticleText)
 	{
 		AimReticleText->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+// 将 GameState 阶段转换为简洁 HUD 文本，Defeat 单独控制可见性。
+void UArenaPlayerHUDWidget::SetGamePhase(EArenaGamePhase NewPhase)
+{
+	FText PhaseDisplayText;
+	switch (NewPhase)
+	{
+	case EArenaGamePhase::Combat:
+		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseCombat", "Combat");
+		break;
+	case EArenaGamePhase::Upgrade:
+		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseUpgrade", "Upgrade");
+		break;
+	case EArenaGamePhase::Victory:
+		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseVictory", "Victory");
+		break;
+	case EArenaGamePhase::Defeat:
+		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseDefeat", "Defeat");
+		break;
+	default:
+		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseWaiting", "Waiting");
+		break;
+	}
+
+	if (PhaseText)
+	{
+		PhaseText->SetText(PhaseDisplayText);
+	}
+	if (DefeatText)
+	{
+		DefeatText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "DefeatMessage", "DEFEAT"));
+		DefeatText->SetVisibility(NewPhase == EArenaGamePhase::Defeat
+			? ESlateVisibility::HitTestInvisible
+			: ESlateVisibility::Collapsed);
+	}
+}
+
+// 使用 GameState 已复制的整数值刷新波次 HUD。
+void UArenaPlayerHUDWidget::SetWaveState(int32 CurrentWaveIndex, int32 RemainingEnemyCount)
+{
+	if (WaveText)
+	{
+		WaveText->SetText(FText::Format(
+			NSLOCTEXT("ArenaPlayerHUDWidget", "WaveFormat", "Wave {0}"),
+			FText::AsNumber(FMath::Max(CurrentWaveIndex, 0))));
+	}
+	if (RemainingEnemiesText)
+	{
+		RemainingEnemiesText->SetText(FText::Format(
+			NSLOCTEXT("ArenaPlayerHUDWidget", "EnemiesFormat", "Enemies {0}"),
+			FText::AsNumber(FMath::Max(RemainingEnemyCount, 0))));
 	}
 }
 

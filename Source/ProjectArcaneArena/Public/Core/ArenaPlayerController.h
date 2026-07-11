@@ -1,11 +1,13 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/ArenaGameState.h"
 #include "GameFramework/PlayerController.h"
 #include "TimerManager.h"
 #include "ArenaPlayerController.generated.h"
 
 class UArenaPlayerHUDWidget;
+class AArenaGameState;
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaPlayerController : public APlayerController
@@ -24,6 +26,7 @@ protected:
 
 	// Pawn 切换后重试 HUD 绑定，兼容未来重生流程。
 	virtual void OnPossess(APawn* InPawn) override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	// 创建本地玩家 HUD，Dedicated Server 和非本地 Controller 不创建 UI。
@@ -31,6 +34,16 @@ private:
 
 	// 从 PlayerState 获取 ASC/AttributeSet 并绑定到 HUD，未就绪时短时间重试。
 	void TryBindPlayerHUD();
+	// 绑定复制 GameState 委托，HUD 只观察阶段与波次数据。
+	void BindGameStateHUD();
+	void UnbindGameStateHUD();
+
+	UFUNCTION()
+	void HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase);
+	UFUNCTION()
+	void HandleWaveIndexChanged(int32 OldValue, int32 NewValue);
+	UFUNCTION()
+	void HandleRemainingEnemyCountChanged(int32 OldValue, int32 NewValue);
 
 	// PlayerState 或 ASC 复制到客户端可能晚于 BeginPlay，需要延迟重试。
 	void SchedulePlayerHUDBindingRetry();
@@ -43,6 +56,8 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UArenaPlayerHUDWidget> PlayerHUDWidget;
+
+	TWeakObjectPtr<AArenaGameState> BoundArenaGameState;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.01"))
 	float PlayerHUDBindingRetryInterval = 0.1f;
