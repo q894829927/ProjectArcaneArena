@@ -70,6 +70,10 @@ private:
 	void HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleMoveSpeedChanged(const FOnAttributeChangeData& Data);
+	// 使用当前 GAS MoveSpeed 和奔跑倍率统一刷新 CharacterMovement。
+	void RefreshMaxWalkSpeed();
+	// 切换本地或服务器的奔跑意图，死亡和眩晕状态会强制拒绝奔跑。
+	void SetSprinting(bool bNewSprinting);
 	// 将默认输入映射加入本地玩家的 Enhanced Input 子系统。
 	void AddDefaultMappingContext() const;
 	// 创建模板阶段使用的 C++ 默认输入资产，后续可迁移到项目资产。
@@ -81,6 +85,10 @@ private:
 	void Input_Move(const FInputActionValue& Value);
 	// Clears cached dash direction when movement input stops.
 	void Input_MoveStopped(const FInputActionValue& Value);
+	// 按住 Shift 开始奔跑，并把意图同步给服务器。
+	void Input_SprintStarted(const FInputActionValue& Value);
+	// 松开 Shift 恢复 GAS MoveSpeed。
+	void Input_SprintStopped(const FInputActionValue& Value);
 	// 基础攻击输入入口，当前只发送 Ability.BasicAttack 标签。
 	void Input_BasicAttack();
 	// Fireball 输入入口，只发送 Ability.Fireball 标签，具体技能逻辑由 GAS 处理。
@@ -98,6 +106,10 @@ private:
 	// 根据当前混合值更新 SpringArm 的距离、偏移和世界旋转。
 	void UpdateCameraTransform();
 
+	// 服务端校验并应用奔跑意图，防止客户端直接决定权威速度。
+	UFUNCTION(Server, Reliable)
+	void ServerSetSprinting(bool bNewSprinting);
+
 private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> CameraBoom;
@@ -110,6 +122,9 @@ private:
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> MoveAction;
+
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> SprintAction;
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> BasicAttackAction;
@@ -134,6 +149,9 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	int32 InputMappingPriority = 0;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Movement|Sprint", meta = (ClampMin = "1.0"))
+	float SprintSpeedMultiplier = 1.5f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Camera|TopDown", meta = (ClampMin = "0.0"))
 	float TopDownArmLength = 900.0f;
@@ -180,4 +198,5 @@ private:
 	FDelegateHandle StunnedTagDelegateHandle;
 	FDelegateHandle MoveSpeedDelegateHandle;
 	bool bDeathHandled = false;
+	bool bIsSprinting = false;
 };

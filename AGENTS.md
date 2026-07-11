@@ -686,6 +686,7 @@ Recommended inputs:
 
 ```text
 WASD        Move (world-relative top-down, camera-relative third-person)
+Shift       Sprint
 Mouse       Cursor aim in top-down / camera look in third-person
 Left Mouse  Basic Attack
 Q           Fireball

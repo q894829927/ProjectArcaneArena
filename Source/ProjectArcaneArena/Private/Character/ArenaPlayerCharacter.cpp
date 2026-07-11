@@ -148,16 +148,7 @@ void AArenaPlayerCharacter::BindAbilitySystemDelegates(UArenaAbilitySystemCompon
 	MoveSpeedDelegateHandle = ArenaASC->GetGameplayAttributeValueChangeDelegate(
 		UArenaAttributeSet::GetMoveSpeedAttribute()).AddUObject(this, &AArenaPlayerCharacter::HandleMoveSpeedChanged);
 
-	if (const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>())
-	{
-		if (const UArenaAttributeSet* AttributeSet = ArenaPlayerState->GetArenaAttributeSet())
-		{
-			if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
-			{
-				MovementComponent->MaxWalkSpeed = FMath::Max(AttributeSet->GetMoveSpeed(), 0.0f);
-			}
-		}
-	}
+	RefreshMaxWalkSpeed();
 	RefreshMovementState();
 }
 
@@ -201,6 +192,7 @@ void AArenaPlayerCharacter::RefreshMovementState()
 	const bool bIsStunned = ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
 	if (bIsDead || bIsStunned)
 	{
+		SetSprinting(false);
 		LastMovementInputDirection = FVector::ZeroVector;
 		MovementComponent->StopMovementImmediately();
 		MovementComponent->DisableMovement();
@@ -260,13 +252,40 @@ void AArenaPlayerCharacter::HandleStunnedTagChanged(const FGameplayTag CallbackT
 	K2_OnStunnedChanged(NewCount > 0);
 }
 
-// 将 GAS MoveSpeed 当前值同步到 CharacterMovement，服务器与客户端使用同一复制结果。
+// 将 GAS MoveSpeed 当前值和奔跑倍率同步到 CharacterMovement。
 void AArenaPlayerCharacter::HandleMoveSpeedChanged(const FOnAttributeChangeData& Data)
 {
 	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
 	{
-		MovementComponent->MaxWalkSpeed = FMath::Max(Data.NewValue, 0.0f);
+		const float SpeedMultiplier = bIsSprinting ? FMath::Max(SprintSpeedMultiplier, 1.0f) : 1.0f;
+		MovementComponent->MaxWalkSpeed = FMath::Max(Data.NewValue, 0.0f) * SpeedMultiplier;
 	}
+}
+
+// 从 PlayerState AttributeSet 读取基础移速，避免奔跑切换覆盖 GAS 升级结果。
+void AArenaPlayerCharacter::RefreshMaxWalkSpeed()
+{
+	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
+	const UArenaAttributeSet* AttributeSet = ArenaPlayerState ? ArenaPlayerState->GetArenaAttributeSet() : nullptr;
+	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	if (!AttributeSet || !MovementComponent)
+	{
+		return;
+	}
+
+	const float SpeedMultiplier = bIsSprinting ? FMath::Max(SprintSpeedMultiplier, 1.0f) : 1.0f;
+	MovementComponent->MaxWalkSpeed = FMath::Max(AttributeSet->GetMoveSpeed(), 0.0f) * SpeedMultiplier;
+}
+
+// 本地与服务器共用同一状态入口，Dead/Stunned 永远覆盖奔跑意图。
+void AArenaPlayerCharacter::SetSprinting(bool bNewSprinting)
+{
+	const UAbilitySystemComponent* ArenaASC = GetAbilitySystemComponent();
+	const bool bMovementBlocked = ArenaASC
+		&& (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+			|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned));
+	bIsSprinting = bNewSprinting && !bMovementBlocked;
+	RefreshMaxWalkSpeed();
 }
 
 // 应用玩家初始属性 GameplayEffect，避免绕过 GAS 直接改属性。
@@ -334,6 +353,9 @@ void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AArenaPlayerCharacter::Input_Move);
 	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Completed, this, &AArenaPlayerCharacter::Input_MoveStopped);
 	EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Canceled, this, &AArenaPlayerCharacter::Input_MoveStopped);
+	EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_SprintStarted);
+	EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Completed, this, &AArenaPlayerCharacter::Input_SprintStopped);
+	EnhancedInputComponent->BindAction(SprintAction, ETriggerEvent::Canceled, this, &AArenaPlayerCharacter::Input_SprintStopped);
 	EnhancedInputComponent->BindAction(BasicAttackAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_BasicAttack);
 	EnhancedInputComponent->BindAction(FireballAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Fireball);
 	EnhancedInputComponent->BindAction(DashAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Dash);
@@ -374,6 +396,9 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 
 	MoveAction = CreateDefaultSubobject<UInputAction>(TEXT("Move"));
 	MoveAction->ValueType = EInputActionValueType::Axis2D;
+
+	SprintAction = CreateDefaultSubobject<UInputAction>(TEXT("Sprint"));
+	SprintAction->ValueType = EInputActionValueType::Boolean;
 
 	BasicAttackAction = CreateDefaultSubobject<UInputAction>(TEXT("BasicAttack"));
 	BasicAttackAction->ValueType = EInputActionValueType::Boolean;
@@ -421,6 +446,8 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	DefaultMappingContext->MapKey(ViewToggleAction, EKeys::Zero);
 	DefaultMappingContext->MapKey(ViewToggleAction, EKeys::NumPadZero);
 	DefaultMappingContext->MapKey(LookAction, EKeys::Mouse2D);
+	DefaultMappingContext->MapKey(SprintAction, EKeys::LeftShift);
+	DefaultMappingContext->MapKey(SprintAction, EKeys::RightShift);
 }
 
 // 将本地技能输入转换为 GameplayTag，让 ASC 决定能否激活技能。
@@ -472,6 +499,32 @@ void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 void AArenaPlayerCharacter::Input_MoveStopped(const FInputActionValue& Value)
 {
 	LastMovementInputDirection = FVector::ZeroVector;
+}
+
+// 本地先更新速度减少输入延迟，再由服务器应用相同的受限奔跑倍率。
+void AArenaPlayerCharacter::Input_SprintStarted(const FInputActionValue& Value)
+{
+	SetSprinting(true);
+	if (!HasAuthority())
+	{
+		ServerSetSprinting(true);
+	}
+}
+
+// 松开 Shift 时两端恢复未经倍率放大的 GAS MoveSpeed。
+void AArenaPlayerCharacter::Input_SprintStopped(const FInputActionValue& Value)
+{
+	SetSprinting(false);
+	if (!HasAuthority())
+	{
+		ServerSetSprinting(false);
+	}
+}
+
+// 服务端仅接受开关意图，最终速度仍由受限倍率和服务器持有的 MoveSpeed 决定。
+void AArenaPlayerCharacter::ServerSetSprinting_Implementation(bool bNewSprinting)
+{
+	SetSprinting(bNewSprinting);
 }
 
 // 基础攻击输入入口，仅发送 Ability.BasicAttack 标签。

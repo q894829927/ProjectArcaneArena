@@ -26,6 +26,7 @@ Status meanings:
 * Top-down uses a visible cursor and world-relative movement; third-person uses mouse-look, camera-relative movement, camera collision, and a center reticle.
 * Camera mode and reticle state are local presentation state and are not replicated.
 * A shared view-aware TargetActor uses cursor hits in top-down and a center-screen trace that ignores the owning Avatar in third-person.
+* Holding either Shift key enables sprint in both camera modes. The local player predicts the speed change, while a server RPC applies the same validated `MoveSpeed × SprintSpeedMultiplier` authority value; death and stun force sprint off.
 * Verification: implementation and API paths inspected; two-player independent-view PIE is not recorded as verified.
 
 ## GAS and Attributes
