@@ -64,7 +64,7 @@ private:
 	void Input_Dash();
 	// Shield 输入入口，只发送 Ability.Shield 标签，具体护盾逻辑由 GAS 处理。
 	void Input_Shield();
-	// 预留技能输入入口，后续接入对应 GameplayAbility。
+	// LightningStorm 输入入口，只发送 Ability.LightningStorm 标签，具体范围伤害由 GAS 处理。
 	void Input_Ultimate();
 
 private:

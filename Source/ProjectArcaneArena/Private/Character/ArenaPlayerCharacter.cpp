@@ -287,5 +287,5 @@ void AArenaPlayerCharacter::Input_Shield()
 
 void AArenaPlayerCharacter::Input_Ultimate()
 {
-	// TODO: Route to the AbilitySystemComponent input flow in the GAS pass.
+	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_LightningStorm);
 }
