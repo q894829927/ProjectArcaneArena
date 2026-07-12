@@ -3,6 +3,7 @@
 #include "Core/ArenaGameMode.h"
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaGameState.h"
+#include "GameFramework/PawnMovementComponent.h"
 #include "UI/ArenaPlayerHUDWidget.h"
 #include "UI/ArenaUpgradeSelectionWidget.h"
 
@@ -143,7 +144,7 @@ void AArenaPlayerController::RefreshUpgradeSelectionUI()
 	SetUpgradeInputMode(bShouldShow);
 }
 
-// 升级期间切为 UIOnly 并显示鼠标，结束后恢复当前顶视角或第三人称输入模式。
+// 升级期间切为 UIOnly，清空残留移动输入并立即停止 Pawn；结束后恢复当前视角输入。
 void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
 {
 	if (!IsLocalController() || bUpgradeInputMode == bEnabled)
@@ -154,6 +155,19 @@ void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
 	bUpgradeInputMode = bEnabled;
 	if (bUpgradeInputMode && UpgradeSelectionWidget)
 	{
+		// UIOnly 会截断 Enhanced Input 的 Completed/Canceled 事件；先清键并阻止后续移动输入。
+		SetIgnoreMoveInput(true);
+		FlushPressedKeys();
+
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			ControlledPawn->ConsumeMovementInputVector();
+			if (UPawnMovementComponent* MovementComponent = ControlledPawn->GetMovementComponent())
+			{
+				MovementComponent->StopMovementImmediately();
+			}
+		}
+
 		bShowMouseCursor = true;
 		FInputModeUIOnly InputMode;
 		InputMode.SetWidgetToFocus(UpgradeSelectionWidget->TakeWidget());
@@ -162,6 +176,9 @@ void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
 	}
 	else
 	{
+		// 恢复游戏输入前再次清键，避免 UI 期间松开的按键在 Enhanced Input 中保持按下状态。
+		FlushPressedKeys();
+		SetIgnoreMoveInput(false);
 		SetThirdPersonInputMode(bThirdPersonInputMode);
 	}
 }
