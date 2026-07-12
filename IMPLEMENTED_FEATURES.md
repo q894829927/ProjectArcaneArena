@@ -184,6 +184,7 @@ Status meanings:
 * `AArenaWaveManager` broadcasts the formal Upgrade entry and disables its three-second prototype auto-advance while the upgrade system is connected.
 * `UArenaUpgradeSelectionWidget` provides a native usable three-button fallback plus optional Blueprint bindings; `AArenaPlayerController` owns UI input mode and sends only the selected ID through a reliable Server RPC.
 * Three transparent 512x512 UI Texture2D assets under `/Game/UI/UpgradeIcons` represent AttackPower, MaxHealth, and MoveSpeed upgrades; the repeatable `import_upgrade_icons.py` tool imports them with UI texture settings, and the native/fallback selection Widget reads each DataAsset `Icon` into its corresponding `UImage`.
+* The native fallback wraps each upgrade `UImage` in a `USizeBox` so parent layout pressure cannot shrink the icon; `UpgradeIconSize` defaults to `220x220` and `UpgradePanelSize` defaults to `1200x460`, with both exposed as configurable layout properties for Blueprint subclasses.
 * Missing configuration is fail-visible: an empty or invalid pool leaves the game in Upgrade and logs `LogArenaUpgrades` errors instead of silently skipping rewards.
 * Missing: configured upgrade DataAssets and GameplayEffects, Blueprint visual pass, PIE verification, ability variants, trigger upgrades, build synergies, and rarity weighting.
 
