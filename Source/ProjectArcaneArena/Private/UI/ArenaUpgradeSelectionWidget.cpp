@@ -7,6 +7,7 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/Image.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -74,7 +75,9 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 		PanelSlot->SetAnchors(FAnchors(0.5f, 0.5f));
 		PanelSlot->SetAlignment(FVector2D(0.5f, 0.5f));
 		PanelSlot->SetPosition(FVector2D::ZeroVector);
-		PanelSlot->SetSize(FVector2D(1080.0f, 300.0f));
+		PanelSlot->SetSize(FVector2D(
+			FMath::Max(1.0f, UpgradePanelSize.X),
+			FMath::Max(1.0f, UpgradePanelSize.Y)));
 	}
 
 	UTextBlock* HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("UpgradeHeaderText"));
@@ -99,11 +102,17 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 		OutButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), ButtonName);
 		UVerticalBox* ButtonContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 		OutIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), IconName);
-		OutIcon->SetDesiredSizeOverride(FVector2D(128.0f, 128.0f));
+
+		// SizeBox 固定升级图标的布局尺寸，避免 Image 的期望尺寸被父布局压缩。
+		USizeBox* IconSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
+		IconSizeBox->SetWidthOverride(FMath::Max(1.0f, UpgradeIconSize.X));
+		IconSizeBox->SetHeightOverride(FMath::Max(1.0f, UpgradeIconSize.Y));
+		IconSizeBox->AddChild(OutIcon);
+
 		OutText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TextName);
 		OutText->SetJustification(ETextJustify::Center);
 		OutText->SetAutoWrapText(true);
-		if (UVerticalBoxSlot* IconSlot = ButtonContent->AddChildToVerticalBox(OutIcon))
+		if (UVerticalBoxSlot* IconSlot = ButtonContent->AddChildToVerticalBox(IconSizeBox))
 		{
 			IconSlot->SetHorizontalAlignment(HAlign_Center);
 			IconSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 12.0f));
