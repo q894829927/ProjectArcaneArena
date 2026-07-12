@@ -185,6 +185,7 @@ Status meanings:
 * `UArenaUpgradeSelectionWidget` provides a native usable three-button fallback plus optional Blueprint bindings; `AArenaPlayerController` owns UI input mode and sends only the selected ID through a reliable Server RPC.
 * Three transparent 512x512 UI Texture2D assets under `/Game/UI/UpgradeIcons` represent AttackPower, MaxHealth, and MoveSpeed upgrades; the repeatable `import_upgrade_icons.py` tool imports them with UI texture settings, and the native/fallback selection Widget reads each DataAsset `Icon` into its corresponding `UImage`.
 * The native fallback wraps each upgrade `UImage` in a `USizeBox` so parent layout pressure cannot shrink the icon; `UpgradeIconSize` defaults to `220x220` and `UpgradePanelSize` defaults to `1200x460`, with both exposed as configurable layout properties for Blueprint subclasses.
+* Entering the upgrade UI flushes pressed keys, ignores movement input, consumes the controlled Pawn's pending movement vector, and stops its movement component immediately; leaving the UI clears keys again before gameplay input is restored, preventing stale Enhanced Input state from keeping the character moving.
 * Missing configuration is fail-visible: an empty or invalid pool leaves the game in Upgrade and logs `LogArenaUpgrades` errors instead of silently skipping rewards.
 * Missing: configured upgrade DataAssets and GameplayEffects, Blueprint visual pass, PIE verification, ability variants, trigger upgrades, build synergies, and rarity weighting.
 
@@ -200,4 +201,5 @@ Status meanings:
 * Fireball, Dash, replicated attacks, and the remote-client Dash Montage completed their requested multiplayer observation pass.
 * `GameplayCueNotifyPaths=/Game/GAS` was added to project config. After restarting the editor, the latest session log no longer reported the previous missing GameplayCue path warning.
 * The network-polish UHT pass generated reflection code successfully. Its first C++ pass exposed private `FGameplayAbilitySpecHandle::Handle` audit access, which has been replaced with the public `ToString()` API; a build retry remains pending because the same run also hit Windows page-file error `C3859/C1076`.
+* Upgrade UI movement-stop behavior is implemented but still requires single-player and two-client PIE verification while the player is holding movement input when the Upgrade phase begins.
 * A feature must explicitly say `Verified` before this log should be treated as proof of completed PIE, multiplayer, or packaged-build testing.
