@@ -58,6 +58,7 @@ Status meanings:
 * Fireball and LightningStorm guard each server activation against duplicate TargetData consumption, while projectile impact and storm per-target/per-tick guards remain authoritative.
 * Development CVars `arena.Net.RejectNextAbility` and `arena.Net.AbilityAudit` support one-shot server rejection and execution/spawn/damage auditing. Rejection values are `1 Basic`, `2 Fireball`, `3 Dash`, `4 Shield`, and `5 Storm`.
 * Verification pending: narrow Editor build, 150 ms RTT at 2%/5% loss, forced rollback checks, and two-client Dedicated Server PIE.
+* Two-client PIE confirmation: Fireball produced one authoritative Projectile per cast and LightningStorm produced one authoritative Area Actor per cast.
 
 ## Player Abilities
 
@@ -103,6 +104,7 @@ Status meanings:
 * Successful damage emits one type-specific hit Cue from the authoritative AttributeSet Damage meta-attribute path, using HitResult data when available and target location as fallback.
 * GameplayCue Notify assets exist under `/Game/GAS/GameplayCues` and reference the current Niagara systems. Dash/Shield attached-effect placement and Niagara local-space/loop tuning still require PIE verification; remove any duplicate Niagara component from `BP_ArenaLightningStormArea` after the Storm Active Cue is confirmed.
 * `ProjectArcaneArenaEditor` provides a Niagara lifecycle bridge used by project Python tooling to copy verified looping System/Emitter State values and enable Local Space on converted shield effects; this editor-only module has no packaged-game runtime ownership.
+* Two-client PIE confirmation: after clearing the server activation prediction key for Storm Cast/Active dispatch, both the owning client and the other client can see the same LightningStorm presentation.
 
 ### Player HUD — Implemented
 
@@ -156,10 +158,11 @@ Status meanings:
 * `UArenaWaveDataAsset` stores enemy entries/counts, spawn interval, boss marker, and reward count per wave.
 * Server-owned `AArenaWaveManager` discovers `ATargetPoint` actors tagged `EnemySpawn`, spawns configured enemies, tracks successful spawns through enemy death delegates, and writes replicated state to GameState.
 * Clearing a non-final wave enters Upgrade; the production flow waits for explicit `StartNextWave`, while clearing the final configured wave enters Victory.
-* Until the upgrade-selection system exists, WaveManager uses a configurable prototype fallback that keeps Upgrade visible for three seconds and then starts the next wave automatically. Disable `bAutoStartNextWaveWithoutUpgradeSystem` when the real selection flow begins calling `StartNextWave`.
+* WaveManager retains a configurable three-second prototype fallback, but GameMode now disables it when the formal upgrade-selection system binds to the Upgrade entry.
 * Missing configuration never counts as wave completion; failed spawns keep Combat active and emit `LogArenaWaves` errors.
 * `DA_Waves_Prototype`, its `BP_ArenaGameMode` reference, three tagged EnemySpawn TargetPoints, and a covering NavMeshBoundsVolume are configured in project assets.
-* Missing: upgrade selection UI/runtime, boss content, and runtime verification of the new automatic `Wave 1 -> Upgrade -> Wave 2 -> Upgrade -> Wave 3 -> Victory` fallback.
+* Missing: boss content and runtime verification of the formal `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow.
+* Runtime confirmation: clearing a wave enters `Upgrade`, and the server `StartNextWave()` entry successfully advances to the next configured wave.
 
 ## Phase 4 Configured Assets
 
@@ -173,10 +176,16 @@ Status meanings:
 * `Lvl_TopDown`: a NavMeshBoundsVolume and three TargetPoints with Actor Tag `EnemySpawn` are configured.
 * `WBP_PlayerHUD`: optionally add TextBlocks named `PhaseText`, `WaveText`, `RemainingEnemiesText`, and `DefeatText`; set `DefeatText` initial visibility to Collapsed.
 
-### Roguelike Upgrades — Not Implemented
+### Roguelike Upgrade Foundation — Partial
 
-* The intended upgrade architecture is documented in `AGENTS.md`, but no runtime upgrade system currently exists.
-* Missing: UpgradeDataAsset, candidate generation, server validation, PlayerState ownership/stacks, upgrade UI, and build synergies.
+* `UArenaUpgradeDataAsset` defines upgrade identity, text/icon presentation, rarity, eligibility tags, granted GE/Ability, routing tags, numeric metadata, and stack limits.
+* `AArenaPlayerState` owns permanent upgrade stack records, replicated selection completion, and OwnerOnly candidate arrays; local UI observes replicated state delegates.
+* `AArenaGameMode` generates up to three unique eligible choices per player from a configured pool, validates the submitted ID against that player's candidates, applies the GameplayEffect/Ability/tags on the server, and waits for every participating PlayerState before starting the next wave.
+* `AArenaWaveManager` broadcasts the formal Upgrade entry and disables its three-second prototype auto-advance while the upgrade system is connected.
+* `UArenaUpgradeSelectionWidget` provides a native usable three-button fallback plus optional Blueprint bindings; `AArenaPlayerController` owns UI input mode and sends only the selected ID through a reliable Server RPC.
+* Three transparent 512x512 UI Texture2D assets under `/Game/UI/UpgradeIcons` represent AttackPower, MaxHealth, and MoveSpeed upgrades; the repeatable `import_upgrade_icons.py` tool imports them with UI texture settings.
+* Missing configuration is fail-visible: an empty or invalid pool leaves the game in Upgrade and logs `LogArenaUpgrades` errors instead of silently skipping rewards.
+* Missing: configured upgrade DataAssets and GameplayEffects, Blueprint visual pass, PIE verification, ability variants, trigger upgrades, build synergies, and rarity weighting.
 
 ## Verification Notes
 

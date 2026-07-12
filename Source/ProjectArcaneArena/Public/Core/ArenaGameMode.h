@@ -5,7 +5,10 @@
 #include "TimerManager.h"
 #include "ArenaGameMode.generated.h"
 
+class AArenaPlayerController;
+class AArenaPlayerState;
 class AArenaWaveManager;
+class UArenaUpgradeDataAsset;
 class UArenaWaveDataAsset;
 
 UCLASS()
@@ -22,10 +25,22 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|Wave")
 	void StartNextWave();
 
+	// 接收 Controller 的选择请求，全部规则由服务器重新验证后才应用升级。
+	void SubmitUpgradeSelection(AArenaPlayerController* RequestingController, FName UpgradeID);
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void PostLogin(APlayerController* NewPlayer) override;
+	virtual void Logout(AController* Exiting) override;
 
 private:
+	void HandleUpgradePhaseStarted();
+	void PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlayerState);
+	bool IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
+	bool ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
+	bool HaveAllPlayersCompletedUpgradeSelection() const;
+	void TryAdvanceAfterUpgradeSelections();
+
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave")
 	TSubclassOf<AArenaWaveManager> WaveManagerClass;
 
@@ -35,8 +50,18 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave", meta = (ClampMin = "0.0"))
 	float InitialWaveDelay = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Upgrade")
+	TArray<TObjectPtr<UArenaUpgradeDataAsset>> UpgradePool;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Upgrade", meta = (ClampMin = "1", ClampMax = "3"))
+	int32 UpgradeChoiceCount = 3;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Upgrade")
+	int32 UpgradeRandomSeed = 1337;
+
 	UPROPERTY(Transient)
 	TObjectPtr<AArenaWaveManager> WaveManager;
 
 	FTimerHandle InitialWaveTimerHandle;
+	FRandomStream UpgradeRandomStream;
 };

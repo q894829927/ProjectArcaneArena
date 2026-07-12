@@ -43,6 +43,12 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Victory, "Phase.Victory", "All configured waves are complete.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Defeat, "Phase.Defeat", "All participating players are dead.");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Fire, "Build.Fire", "Player owns progress in the fire build path.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Lightning, "Build.Lightning", "Player owns progress in the lightning build path.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Crit, "Build.Crit", "Player owns progress in the critical-hit build path.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Shield, "Build.Shield", "Player owns progress in the shield build path.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Dash, "Build.Dash", "Player owns progress in the dash build path.");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Base, "SetByCaller.Damage.Base", "Runtime base damage value.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");
 }

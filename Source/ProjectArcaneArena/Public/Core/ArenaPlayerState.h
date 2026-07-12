@@ -7,7 +7,22 @@
 
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
+class UArenaUpgradeDataAsset;
 class UAbilitySystemComponent;
+
+USTRUCT(BlueprintType)
+struct FArenaOwnedUpgrade
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Upgrade")
+	FName UpgradeID;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Upgrade")
+	int32 StackCount = 0;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FArenaUpgradeStateChangedSignature);
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaPlayerState : public APlayerState, public IAbilitySystemInterface
@@ -16,6 +31,7 @@ class PROJECTARCANEARENA_API AArenaPlayerState : public APlayerState, public IAb
 
 public:
 	AArenaPlayerState();
+	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// PlayerState 拥有玩家 ASC，方便未来死亡重生时保留长期 GAS 状态。
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
@@ -34,7 +50,39 @@ public:
 	bool HasAppliedDefaultAttributes() const { return bAppliedDefaultAttributes; }
 	void SetAppliedDefaultAttributes(bool bNewAppliedDefaultAttributes);
 
+	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
+	TArray<UArenaUpgradeDataAsset*> GetUpgradeCandidates() const;
+
+	// 返回拥有者已获得的升级 ID 与层数快照，供 UI 展示构筑摘要。
+	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
+	TArray<FArenaOwnedUpgrade> GetOwnedUpgrades() const { return OwnedUpgrades; }
+
+	// 查询指定升级当前层数，服务器用它执行堆叠上限验证。
+	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
+	int32 GetUpgradeStackCount(FName UpgradeID) const;
+
+	// 返回本轮是否已经完成选择，GameMode 据此等待全部参与玩家。
+	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
+	bool HasSelectedUpgrade() const { return bHasSelectedUpgrade; }
+
+	// 以下写接口仅供服务器 GameMode 管理每轮候选、选择状态和永久堆叠。
+	void BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsset*>& InCandidates);
+	void CompleteUpgradeSelection(FName UpgradeID);
+	void CompleteUpgradeSelectionWithoutReward();
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")
+	FArenaUpgradeStateChangedSignature OnUpgradeStateChanged;
+
 private:
+	UFUNCTION()
+	void OnRep_UpgradeCandidates();
+
+	UFUNCTION()
+	void OnRep_OwnedUpgrades();
+
+	UFUNCTION()
+	void OnRep_HasSelectedUpgrade();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAbilitySystemComponent> AbilitySystemComponent;
 
@@ -43,4 +91,13 @@ private:
 
 	bool bGrantedStartupAbilities = false;
 	bool bAppliedDefaultAttributes = false;
+
+	UPROPERTY(ReplicatedUsing = OnRep_UpgradeCandidates)
+	TArray<TObjectPtr<UArenaUpgradeDataAsset>> UpgradeCandidates;
+
+	UPROPERTY(ReplicatedUsing = OnRep_OwnedUpgrades)
+	TArray<FArenaOwnedUpgrade> OwnedUpgrades;
+
+	UPROPERTY(ReplicatedUsing = OnRep_HasSelectedUpgrade)
+	bool bHasSelectedUpgrade = true;
 };

@@ -1,35 +1,49 @@
 #include "Core/ArenaPlayerController.h"
 
+#include "Core/ArenaGameMode.h"
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaGameState.h"
 #include "UI/ArenaPlayerHUDWidget.h"
+#include "UI/ArenaUpgradeSelectionWidget.h"
 
-// 构造玩家控制器，设置鼠标显示和基础输入交互选项。
+// 构造玩家控制器，设置基础鼠标输入并指定可直接使用的原生升级界面类。
 AArenaPlayerController::AArenaPlayerController()
 {
 	bShowMouseCursor = true;
 	bEnableClickEvents = false;
 	bEnableMouseOverEvents = false;
 	DefaultMouseCursor = EMouseCursor::Default;
+	UpgradeSelectionWidgetClass = UArenaUpgradeSelectionWidget::StaticClass();
 }
 
-// 本地控制器开始时设置输入模式，并创建/绑定玩家 HUD。
+// 本地控制器开始时创建 HUD/升级界面，并绑定 PlayerState 与 GameState 数据源。
 void AArenaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
 	CreatePlayerHUD();
+	CreateUpgradeSelectionWidget();
 	SetThirdPersonInputMode(false);
 	TryBindPlayerHUD();
+	BindUpgradeState();
 	BindGameStateHUD();
 }
 
-// Possess 新 Pawn 后再次尝试绑定 HUD，处理 PlayerState 或 ASC 稍后就绪的情况。
+// PlayerState 在客户端完成复制后重新绑定 GAS HUD 和 OwnerOnly 升级状态。
+void AArenaPlayerController::OnRep_PlayerState()
+{
+	Super::OnRep_PlayerState();
+	TryBindPlayerHUD();
+	BindUpgradeState();
+}
+
+// Possess 新 Pawn 后重新绑定 HUD 与升级状态，兼容重生和 PlayerState 稍后就绪。
 void AArenaPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
 
 	TryBindPlayerHUD();
+	BindUpgradeState();
 }
 
 // 仅在本地控制器上创建玩家 HUD，并加入视口。
@@ -48,15 +62,148 @@ void AArenaPlayerController::CreatePlayerHUD()
 	}
 }
 
-// Controller 销毁前解除 GameState 动态委托，避免旅行或重连后重复绑定。
+// 创建独立升级界面；默认原生 Widget 可直接使用，蓝图子类只需替换布局和视觉。
+void AArenaPlayerController::CreateUpgradeSelectionWidget()
+{
+	if (!IsLocalController() || UpgradeSelectionWidget || !UpgradeSelectionWidgetClass)
+	{
+		return;
+	}
+
+	UpgradeSelectionWidget = CreateWidget<UArenaUpgradeSelectionWidget>(this, UpgradeSelectionWidgetClass);
+	if (UpgradeSelectionWidget)
+	{
+		UpgradeSelectionWidget->AddToViewport(20);
+		UpgradeSelectionWidget->OnUpgradeChosen.AddUniqueDynamic(this, &AArenaPlayerController::HandleUpgradeChosen);
+	}
+}
+
+// 绑定当前 PlayerState 的升级复制委托，并立即用现有快照刷新界面。
+void AArenaPlayerController::BindUpgradeState()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
+	if (!ArenaPlayerState)
+	{
+		return;
+	}
+
+	if (BoundUpgradePlayerState.Get() != ArenaPlayerState)
+	{
+		UnbindUpgradeState();
+		BoundUpgradePlayerState = ArenaPlayerState;
+		ArenaPlayerState->OnUpgradeStateChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleUpgradeStateChanged);
+	}
+
+	RefreshUpgradeSelectionUI();
+}
+
+// 解除旧 PlayerState 的升级委托，避免重生、旅行或重连后重复回调。
+void AArenaPlayerController::UnbindUpgradeState()
+{
+	if (AArenaPlayerState* ArenaPlayerState = BoundUpgradePlayerState.Get())
+	{
+		ArenaPlayerState->OnUpgradeStateChanged.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeStateChanged);
+	}
+	BoundUpgradePlayerState.Reset();
+}
+
+// 根据复制阶段、候选和选择状态决定是否显示本地三选一界面。
+void AArenaPlayerController::RefreshUpgradeSelectionUI()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	if (!UpgradeSelectionWidget)
+	{
+		CreateUpgradeSelectionWidget();
+	}
+
+	const AArenaPlayerState* ArenaPlayerState = BoundUpgradePlayerState.Get();
+	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	const bool bShouldShow = UpgradeSelectionWidget && ArenaPlayerState && ArenaGameState
+		&& ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade
+		&& !ArenaPlayerState->HasSelectedUpgrade()
+		&& !ArenaPlayerState->GetUpgradeCandidates().IsEmpty();
+
+	if (bShouldShow)
+	{
+		UpgradeSelectionWidget->ShowUpgradeChoices(ArenaPlayerState->GetUpgradeCandidates());
+	}
+	else if (UpgradeSelectionWidget)
+	{
+		UpgradeSelectionWidget->HideUpgradeChoices();
+	}
+	SetUpgradeInputMode(bShouldShow);
+}
+
+// 升级期间切为 UIOnly 并显示鼠标，结束后恢复当前顶视角或第三人称输入模式。
+void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
+{
+	if (!IsLocalController() || bUpgradeInputMode == bEnabled)
+	{
+		return;
+	}
+
+	bUpgradeInputMode = bEnabled;
+	if (bUpgradeInputMode && UpgradeSelectionWidget)
+	{
+		bShowMouseCursor = true;
+		FInputModeUIOnly InputMode;
+		InputMode.SetWidgetToFocus(UpgradeSelectionWidget->TakeWidget());
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(InputMode);
+	}
+	else
+	{
+		SetThirdPersonInputMode(bThirdPersonInputMode);
+	}
+}
+
+// PlayerState 升级状态变化时刷新候选内容和本地输入模式。
+void AArenaPlayerController::HandleUpgradeStateChanged()
+{
+	RefreshUpgradeSelectionUI();
+}
+
+// 把 Widget 选择转换为候选 ID 请求，不在客户端应用任何升级结果。
+void AArenaPlayerController::HandleUpgradeChosen(FName UpgradeID)
+{
+	if (!UpgradeID.IsNone())
+	{
+		ServerSelectUpgrade(UpgradeID);
+	}
+}
+
+// 服务器 RPC 将选择交给 GameMode 做阶段、候选、标签和层数验证。
+void AArenaPlayerController::ServerSelectUpgrade_Implementation(FName UpgradeID)
+{
+	if (AArenaGameMode* ArenaGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AArenaGameMode>() : nullptr)
+	{
+		ArenaGameMode->SubmitUpgradeSelection(this, UpgradeID);
+	}
+}
+
+// Controller 销毁前解除升级、GameState 和 Widget 委托，并停止 HUD 绑定重试。
 void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UpgradeSelectionWidget)
+	{
+		UpgradeSelectionWidget->OnUpgradeChosen.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeChosen);
+	}
+	UnbindUpgradeState();
 	UnbindGameStateHUD();
 	ClearPlayerHUDBindingRetry();
 	Super::EndPlay(EndPlayReason);
 }
 
-// 在顶视角显示鼠标，在第三人称隐藏鼠标并显示屏幕中心准星。
+// 切换双视角鼠标与准星状态；升级 UI 激活时保留可点击鼠标并延后恢复游戏输入。
 void AArenaPlayerController::SetThirdPersonInputMode(bool bEnableThirdPerson)
 {
 	if (!IsLocalController())
@@ -65,6 +212,11 @@ void AArenaPlayerController::SetThirdPersonInputMode(bool bEnableThirdPerson)
 	}
 
 	bThirdPersonInputMode = bEnableThirdPerson;
+	if (bUpgradeInputMode)
+	{
+		bShowMouseCursor = true;
+		return;
+	}
 	bShowMouseCursor = !bThirdPersonInputMode;
 
 	FInputModeGameOnly InputMode;
@@ -146,6 +298,7 @@ void AArenaPlayerController::BindGameStateHUD()
 	PlayerHUDWidget->SetWaveState(ArenaGameState->GetCurrentWaveIndex(), ArenaGameState->GetRemainingEnemyCount());
 }
 
+// 解除 GameState 阶段和波次委托，防止世界切换后引用旧状态对象。
 void AArenaPlayerController::UnbindGameStateHUD()
 {
 	if (AArenaGameState* ArenaGameState = BoundArenaGameState.Get())
@@ -157,14 +310,17 @@ void AArenaPlayerController::UnbindGameStateHUD()
 	BoundArenaGameState.Reset();
 }
 
+// 阶段变化时同步 HUD，并驱动 Upgrade 界面的显示或关闭。
 void AArenaPlayerController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
 {
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->SetGamePhase(NewPhase);
 	}
+	RefreshUpgradeSelectionUI();
 }
 
+// 当前波次复制变化时使用同一 GameState 快照刷新 HUD。
 void AArenaPlayerController::HandleWaveIndexChanged(int32 OldValue, int32 NewValue)
 {
 	if (PlayerHUDWidget)
@@ -174,6 +330,7 @@ void AArenaPlayerController::HandleWaveIndexChanged(int32 OldValue, int32 NewVal
 	}
 }
 
+// 剩余敌人数复制变化时使用同一 GameState 快照刷新 HUD。
 void AArenaPlayerController::HandleRemainingEnemyCountChanged(int32 OldValue, int32 NewValue)
 {
 	if (PlayerHUDWidget)

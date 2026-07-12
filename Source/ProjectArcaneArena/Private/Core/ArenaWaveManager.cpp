@@ -87,6 +87,7 @@ void AArenaWaveManager::StartNextWave()
 	}
 }
 
+// Defeat 时停止所有生成和原型升级计时器，防止终局后继续推进战斗。
 void AArenaWaveManager::StopForDefeat()
 {
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
@@ -95,6 +96,17 @@ void AArenaWaveManager::StopForDefeat()
 	NextPendingSpawnIndex = 0;
 }
 
+// 标记正式升级系统是否接管阶段推进，启用后禁用三秒原型回退。
+void AArenaWaveManager::SetUpgradeSystemEnabled(bool bEnabled)
+{
+	bUpgradeSystemEnabled = bEnabled;
+	if (bUpgradeSystemEnabled)
+	{
+		GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
+	}
+}
+
+// Actor 销毁时清理计时器和敌人死亡委托，避免世界旅行后的悬挂回调。
 void AArenaWaveManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
@@ -198,7 +210,7 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 	CheckWaveCompletion();
 }
 
-// 只有全部成功生成且存活数为零时才进入 Upgrade/Victory，生成失败会保留 Combat 供排错。
+// 全部敌人清空后进入 Victory 或广播正式 Upgrade 入口，生成失败则保留 Combat 供排错。
 void AArenaWaveManager::CheckWaveCompletion()
 {
 	if (NextPendingSpawnIndex < PendingEnemyClasses.Num() || !AliveEnemies.IsEmpty() || bSpawnFailureInCurrentWave)
@@ -222,9 +234,10 @@ void AArenaWaveManager::CheckWaveCompletion()
 	{
 		ArenaGameState->SetGamePhase(EArenaGamePhase::Upgrade);
 		UE_LOG(LogArenaWaves, Log, TEXT("Wave %d cleared. Entering Upgrade before wave %d."), CurrentWaveArrayIndex + 1, CurrentWaveArrayIndex + 2);
+		OnUpgradePhaseStarted.Broadcast();
 
 		// 升级选择系统尚未接入时自动推进，确保原型可以完整跑通三波与 Victory。
-		if (bAutoStartNextWaveWithoutUpgradeSystem)
+		if (!bUpgradeSystemEnabled && bAutoStartNextWaveWithoutUpgradeSystem)
 		{
 			GetWorldTimerManager().SetTimer(
 				AutoStartNextWaveTimerHandle,
@@ -236,6 +249,7 @@ void AArenaWaveManager::CheckWaveCompletion()
 	}
 }
 
+// 把服务器 AliveEnemies 数量写入复制 GameState，HUD 不自行统计敌人。
 void AArenaWaveManager::UpdateReplicatedEnemyCount()
 {
 	if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
