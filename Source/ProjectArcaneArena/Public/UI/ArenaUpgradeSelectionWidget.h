@@ -6,6 +6,7 @@
 
 class UArenaUpgradeDataAsset;
 class UButton;
+class UImage;
 class UTextBlock;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FArenaUpgradeChosenSignature, FName, UpgradeID);
@@ -47,6 +48,15 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|Upgrade")
 	TObjectPtr<UTextBlock> UpgradeChoiceText2;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|Upgrade")
+	TObjectPtr<UImage> UpgradeChoiceIcon0;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|Upgrade")
+	TObjectPtr<UImage> UpgradeChoiceIcon1;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|Upgrade")
+	TObjectPtr<UImage> UpgradeChoiceIcon2;
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Upgrade", meta = (DisplayName = "Upgrade Choices Changed"))
 	void K2_OnUpgradeChoicesChanged();

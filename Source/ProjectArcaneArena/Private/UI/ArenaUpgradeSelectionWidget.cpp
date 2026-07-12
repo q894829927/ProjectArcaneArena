@@ -6,6 +6,7 @@
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
+#include "Components/Image.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -87,13 +88,28 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 	UHorizontalBox* ChoiceRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("UpgradeChoiceRow"));
 	ChoicePanel->AddChildToVerticalBox(ChoiceRow);
 
-	auto AddChoice = [this, ChoiceRow](const FName ButtonName, const FName TextName, TObjectPtr<UButton>& OutButton, TObjectPtr<UTextBlock>& OutText)
+	auto AddChoice = [this, ChoiceRow](
+		const FName ButtonName,
+		const FName IconName,
+		const FName TextName,
+		TObjectPtr<UButton>& OutButton,
+		TObjectPtr<UImage>& OutIcon,
+		TObjectPtr<UTextBlock>& OutText)
 	{
 		OutButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), ButtonName);
+		UVerticalBox* ButtonContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
+		OutIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), IconName);
+		OutIcon->SetDesiredSizeOverride(FVector2D(128.0f, 128.0f));
 		OutText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TextName);
 		OutText->SetJustification(ETextJustify::Center);
 		OutText->SetAutoWrapText(true);
-		OutButton->AddChild(OutText);
+		if (UVerticalBoxSlot* IconSlot = ButtonContent->AddChildToVerticalBox(OutIcon))
+		{
+			IconSlot->SetHorizontalAlignment(HAlign_Center);
+			IconSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 12.0f));
+		}
+		ButtonContent->AddChildToVerticalBox(OutText);
+		OutButton->AddChild(ButtonContent);
 		if (UHorizontalBoxSlot* ButtonSlot = ChoiceRow->AddChildToHorizontalBox(OutButton))
 		{
 			ButtonSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -101,9 +117,9 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 		}
 	};
 
-	AddChoice(TEXT("UpgradeChoiceButton0"), TEXT("UpgradeChoiceText0"), UpgradeChoiceButton0, UpgradeChoiceText0);
-	AddChoice(TEXT("UpgradeChoiceButton1"), TEXT("UpgradeChoiceText1"), UpgradeChoiceButton1, UpgradeChoiceText1);
-	AddChoice(TEXT("UpgradeChoiceButton2"), TEXT("UpgradeChoiceText2"), UpgradeChoiceButton2, UpgradeChoiceText2);
+	AddChoice(TEXT("UpgradeChoiceButton0"), TEXT("UpgradeChoiceIcon0"), TEXT("UpgradeChoiceText0"), UpgradeChoiceButton0, UpgradeChoiceIcon0, UpgradeChoiceText0);
+	AddChoice(TEXT("UpgradeChoiceButton1"), TEXT("UpgradeChoiceIcon1"), TEXT("UpgradeChoiceText1"), UpgradeChoiceButton1, UpgradeChoiceIcon1, UpgradeChoiceText1);
+	AddChoice(TEXT("UpgradeChoiceButton2"), TEXT("UpgradeChoiceIcon2"), TEXT("UpgradeChoiceText2"), UpgradeChoiceButton2, UpgradeChoiceIcon2, UpgradeChoiceText2);
 }
 
 // 把三个按钮各自绑定到固定候选索引，重复 Construct 时避免重复委托。
@@ -123,10 +139,11 @@ void UArenaUpgradeSelectionWidget::BindChoiceButtons()
 	}
 }
 
-// 根据候选数量刷新按钮可见性、名称和描述文本。
+// 根据候选数量刷新按钮、DataAsset 图标、名称和描述文本。
 void UArenaUpgradeSelectionWidget::RefreshChoiceVisuals()
 {
 	UButton* Buttons[] = { UpgradeChoiceButton0, UpgradeChoiceButton1, UpgradeChoiceButton2 };
+	UImage* Icons[] = { UpgradeChoiceIcon0, UpgradeChoiceIcon1, UpgradeChoiceIcon2 };
 	UTextBlock* TextBlocks[] = { UpgradeChoiceText0, UpgradeChoiceText1, UpgradeChoiceText2 };
 
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Buttons); ++Index)
@@ -135,6 +152,15 @@ void UArenaUpgradeSelectionWidget::RefreshChoiceVisuals()
 		if (Buttons[Index])
 		{
 			Buttons[Index]->SetVisibility(bHasChoice ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
+		}
+		if (Icons[Index])
+		{
+			const bool bHasIcon = bHasChoice && !CurrentChoices[Index]->Icon.IsNull();
+			Icons[Index]->SetVisibility(bHasIcon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			if (bHasIcon)
+			{
+				Icons[Index]->SetBrushFromSoftTexture(CurrentChoices[Index]->Icon, false);
+			}
 		}
 		if (bHasChoice && TextBlocks[Index])
 		{
