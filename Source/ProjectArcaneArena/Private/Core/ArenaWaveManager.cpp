@@ -39,6 +39,8 @@ void AArenaWaveManager::Initialize(UArenaWaveDataAsset* InWaveData)
 // 从 Waiting/Upgrade 推进一波；Combat、Victory、Defeat 阶段拒绝重复调用。
 void AArenaWaveManager::StartNextWave()
 {
+	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
+
 	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
 	if (!HasAuthority() || !WaveData || !ArenaGameState || SpawnPoints.IsEmpty())
 	{
@@ -71,6 +73,7 @@ void AArenaWaveManager::StartNextWave()
 	ArenaGameState->SetCurrentWaveIndex(CurrentWaveArrayIndex + 1);
 	ArenaGameState->SetRemainingEnemyCount(0);
 	ArenaGameState->SetGamePhase(EArenaGamePhase::Combat);
+	UE_LOG(LogArenaWaves, Log, TEXT("Starting wave %d with %d pending enemies."), CurrentWaveArrayIndex + 1, PendingEnemyClasses.Num());
 
 	SpawnNextEnemy();
 	if (NextPendingSpawnIndex < PendingEnemyClasses.Num())
@@ -87,6 +90,7 @@ void AArenaWaveManager::StartNextWave()
 void AArenaWaveManager::StopForDefeat()
 {
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
+	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
 	PendingEnemyClasses.Reset();
 	NextPendingSpawnIndex = 0;
 }
@@ -94,6 +98,7 @@ void AArenaWaveManager::StopForDefeat()
 void AArenaWaveManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
+	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
 	for (AArenaEnemyCharacter* Enemy : AliveEnemies)
 	{
 		if (Enemy)
@@ -211,10 +216,23 @@ void AArenaWaveManager::CheckWaveCompletion()
 	if (CurrentWaveArrayIndex >= WaveData->Waves.Num() - 1)
 	{
 		ArenaGameState->SetGamePhase(EArenaGamePhase::Victory);
+		UE_LOG(LogArenaWaves, Log, TEXT("Wave %d cleared. All configured waves are complete; entering Victory."), CurrentWaveArrayIndex + 1);
 	}
 	else
 	{
 		ArenaGameState->SetGamePhase(EArenaGamePhase::Upgrade);
+		UE_LOG(LogArenaWaves, Log, TEXT("Wave %d cleared. Entering Upgrade before wave %d."), CurrentWaveArrayIndex + 1, CurrentWaveArrayIndex + 2);
+
+		// 升级选择系统尚未接入时自动推进，确保原型可以完整跑通三波与 Victory。
+		if (bAutoStartNextWaveWithoutUpgradeSystem)
+		{
+			GetWorldTimerManager().SetTimer(
+				AutoStartNextWaveTimerHandle,
+				this,
+				&AArenaWaveManager::StartNextWave,
+				FMath::Max(PrototypeUpgradePhaseDuration, 0.1f),
+				false);
+		}
 	}
 }
 

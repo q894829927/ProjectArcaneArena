@@ -43,6 +43,13 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave")
 	FName SpawnPointActorTag = TEXT("EnemySpawn");
 
+	// 升级系统接入前的原型回退：短暂停留 Upgrade 后自动开始下一波；正式选择界面启用时关闭。
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave|Prototype")
+	bool bAutoStartNextWaveWithoutUpgradeSystem = true;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave|Prototype", meta = (EditCondition = "bAutoStartNextWaveWithoutUpgradeSystem", ClampMin = "0.1"))
+	float PrototypeUpgradePhaseDuration = 3.0f;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UArenaWaveDataAsset> WaveData;
 
@@ -54,6 +61,7 @@ private:
 
 	TArray<TSubclassOf<AArenaEnemyCharacter>> PendingEnemyClasses;
 	FTimerHandle SpawnTimerHandle;
+	FTimerHandle AutoStartNextWaveTimerHandle;
 	int32 CurrentWaveArrayIndex = INDEX_NONE;
 	int32 NextPendingSpawnIndex = 0;
 	int32 NextSpawnPointIndex = 0;

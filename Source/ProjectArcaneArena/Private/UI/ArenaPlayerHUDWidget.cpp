@@ -130,31 +130,67 @@ namespace
 	}
 }
 
-// 初始化 HUD，并在蓝图未提供准星时向根 Canvas 添加居中的简洁加号。
+// 初始化 HUD，并为蓝图未提供的准星、阶段和波次控件创建轻量运行时回退显示。
 void UArenaPlayerHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
-	if (!AimReticleText && WidgetTree)
+	UCanvasPanel* RootCanvas = WidgetTree ? Cast<UCanvasPanel>(GetRootWidget()) : nullptr;
+	if (!AimReticleText && WidgetTree && RootCanvas)
 	{
-		if (UCanvasPanel* RootCanvas = Cast<UCanvasPanel>(GetRootWidget()))
+		AimReticleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("AimReticleText_Runtime"));
+		AimReticleText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "ThirdPersonReticle", "+"));
+		AimReticleText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+
+		FSlateFontInfo ReticleFont = AimReticleText->GetFont();
+		ReticleFont.Size = 24;
+		ReticleFont.OutlineSettings.OutlineSize = 1;
+		AimReticleText->SetFont(ReticleFont);
+
+		if (UCanvasPanelSlot* ReticleSlot = RootCanvas->AddChildToCanvas(AimReticleText))
 		{
-			AimReticleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("AimReticleText_Runtime"));
-			AimReticleText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "ThirdPersonReticle", "+"));
-			AimReticleText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			ReticleSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+			ReticleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			ReticleSlot->SetPosition(FVector2D::ZeroVector);
+			ReticleSlot->SetAutoSize(true);
+		}
+	}
 
-			FSlateFontInfo ReticleFont = AimReticleText->GetFont();
-			ReticleFont.Size = 24;
-			ReticleFont.OutlineSettings.OutlineSize = 1;
-			AimReticleText->SetFont(ReticleFont);
+	if (WidgetTree && RootCanvas)
+	{
+		// 阶段控件缺失时在顶部集中显示服务器复制状态，便于原型和多人验收。
+		auto CreateRuntimeStateText = [this, RootCanvas](FName WidgetName, float PositionY) -> UTextBlock*
+		{
+			UTextBlock* RuntimeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
+			RuntimeText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			RuntimeText->SetVisibility(ESlateVisibility::HitTestInvisible);
 
-			if (UCanvasPanelSlot* ReticleSlot = RootCanvas->AddChildToCanvas(AimReticleText))
+			FSlateFontInfo StateFont = RuntimeText->GetFont();
+			StateFont.Size = 18;
+			StateFont.OutlineSettings.OutlineSize = 1;
+			RuntimeText->SetFont(StateFont);
+
+			if (UCanvasPanelSlot* RuntimeSlot = RootCanvas->AddChildToCanvas(RuntimeText))
 			{
-				ReticleSlot->SetAnchors(FAnchors(0.5f, 0.5f));
-				ReticleSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-				ReticleSlot->SetPosition(FVector2D::ZeroVector);
-				ReticleSlot->SetAutoSize(true);
+				RuntimeSlot->SetAnchors(FAnchors(0.5f, 0.0f));
+				RuntimeSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+				RuntimeSlot->SetPosition(FVector2D(0.0f, PositionY));
+				RuntimeSlot->SetAutoSize(true);
 			}
+			return RuntimeText;
+		};
+
+		if (!PhaseText)
+		{
+			PhaseText = CreateRuntimeStateText(TEXT("PhaseText_Runtime"), 24.0f);
+		}
+		if (!WaveText)
+		{
+			WaveText = CreateRuntimeStateText(TEXT("WaveText_Runtime"), 48.0f);
+		}
+		if (!RemainingEnemiesText)
+		{
+			RemainingEnemiesText = CreateRuntimeStateText(TEXT("RemainingEnemiesText_Runtime"), 72.0f);
 		}
 	}
 

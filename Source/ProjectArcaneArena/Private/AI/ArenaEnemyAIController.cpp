@@ -46,16 +46,30 @@ void AArenaEnemyAIController::Tick(float DeltaSeconds)
 		return;
 	}
 
-	// 攻击 Ability 自己持有目标并驱动 Montage/命中；AI 只冻结寻路，避免前摇期间追着目标滑动。
+	// 先处理死亡/失效目标，再判断攻击冻结；否则 State.Attacking 会让 AI 永久守在旧目标旁边。
+	if (!IsValidCombatTarget(CurrentTarget.Get()))
+	{
+		StopMovement();
+		ClearFocus(EAIFocusPriority::Gameplay);
+		Enemy->SetCombatTarget(nullptr);
+
+		if (Enemy->IsAttacking())
+		{
+			FGameplayTagContainer AttackAbilityTags(ArenaGameplayTags::Ability_Enemy_MeleeAttack);
+			if (UAbilitySystemComponent* EnemyASC = Enemy->GetAbilitySystemComponent())
+			{
+				EnemyASC->CancelAbilities(&AttackAbilityTags);
+			}
+		}
+
+		CurrentTarget = FindNearestLivingPlayer();
+	}
+
+	// 有效目标的攻击前摇期间冻结寻路，避免敌人跟随目标滑动。
 	if (Enemy->IsAttacking())
 	{
 		StopMovement();
 		return;
-	}
-
-	if (!IsValidCombatTarget(CurrentTarget.Get()))
-	{
-		CurrentTarget = FindNearestLivingPlayer();
 	}
 
 	AActor* Target = CurrentTarget.Get();

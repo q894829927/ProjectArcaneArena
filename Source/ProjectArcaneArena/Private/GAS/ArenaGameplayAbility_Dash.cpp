@@ -10,10 +10,10 @@
 #include "GameFramework/RootMotionSource.h"
 #include "TimerManager.h"
 
-// 构造冲刺技能，配置服务端执行、输入标签和状态/冷却阻断条件。
+// 构造可预测冲刺技能，让拥有者即时播放表现，同时保留服务器确认和位置校正。
 UArenaGameplayAbility_Dash::UArenaGameplayAbility_Dash()
 {
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	InputTag = ArenaGameplayTags::Ability_Dash;
 
 	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Dash));
@@ -23,7 +23,7 @@ UArenaGameplayAbility_Dash::UArenaGameplayAbility_Dash()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Dash);
 }
 
-// 激活冲刺：提交冷却后添加冲刺/无敌标签，并用 RootMotion 推动角色。
+// 激活冲刺：客户端预测 Montage/RootMotion，服务器执行同一路径并拥有最终冷却、无敌和位置结果。
 void UArenaGameplayAbility_Dash::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -154,7 +154,7 @@ FVector UArenaGameplayAbility_Dash::ResolveDashDirection(AActor* AvatarActor) co
 	return DashDirection.GetSafeNormal();
 }
 
-// 播放冲刺表现 Montage，权威位移仍由 RootMotion 任务控制。
+// 在预测端和服务器播放同一 Montage，GAS 使用 PredictionKey 避免拥有者重复播放。
 void UArenaGameplayAbility_Dash::PlayDashMontage()
 {
 	if (!DashMontage)
@@ -162,7 +162,7 @@ void UArenaGameplayAbility_Dash::PlayDashMontage()
 		return;
 	}
 
-	// Dash Montage 只负责表现，权威位移由移动任务控制。
+	// Dash Montage 只负责表现，预测与服务器校正位移由 RootMotion 任务控制。
 	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,
 		FName(TEXT("DashMontage")),
@@ -177,7 +177,7 @@ void UArenaGameplayAbility_Dash::PlayDashMontage()
 	}
 }
 
-// 添加 State.Dashing 和 State.Invincible 标签，限定冲刺窗口内的状态。
+// 两端添加本地预测标签，仅服务器写 replicated loose tags 供其他客户端观察。
 void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC)
 {
 	if (!ASC || bAppliedDashStateTags)
@@ -188,12 +188,15 @@ void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC
 	// Ability 拥有的状态标签让无敌时间严格绑定在当前冲刺窗口。
 	ASC->AddLooseGameplayTag(ArenaGameplayTags::State_Dashing);
 	ASC->AddLooseGameplayTag(ArenaGameplayTags::State_Invincible);
-	ASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dashing);
-	ASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Invincible);
+	if (ASC->IsOwnerActorAuthoritative())
+	{
+		ASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dashing);
+		ASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Invincible);
+	}
 	bAppliedDashStateTags = true;
 }
 
-// 移除冲刺期间添加的 loose/replicated loose tags，并清理缓存引用。
+// 两端移除本地标签，仅服务器移除 replicated loose tags，并清理缓存引用。
 void UArenaGameplayAbility_Dash::RemoveDashStateTags()
 {
 	UAbilitySystemComponent* ASC = ActiveDashASC.Get();
@@ -204,8 +207,11 @@ void UArenaGameplayAbility_Dash::RemoveDashStateTags()
 
 	ASC->RemoveLooseGameplayTag(ArenaGameplayTags::State_Dashing);
 	ASC->RemoveLooseGameplayTag(ArenaGameplayTags::State_Invincible);
-	ASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dashing);
-	ASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Invincible);
+	if (ASC->IsOwnerActorAuthoritative())
+	{
+		ASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dashing);
+		ASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Invincible);
+	}
 
 	bAppliedDashStateTags = false;
 	ActiveDashASC.Reset();

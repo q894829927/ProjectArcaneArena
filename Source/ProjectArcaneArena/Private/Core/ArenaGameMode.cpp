@@ -50,7 +50,7 @@ void AArenaGameMode::StartNextWave()
 	}
 }
 
-// 检查当前 PlayerArray 中的参战玩家，单人立即失败、多人仅全员死亡时失败。
+// 检查 PlayerState ASC 的长期死亡状态，避免 Pawn 关联短暂为空时误判全员失败。
 void AArenaGameMode::NotifyPlayerDeath()
 {
 	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
@@ -66,7 +66,7 @@ void AArenaGameMode::NotifyPlayerDeath()
 	{
 		const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
 		const UArenaAbilitySystemComponent* ArenaASC = ArenaPlayerState ? ArenaPlayerState->GetArenaAbilitySystemComponent() : nullptr;
-		if (!ArenaPlayerState || !ArenaPlayerState->GetPawn() || !ArenaASC)
+		if (!ArenaPlayerState || !ArenaASC)
 		{
 			continue;
 		}

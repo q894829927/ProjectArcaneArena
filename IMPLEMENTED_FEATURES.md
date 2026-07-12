@@ -17,8 +17,8 @@ Status meanings:
 * Player ASC and AttributeSet live on `AArenaPlayerState`; `AArenaPlayerCharacter` initializes Owner/Avatar actor info on server possession and client PlayerState replication.
 * Startup abilities and default attributes are granted/applied by the authority side.
 * `AArenaGameState` replicates `EArenaGamePhase`, current wave index, and remaining enemy count through Blueprint-observable delegates.
-* `AArenaGameMode` evaluates player deaths on the server and enters Defeat only after all participating players are dead.
-* Verification: static inspection completed; current full build and two-player PIE status are not recorded as verified.
+* `AArenaGameMode` evaluates long-lived PlayerState ASC death tags on the server and enters Defeat only after all participating players are dead, without treating a temporarily missing Pawn association as a dead/absent player.
+* Verification: the all-players-dead rule and dead-target retarget path passed a two-player Listen Server PIE smoke test while the final GameMode fix was loaded through Live Coding. A full build containing that final source change is still pending.
 
 ### Dual Top-Down / Third-Person View — Implemented
 
@@ -57,7 +57,7 @@ Status meanings:
 * `LMB` activates a LocalPredicted TargetData flow; top-down aims at the cursor and third-person aims at the center reticle.
 * The local player predicts facing direction, while the server commits cooldown, performs the melee Sweep, selects a valid target, and applies physical damage through GAS.
 * `GA_BasicAttack` supports a configurable predicted Attack Montage, play rate, and start section; the Montage continues after the short targeting Ability ends while damage remains server-authoritative.
-* Editor setup pending after the reflection build: assign an unarmed DefaultSlot Montage such as `AM_EnemyMeleeAttack` to `GA_BasicAttack`, then duplicate it as `AM_PlayerBasicAttack` when player-specific timing is needed.
+* `GA_BasicAttack` is configured with the unarmed DefaultSlot `AM_EnemyMeleeAttack`; it can later be duplicated as `AM_PlayerBasicAttack` when player-specific timing is needed.
 * A configurable debug capsule/line/sphere can display the authority attack range.
 
 ### Fireball — Implemented
@@ -68,9 +68,9 @@ Status meanings:
 
 ### Dash — Implemented
 
-* `E` applies `State.Dashing` and `State.Invincible` during a server-authoritative root-motion dash.
+* `E` runs as LocalPredicted so the owning client immediately plays the dash Montage/root motion, while the server confirms cooldown, replicated state tags, and final movement.
 * Dash prioritizes current movement input, making it compatible with both world-relative and camera-relative movement.
-* Optional montage playback is presentation-only.
+* The server's ASC Montage state replicates the presentation to other clients; only the authority writes replicated loose `State.Dashing` and `State.Invincible` tags.
 
 ### Shield — Implemented
 
@@ -92,6 +92,7 @@ Status meanings:
 * Skill slots display ability availability and cooldown remaining time.
 * Third-person mode displays a center reticle; the C++ HUD creates a fallback reticle if the Widget Blueprint does not provide one.
 * Optional `PhaseText`, `WaveText`, `RemainingEnemiesText`, and `DefeatText` bindings observe replicated GameState values without owning game rules.
+* If the Blueprint omits phase/wave/enemy-count bindings, the C++ HUD creates a compact top-center fallback so Combat, Upgrade, Victory, wave index, and remaining enemies remain visible during prototype testing.
 
 ### Enemy Health Bar and Damage Numbers — Implemented
 
@@ -104,13 +105,16 @@ Status meanings:
 
 * `AArenaEnemyCharacter` owns a replicated ASC and AttributeSet, grants configured startup abilities on the server, exposes a death delegate, and handles collision/movement/UI shutdown on death.
 * `AArenaEnemyAIController` runs a low-frequency server-only target/chase/attack loop, selects the nearest living player from GameState PlayerArray, and freezes path movement while `State.Attacking` is active.
+* Target validity is checked before the attacking-state freeze; when the locked player dies, the server cancels that melee attack, clears focus, and immediately selects the nearest remaining living player.
 * Chase movement disables overlap-expanded acceptance so the AI reaches the same center-to-center distance used by the authoritative attack range check.
 * `UArenaGameplayAbility_EnemyMeleeAttack` commits cooldown at attack start, plays a replicated Montage, and applies physical damage through `GE_Damage` after a server `HitDelay` revalidates target, range, line of sight, and death state.
 * Attacks that lose their target during windup miss without refunding cooldown; death or stun cancels the active Montage/Delay and removes `State.Attacking`.
 * Dead or stunned enemies stop movement and ability execution; MoveSpeed remains GAS-driven.
 * `ABP_ArenaEnemy` uses replicated GroundSpeed for movement state, while `AM_EnemyMeleeAttack` and `AM_EnemyDeath` provide attack/death presentation through the existing DefaultSlot.
 * `GA_EnemyMeleeAttack` is configured with `AM_EnemyMeleeAttack`, Montage Play Rate `1.0`, and Hit Delay `0.35`.
-* Missing: ranged, elite, boss archetypes and completed PIE/network verification.
+* PIE smoke verification: three melee enemies spawned, chased, attacked through the server damage path, and all three emitted server death notifications. In two-player PIE, enemies abandoned a dead player and continued attacking the remaining living player.
+* Q/Fireball, E/Dash, replicated attack presentation, and the remote-client Dash Montage have been observed in multiplayer PIE.
+* Missing: ranged, elite, and boss archetypes.
 
 ### Gameplay State Control — Partial
 
@@ -126,21 +130,22 @@ Status meanings:
 
 * `UArenaWaveDataAsset` stores enemy entries/counts, spawn interval, boss marker, and reward count per wave.
 * Server-owned `AArenaWaveManager` discovers `ATargetPoint` actors tagged `EnemySpawn`, spawns configured enemies, tracks successful spawns through enemy death delegates, and writes replicated state to GameState.
-* Clearing a non-final wave enters Upgrade and waits for explicit `StartNextWave`; clearing the final configured wave enters Victory.
+* Clearing a non-final wave enters Upgrade; the production flow waits for explicit `StartNextWave`, while clearing the final configured wave enters Victory.
+* Until the upgrade-selection system exists, WaveManager uses a configurable prototype fallback that keeps Upgrade visible for three seconds and then starts the next wave automatically. Disable `bAutoStartNextWaveWithoutUpgradeSystem` when the real selection flow begins calling `StartNextWave`.
 * Missing configuration never counts as wave completion; failed spawns keep Combat active and emit `LogArenaWaves` errors.
-* Editor setup pending: create the three-wave `DA_Waves_Prototype` with counts `3 / 5 / 7`, assign it in `BP_ArenaGameMode`, and add tagged TargetPoints plus a covering NavMeshBoundsVolume.
-* Missing: upgrade selection UI/runtime, boss content, and completed PIE/network verification.
+* `DA_Waves_Prototype`, its `BP_ArenaGameMode` reference, three tagged EnemySpawn TargetPoints, and a covering NavMeshBoundsVolume are configured in project assets.
+* Missing: upgrade selection UI/runtime, boss content, and runtime verification of the new automatic `Wave 1 -> Upgrade -> Wave 2 -> Upgrade -> Wave 3 -> Victory` fallback.
 
-## Phase 4 Editor Setup Required
+## Phase 4 Configured Assets
 
-* `GE_Status_Stunned`: optional Blueprint child of `UArenaGameplayEffect_Stunned`; the native parent already supplies a two-second Duration and `State.Stunned`.
+* `GE_Status_Stunned`: Blueprint child of `UArenaGameplayEffect_Stunned`; the native parent supplies a two-second Duration and `State.Stunned`.
 * `GE_Cooldown_EnemyMeleeAttack`: configured with Duration `1.2` and granted tag `Cooldown.Enemy.MeleeAttack`.
 * `GA_EnemyMeleeAttack`: configured with `GE_Damage`, `GE_Cooldown_EnemyMeleeAttack`, `AM_EnemyMeleeAttack`, Montage Play Rate `1.0`, and Hit Delay `0.35`.
-* `BP_ArenaEnemyCharacter`: add `GA_EnemyMeleeAttack` to Startup Abilities. Native defaults already set `AArenaEnemyAIController` and `Placed in World or Spawned` possession.
+* `BP_ArenaEnemyCharacter`: `GA_EnemyMeleeAttack` is configured in Startup Abilities. Native defaults set `AArenaEnemyAIController` and `Placed in World or Spawned` possession.
 * `BP_ArenaEnemyCharacter`: `K2_OnDeathStarted` plays `AM_EnemyDeath`; its existing three-second lifespan remains the cleanup owner.
 * `DA_Waves_Prototype`: three wave entries using `BP_ArenaEnemyCharacter`, counts `3`, `5`, and `7`, each with `0.5` spawn interval.
-* `BP_ArenaGameMode`: assign `DA_Waves_Prototype` to Wave Data.
-* `Lvl_TopDown`: add a NavMeshBoundsVolume and multiple TargetPoints with Actor Tag `EnemySpawn`.
+* `BP_ArenaGameMode`: `DA_Waves_Prototype` is assigned to Wave Data.
+* `Lvl_TopDown`: a NavMeshBoundsVolume and three TargetPoints with Actor Tag `EnemySpawn` are configured.
 * `WBP_PlayerHUD`: optionally add TextBlocks named `PhaseText`, `WaveText`, `RemainingEnemiesText`, and `DefeatText`; set `DefeatText` initial visibility to Collapsed.
 
 ### Roguelike Upgrades — Not Implemented
@@ -153,5 +158,10 @@ Status meanings:
 * `git diff --check` passed after the Phase 3/4 source implementation.
 * Full UBT builds require the project build-safety checks in `AGENTS.md` because the project may use a source-built engine association.
 * The current EngineAssociation points to `E:/Unreal engine/UnrealEngine`. The user-started Editor build completed successfully after fixing the `C4458` shadowing error and the native stunned GameplayEffect default-subobject construction.
-* A single-player PIE smoke test spawned and navigated three melee enemies. It exposed an overlap-expanded MoveTo acceptance radius that stopped enemies outside the authoritative 170-unit attack range; the chase request now disables that expansion and requires one narrow rebuild before the melee hit loop can be re-verified.
+* The latest Editor DLL was built after the melee acceptance-radius, dead-target retarget, and predicted Dash changes; two-player Listen Server PIE starts without Phase 4 runtime errors.
+* Phase 4 acceptance exposed a transient multiplayer Defeat bug: a living PlayerState was skipped when its Pawn association was temporarily null. Defeat now evaluates PlayerState ASC death tags without requiring a Pawn.
+* Live Coding succeeded for the final GameMode fix. In the follow-up two-player Listen Server PIE run, Player 1 died, enemies retargeted Player 2 and continued applying damage, and Defeat was deferred until Player 2 also died.
+* A single-player slow-motion smoke pass verified BasicAttack input/cooldown, Shield cost/cooldown and absorption, LightningStorm cost/cooldown/area damage, enemy server damage, and two enemy death notifications. The configured melee result remains `8 BaseDamage + 5 AttackPower = 13` before Defense/Crit modifiers.
+* Fireball, Dash, replicated attacks, and the remote-client Dash Montage completed their requested multiplayer observation pass.
+* `GameplayCueNotifyPaths=/Game/GAS` was added to project config. After restarting the editor, the latest session log no longer reported the previous missing GameplayCue path warning.
 * A feature must explicitly say `Verified` before this log should be treated as proof of completed PIE, multiplayer, or packaged-build testing.

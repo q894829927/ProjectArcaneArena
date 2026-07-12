@@ -18,7 +18,7 @@ public:
 	UArenaGameplayAbility_Dash();
 
 protected:
-	// Runs the server-authoritative dash movement and temporary state tags.
+	// 预测拥有者的冲刺移动和 Montage，最终冷却、状态和位置仍由服务器确认。
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
