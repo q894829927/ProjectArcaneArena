@@ -1,16 +1,19 @@
 #include "GAS/ArenaAttributeSet.h"
 
 #include "AbilitySystemComponent.h"
+#include "Components/SceneComponent.h"
+#include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffectExtension.h"
+#include "GameplayEffectTypes.h"
 #include "Net/UnrealNetwork.h"
 
+// 构造属性集，设置玩家和敌人可共用的基础默认值。
 UArenaAttributeSet::UArenaAttributeSet()
 {
 	InitMaxHealth(100.0f);
 	InitHealth(100.0f);
 
-	InitMaxShield(50.0f);
 	InitShield(0.0f);
 
 	InitMaxEnergy(100.0f);
@@ -25,6 +28,7 @@ UArenaAttributeSet::UArenaAttributeSet()
 	InitHealing(0.0f);
 }
 
+// 注册需要复制的 GameplayAttribute，配合 RepNotify 驱动客户端 UI。
 void UArenaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -32,7 +36,6 @@ void UArenaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, Health, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, MaxHealth, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, Shield, COND_None, REPNOTIFY_Always);
-	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, MaxShield, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, Energy, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, MaxEnergy, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, AttackPower, COND_None, REPNOTIFY_Always);
@@ -42,6 +45,7 @@ void UArenaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& O
 	DOREPLIFETIME_CONDITION_NOTIFY(UArenaAttributeSet, CritDamage, COND_None, REPNOTIFY_Always);
 }
 
+// CurrentValue 改变前做边界限制，处理 Max 属性影响下的即时 clamp。
 void UArenaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue)
 {
 	Super::PreAttributeChange(Attribute, NewValue);
@@ -49,6 +53,7 @@ void UArenaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attribute,
 	ClampAttribute(Attribute, NewValue);
 }
 
+// BaseValue 改变前做边界限制，覆盖 Instant GE 等修改基础值的路径。
 void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const
 {
 	Super::PreAttributeBaseChange(Attribute, NewValue);
@@ -56,6 +61,7 @@ void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attrib
 	ClampAttribute(Attribute, NewValue);
 }
 
+// GE 执行后消费 Damage/Healing 元属性，并同步护盾、生命和死亡标签。
 void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -74,8 +80,10 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 
 			SetShield(GetShield() - ShieldDamage);
 			SetHealth(GetHealth() - RemainingDamage);
+			ExecuteDamageGameplayCue(Data, LocalDamage);
 		}
 
+		RefreshShieldGameplayCue();
 		UpdateDeadTag();
 	}
 	else if (Data.EvaluatedData.Attribute == GetHealingAttribute())
@@ -96,12 +104,14 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	{
 		// 通过 setter 重新走 clamp，确保 MaxHealth 改变后 Health 仍合法。
 		SetHealth(GetHealth());
+		RefreshShieldGameplayCue();
 		UpdateDeadTag();
 	}
-	else if (Data.EvaluatedData.Attribute == GetShieldAttribute()
-		|| Data.EvaluatedData.Attribute == GetMaxShieldAttribute())
+	else if (Data.EvaluatedData.Attribute == GetShieldAttribute())
 	{
+		// Shield 是可叠加的临时吸收量，没有最大护盾属性，只限制不能低于 0。
 		SetShield(GetShield());
+		RefreshShieldGameplayCue();
 	}
 	else if (Data.EvaluatedData.Attribute == GetEnergyAttribute()
 		|| Data.EvaluatedData.Attribute == GetMaxEnergyAttribute())
@@ -110,6 +120,7 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	}
 }
 
+// 根据属性类型统一限制数值范围，避免各处重复 clamp 规则。
 void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, float& NewValue) const
 {
 	if (Attribute == GetHealthAttribute())
@@ -123,10 +134,7 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 	else if (Attribute == GetShieldAttribute())
 	{
-		NewValue = FMath::Clamp(NewValue, 0.0f, GetMaxShield());
-	}
-	else if (Attribute == GetMaxShieldAttribute())
-	{
+		// 护盾池可以被技能和升级持续叠加，只限制不能低于 0。
 		NewValue = FMath::Max(NewValue, 0.0f);
 	}
 	else if (Attribute == GetEnergyAttribute())
@@ -167,6 +175,7 @@ void UArenaAttributeSet::ClampAttribute(const FGameplayAttribute& Attribute, flo
 	}
 }
 
+// 服务端根据 Health 更新 State.Dead loose tag，供死亡流程和客户端观察。
 void UArenaAttributeSet::UpdateDeadTag() const
 {
 	UAbilitySystemComponent* OwningASC = GetOwningAbilitySystemComponent();
@@ -187,56 +196,148 @@ void UArenaAttributeSet::UpdateDeadTag() const
 	OwningASC->SetReplicatedLooseGameplayTagCount(ArenaGameplayTags::State_Dead, DeadTagCount);
 }
 
+void UArenaAttributeSet::RefreshShieldGameplayCue()
+{
+	UAbilitySystemComponent* OwningASC = GetOwningAbilitySystemComponent();
+	if (!OwningASC || !OwningASC->IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	const bool bShouldBeActive = GetShield() > KINDA_SMALL_NUMBER && GetHealth() > 0.0f;
+	if (bShouldBeActive == bShieldGameplayCueActive)
+	{
+		return;
+	}
+
+	if (bShouldBeActive)
+	{
+		FGameplayCueParameters CueParameters;
+		AActor* CueAvatar = OwningASC->GetAvatarActor();
+		CueParameters.Instigator = CueAvatar;
+		CueParameters.EffectCauser = CueAvatar;
+		// 护盾以 Capsule/Avatar 根组件为中心，避免 Manny Mesh 原点让光环落在头顶或脚下。
+		CueParameters.TargetAttachComponent = CueAvatar ? CueAvatar->GetRootComponent() : nullptr;
+		OwningASC->AddGameplayCue(ArenaGameplayTags::GameplayCue_Ability_Shield_Active, CueParameters);
+	}
+	else
+	{
+		OwningASC->RemoveGameplayCue(ArenaGameplayTags::GameplayCue_Ability_Shield_Active);
+	}
+
+	bShieldGameplayCueActive = bShouldBeActive;
+	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
+	{
+		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] ShieldCue %s Avatar=%s Shield=%.2f"),
+			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
+			bShouldBeActive ? TEXT("Added") : TEXT("Removed"),
+			*GetNameSafe(OwningASC->GetAvatarActor()),
+			GetShield());
+	}
+}
+
+void UArenaAttributeSet::ExecuteDamageGameplayCue(
+	const FGameplayEffectModCallbackData& Data,
+	float AppliedDamage) const
+{
+	UAbilitySystemComponent* TargetASC = GetOwningAbilitySystemComponent();
+	if (!TargetASC || !TargetASC->IsOwnerActorAuthoritative() || AppliedDamage <= 0.0f)
+	{
+		return;
+	}
+
+	FGameplayTagContainer AssetTags;
+	Data.EffectSpec.GetAllAssetTags(AssetTags);
+	FGameplayTag CueTag = ArenaGameplayTags::GameplayCue_Hit_Physical;
+	if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Fire))
+	{
+		CueTag = ArenaGameplayTags::GameplayCue_Hit_Fire;
+	}
+	else if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Lightning))
+	{
+		CueTag = ArenaGameplayTags::GameplayCue_Hit_Lightning;
+	}
+
+	FGameplayCueParameters CueParameters(Data.EffectSpec.GetEffectContext());
+	CueParameters.RawMagnitude = AppliedDamage;
+	CueParameters.EffectContext = Data.EffectSpec.GetEffectContext();
+	if (const FHitResult* HitResult = CueParameters.EffectContext.GetHitResult())
+	{
+		CueParameters.Location = HitResult->ImpactPoint;
+		CueParameters.Normal = HitResult->ImpactNormal;
+	}
+	else if (const AActor* TargetAvatar = TargetASC->GetAvatarActor())
+	{
+		CueParameters.Location = TargetAvatar->GetActorLocation();
+		CueParameters.Normal = FVector::UpVector;
+	}
+
+	TargetASC->ExecuteGameplayCue(CueTag, CueParameters);
+	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
+	{
+		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] Damage Target=%s Amount=%.2f Type=%s"),
+			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
+			*GetNameSafe(TargetASC->GetAvatarActor()),
+			AppliedDamage,
+			*CueTag.ToString());
+	}
+}
+
+// Health 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_Health(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Health, OldValue);
 }
 
+// MaxHealth 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_MaxHealth(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MaxHealth, OldValue);
 }
 
+// Shield 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_Shield(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Shield, OldValue);
 }
 
-void UArenaAttributeSet::OnRep_MaxShield(const FGameplayAttributeData& OldValue)
-{
-	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MaxShield, OldValue);
-}
-
+// Energy 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_Energy(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Energy, OldValue);
 }
 
+// MaxEnergy 复制回调，通知 GAS 属性变化委托和 UI。
 void UArenaAttributeSet::OnRep_MaxEnergy(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MaxEnergy, OldValue);
 }
 
+// AttackPower 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_AttackPower(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, AttackPower, OldValue);
 }
 
+// Defense 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_Defense(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, Defense, OldValue);
 }
 
+// MoveSpeed 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_MoveSpeed(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, MoveSpeed, OldValue);
 }
 
+// CritChance 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_CritChance(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, CritChance, OldValue);
 }
 
+// CritDamage 复制回调，通知 GAS 属性变化委托。
 void UArenaAttributeSet::OnRep_CritDamage(const FGameplayAttributeData& OldValue)
 {
 	GAMEPLAYATTRIBUTE_REPNOTIFY(UArenaAttributeSet, CritDamage, OldValue);

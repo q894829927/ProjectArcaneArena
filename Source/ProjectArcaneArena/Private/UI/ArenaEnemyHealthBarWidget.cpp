@@ -2,6 +2,7 @@
 
 #include "Components/ProgressBar.h"
 
+// 设置敌人血条显示值，UI 只计算百分比不修改玩法属性。
 void UArenaEnemyHealthBarWidget::SetHealthValues(float InHealth, float InMaxHealth)
 {
 	CurrentHealth = FMath::Max(InHealth, 0.0f);

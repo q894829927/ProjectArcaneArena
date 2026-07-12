@@ -3,15 +3,18 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
 #include "Engine/World.h"
+#include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GAS/Targeting/ArenaTargetActor_MouseGround.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "Projectile/ArenaFireballProjectile.h"
 
+// 构造火球技能，配置预测输入、火焰伤害类型和目标选择/投射物类型。
 UArenaGameplayAbility_Fireball::UArenaGameplayAbility_Fireball()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+	NetworkAbilityId = EArenaNetworkAbilityId::Fireball;
 	InputTag = ArenaGameplayTags::Ability_Fireball;
 	DamageTypeTag = ArenaGameplayTags::Damage_Fire;
 	ProjectileClass = AArenaFireballProjectile::StaticClass();
@@ -23,12 +26,16 @@ UArenaGameplayAbility_Fireball::UArenaGameplayAbility_Fireball()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Fireball);
 }
 
+// 激活火球技能，启动鼠标目标数据采集并等待客户端/服务端 TargetData 流程。
 void UArenaGameplayAbility_Fireball::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
+	bConsumedTargetData = false;
+	bServerSpawnConsumed = false;
+
 	if (!ActorInfo || !ActorInfo->AvatarActor.IsValid() || !ActorInfo->AbilitySystemComponent.IsValid())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -73,9 +80,15 @@ void UArenaGameplayAbility_Fireball::ActivateAbility(
 	}
 }
 
+// 收到目标数据后两端提交预测消耗/冷却，只有服务端消费一次生成权威火球投射物。
 void UArenaGameplayAbility_Fireball::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
+	if (bConsumedTargetData)
+	{
+		return;
+	}
+	bConsumedTargetData = true;
 
 	const FGameplayAbilitySpecHandle Handle = GetCurrentAbilitySpecHandle();
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
@@ -87,13 +100,7 @@ void UArenaGameplayAbility_Fireball::OnTargetDataReady(const FGameplayAbilityTar
 		return;
 	}
 
-	// 客户端只负责发送鼠标目标点；服务端实例收到 TargetData 后才提交消耗/冷却和生成投射物。
-	if (!ActorInfo->IsNetAuthority())
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-		return;
-	}
-
+	// 两端使用相同目标点做预测 Commit；服务端仍独占最终生成和伤害。
 	AActor* AvatarActor = ActorInfo->AvatarActor.Get();
 	UAbilitySystemComponent* SourceASC = ActorInfo->AbilitySystemComponent.Get();
 
@@ -116,10 +123,15 @@ void UArenaGameplayAbility_Fireball::OnTargetDataReady(const FGameplayAbilityTar
 		return;
 	}
 
-	SpawnFireballProjectile(AvatarActor, SourceASC, SpawnTransform);
+	if (ActorInfo->IsNetAuthority() && !bServerSpawnConsumed)
+	{
+		bServerSpawnConsumed = true;
+		SpawnFireballProjectile(AvatarActor, SourceASC, SpawnTransform);
+	}
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
+// 目标选择取消时清理 TargetData task，并取消当前技能。
 void UArenaGameplayAbility_Fireball::OnTargetDataCancelled(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
@@ -127,6 +139,7 @@ void UArenaGameplayAbility_Fireball::OnTargetDataCancelled(const FGameplayAbilit
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 }
 
+// 从 TargetData 中提取鼠标命中的世界位置。
 bool UArenaGameplayAbility_Fireball::ExtractTargetLocation(const FGameplayAbilityTargetDataHandle& TargetData, FVector& OutTargetLocation) const
 {
 	const FGameplayAbilityTargetData* FirstTargetData = TargetData.Get(0);
@@ -136,9 +149,10 @@ bool UArenaGameplayAbility_Fireball::ExtractTargetLocation(const FGameplayAbilit
 	}
 
 	OutTargetLocation = FirstTargetData->GetEndPoint();
-	return true;
+	return !OutTargetLocation.ContainsNaN();
 }
 
+// 根据角色位置和目标点计算水平发射方向与生成变换。
 bool UArenaGameplayAbility_Fireball::BuildProjectileSpawnTransform(AActor* AvatarActor, const FVector& TargetLocation, FTransform& OutSpawnTransform) const
 {
 	if (!AvatarActor)
@@ -169,6 +183,7 @@ bool UArenaGameplayAbility_Fireball::BuildProjectileSpawnTransform(AActor* Avata
 	return true;
 }
 
+// 服务端延迟生成火球投射物，并注入伤害 GE 与 SetByCaller 参数。
 void UArenaGameplayAbility_Fireball::SpawnFireballProjectile(AActor* AvatarActor, UAbilitySystemComponent* SourceASC, const FTransform& SpawnTransform) const
 {
 	if (!AvatarActor || !SourceASC || !ProjectileClass || !DamageEffectClass)
@@ -203,4 +218,19 @@ void UArenaGameplayAbility_Fireball::SpawnFireballProjectile(AActor* AvatarActor
 		BaseDamage,
 		SkillMultiplier);
 	FireballProjectile->FinishSpawning(SpawnTransform);
+
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = AvatarActor;
+	CueParameters.EffectCauser = FireballProjectile;
+	CueParameters.Location = SpawnTransform.GetLocation();
+	SourceASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Ability_Fireball_Cast, CueParameters);
+
+	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
+	{
+		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] Fireball Key=%d Handle=%s Projectile=%s"),
+			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
+			GetCurrentActivationInfo().GetActivationPredictionKey().Current,
+			*GetCurrentAbilitySpecHandle().ToString(),
+			*GetNameSafe(FireballProjectile));
+	}
 }

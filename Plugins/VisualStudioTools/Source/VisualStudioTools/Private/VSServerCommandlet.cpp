@@ -26,6 +26,7 @@
 static constexpr auto NamedPipeParam = TEXT("NamedPipe");
 static constexpr auto KillServerParam = TEXT("KillVSServer");
 
+// 构造 VS Server 命令行工具，配置命名管道和退出参数帮助。
 UVSServerCommandlet::UVSServerCommandlet()
 {
 	HelpDescription = TEXT("Commandlet for Unreal Engine server mode.");
@@ -38,6 +39,7 @@ UVSServerCommandlet::UVSServerCommandlet()
 	HelpParamDescriptions.Add(TEXT("[Optional] Quit the server mode commandlet immediately."));
 }
 
+// 通过命名管道读取 Visual Studio 请求，并分发到对应子命令行工具。
 void UVSServerCommandlet::ExecuteSubCommandlet(FString ueServerNamedPipe)
 {
 	char buffer[1024];
@@ -91,6 +93,7 @@ void UVSServerCommandlet::ExecuteSubCommandlet(FString ueServerNamedPipe)
 	}
 }
 
+// 启动 VS Server 循环，持续监听命名管道请求。
 int32 UVSServerCommandlet::Main(const FString &ServerParams)
 {
 	TArray<FString> Tokens;

@@ -1,12 +1,17 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "{C8908338-47BB-AF0F-81FC-9EBAAEDEAF04}",
+	"EngineAssociation": "{D57FDE9B-43F2-3282-1B78-038D8472A898}",
 	"Category": "",
 	"Description": "",
 	"Modules": [
 		{
 			"Name": "ProjectArcaneArena",
 			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "ProjectArcaneArenaEditor",
+			"Type": "Editor",
 			"LoadingPhase": "Default"
 		}
 	],
@@ -27,6 +32,18 @@
 			"Enabled": true
 		},
 		{
+			"Name": "MassAI",
+			"Enabled": true
+		},
+		{
+			"Name": "MassCrowd",
+			"Enabled": true
+		},
+		{
+			"Name": "MassGameplay",
+			"Enabled": true
+		},
+		{
 			"Name": "VisualStudioTools",
 			"Enabled": true,
 			"TargetAllowList": [
@@ -36,6 +53,10 @@
 			"SupportedTargetPlatforms": [
 				"Win64"
 			]
+		},
+		{
+			"Name": "CascadeToNiagaraConverter",
+			"Enabled": true
 		}
 	]
 }

@@ -2,7 +2,7 @@
 
 ## Project Role
 
-You are an Unreal Engine 5 C++ gameplay engineer working on a top-down Roguelike combat demo based on Gameplay Ability System.
+You are an Unreal Engine 5 C++ gameplay engineer working on a Roguelike arena combat demo based on Gameplay Ability System. The primary gameplay view is top-down, with a supported third-person view that must remain compatible with the same combat systems.
 
 The project target is a resume-ready demo that first supports a complete single-player gameplay loop, then can be extended to a two-player Listen Server multiplayer mode.
 
@@ -15,6 +15,7 @@ The demo focuses on:
 * GameplayEffect and ExecutionCalculation
 * GameplayTag-driven state control
 * Top-down combat
+* Top-down and third-person dual-view compatibility
 * Enemy AI
 * Wave-based spawning
 * Roguelike upgrade selection
@@ -42,6 +43,36 @@ The final technical goal is:
 * Server-authoritative damage design
 * Replication-friendly class architecture
 * Optional two-player Listen Server support
+
+---
+
+## Roguelike Build Design Goal
+
+The upgrade system should support a build-driven Roguelike combat loop, not only flat stat bonuses.
+
+Design direction:
+
+* Use Hades-like clarity for build branches, ability-focused choices, rarity, and readable upgrade intent.
+* Use The Binding of Isaac-like surprise sparingly through rule-changing upgrades and strong synergies.
+* Keep the first version controlled, readable, and suitable for a portfolio demo.
+
+First-version build axes:
+
+* Fire build
+* Lightning build
+* Crit build
+* Shield build
+* Dash build
+
+Upgrade design should include:
+
+* Attribute upgrades such as AttackPower, MaxHealth, CritChance, MoveSpeed, and cooldown reduction.
+* Ability variants such as Fireball splitting, Dash leaving a damage trail, or Shield exploding when broken.
+* Trigger upgrades such as OnKill, OnCrit, OnDashEnd, OnShieldBreak, and OnAbilityCast effects.
+* Status and damage-type synergies such as Burning, Shocked, Fire damage, and Lightning damage.
+* A small number of legendary rule-changing upgrades that meaningfully change how the player fights.
+
+Do not try to make the first version an unlimited item-combination sandbox. Prefer a small set of clear, testable build paths with a few high-impact synergy upgrades.
 
 ---
 
@@ -82,6 +113,60 @@ Do not write single-player-only logic that would require a major rewrite for mul
 
 ---
 
+## Dual-View Compatibility Rule
+
+The project supports both top-down and third-person gameplay views. Future gameplay work must account for both modes unless the user explicitly limits a feature to one view.
+
+View responsibilities:
+
+* Top-down mode uses a visible mouse cursor, world-relative movement, and cursor-ground targeting.
+* Third-person mode uses a hidden/captured mouse, camera-relative movement, mouse-look, and a center-screen reticle.
+* Pressing `0` or `NumPad0` locally toggles between the two views with a short camera blend.
+* Camera mode, mouse capture, camera interpolation, and reticle visibility are local presentation state. Do not replicate them or represent them with gameplay tags unless gameplay rules later depend on them.
+
+Targeting rules:
+
+* Targeted abilities must use a shared view-aware targeting path instead of calling `GetHitResultUnderCursor` directly inside each ability.
+* Top-down targeting reads the cursor hit; third-person targeting deprojects the screen center and traces along the camera aim ray.
+* Third-person camera traces must ignore the owning Avatar so the player mesh or capsule cannot become the first aim hit.
+* Client targeting only produces aim direction or TargetData. The authority side must validate range, target eligibility, and final gameplay results.
+* Abilities that use world locations must behave sensibly when the center ray hits an enemy, a wall, or no surface; use a bounded horizontal fallback and keep server-side range clamping.
+* BasicAttack, Fireball, LightningStorm, and future aimed abilities must be tested in both views.
+
+Movement and presentation rules:
+
+* Top-down movement remains aligned with the arena world axes unless explicitly redesigned.
+* Third-person movement is based on control/camera yaw; Dash should continue to prioritize the resolved movement input direction.
+* Do not add a full strafing/aim-offset animation framework unless explicitly requested. The current first version may orient the character to movement and briefly face the validated attack direction when attacking.
+* HUD elements that differ by view, such as the center reticle, remain presentation-only and must not own targeting or gameplay state.
+* VFX placement, target previews, debug ranges, and readable telegraphs must be checked from both camera distances and angles.
+
+Dual-view test expectations:
+
+* Test view switching, cursor capture/release, camera collision, and reticle visibility in single-player PIE.
+* Test movement, BasicAttack, Fireball, Dash, Shield, and LightningStorm once in each view after relevant changes.
+* In two-player PIE, each local player must be able to choose a view independently while combat remains server-authoritative.
+* Switching view during cooldown, targeting, movement, or active VFX must not duplicate abilities, projectiles, area actors, or damage.
+
+---
+
+## Implemented Feature Log Rule
+
+The project root contains `IMPLEMENTED_FEATURES.md` as the canonical, human-readable record of completed and partially completed gameplay features.
+
+Rules:
+
+* Read `IMPLEMENTED_FEATURES.md` before planning or implementing a new gameplay feature so existing work is not duplicated.
+* Update `IMPLEMENTED_FEATURES.md` in the same change whenever a feature is added, removed, materially expanded, or changes ownership/network authority.
+* Record only behavior that exists in code or configured project assets. Do not list proposals or roadmap items as implemented.
+* Mark entries as `Implemented`, `Partial`, or `Verified` where the distinction matters.
+* Each new entry should briefly state the player-visible behavior, primary classes/assets, authority or replication model, and verification status.
+* If a feature is replaced or removed, update the existing entry instead of leaving stale documentation.
+* Keep the log concise and grouped by subsystem. Detailed implementation notes belong in code comments or dedicated design documents.
+* Documentation-only edits do not require a new feature entry unless they change the recorded implementation status.
+
+---
+
 ## Recommended Class Architecture
 
 Use this architecture unless there is a strong reason to change it.
@@ -109,6 +194,7 @@ Use this architecture unless there is a strong reason to change it.
 * `AArenaPlayerController`
 
   * Local input binding
+  * Local mouse capture and dual-view presentation mode
   * HUD creation
   * UI interaction
   * Sends upgrade selection request to server
@@ -135,8 +221,9 @@ Use this architecture unless there is a strong reason to change it.
 * `AArenaPlayerCharacter`
 
   * Player movement
-  * Camera setup
-  * Mouse-facing logic
+  * Top-down / third-person camera setup and local switching
+  * World-relative or camera-relative movement based on the local view
+  * View-aware aim presentation; final targeting remains in TargetData/server validation
   * Retrieves ASC from PlayerState
   * Initializes Ability Actor Info in `PossessedBy` and `OnRep_PlayerState`
 
@@ -162,7 +249,6 @@ Use this architecture unless there is a strong reason to change it.
   * Health
   * MaxHealth
   * Shield
-  * MaxShield
   * Energy
   * MaxEnergy
   * AttackPower
@@ -290,6 +376,7 @@ State.Stunned
 State.Invincible
 State.Dashing
 State.Casting
+State.Attacking
 
 Ability.BasicAttack
 Ability.Fireball
@@ -311,6 +398,22 @@ Phase.Combat
 Phase.Upgrade
 Phase.Victory
 Phase.Defeat
+
+Build.Fire
+Build.Lightning
+Build.Crit
+Build.Shield
+Build.Dash
+
+Trigger.OnKill
+Trigger.OnCrit
+Trigger.OnDashEnd
+Trigger.OnShieldBreak
+Trigger.OnAbilityCast
+
+Status.Burning
+Status.Shocked
+Status.Marked
 ```
 
 Rules:
@@ -318,8 +421,11 @@ Rules:
 * A dead character cannot activate abilities.
 * A stunned character cannot move or attack.
 * An invincible character should not receive normal damage.
+* An attacking character should not start another attack or resume AI path movement until the active attack ends.
 * Cooldown tags should block ability reactivation.
 * Casting tags may be used to prevent overlapping ability activation.
+* Build state, upgrade ownership, and status synergy should be represented with GameplayTags when practical, not scattered boolean variables.
+* Trigger tags should describe gameplay events that upgrade systems can listen for or route through GameplayEvents.
 
 ---
 
@@ -340,7 +446,7 @@ Each replicated attribute should have:
 Clamp attributes where needed:
 
 * `Health` between `0` and `MaxHealth`
-* `Shield` between `0` and `MaxShield`
+* `Shield` not lower than `0`; current Shield has no hard upper limit and no `MaxShield` attribute.
 * `Energy` between `0` and `MaxEnergy`
 
 Use:
@@ -469,9 +575,9 @@ Wave data should include:
 
 ## Roguelike Upgrade System
 
-After each wave, show three random upgrades.
+After each wave, show three random upgrades that can grow into recognizable builds.
 
-Upgrade selection should be data-driven.
+Upgrade selection should be data-driven and server-validated.
 
 Recommended class:
 
@@ -479,15 +585,40 @@ Recommended class:
 
 Upgrade data should include:
 
-* Upgrade ID
-* Upgrade name
-* Upgrade description
-* Upgrade icon
-* Upgrade rarity
-* Granted GameplayEffect
-* Target ability tag
-* Numeric value
-* Whether it is stackable
+* `UpgradeID`
+* `UpgradeName`
+* `Description`
+* `Icon`
+* `Rarity`
+* `UpgradeTags`
+* `RequiredTags`
+* `BlockedTags`
+* `GrantedGameplayEffect`
+* `GrantedAbility`
+* `TargetAbilityTag`
+* `TriggerEventTag`
+* `DamageTypeTag`
+* `NumericValue`
+* `MaxStacks`
+* `bStackable`
+
+Upgrade categories:
+
+* Attribute upgrades: modify attributes through GameplayEffects.
+* Ability variants: change a specific GameplayAbility through tags, granted abilities, or upgrade state.
+* Trigger upgrades: react to gameplay events such as kill, crit, dash end, shield break, or ability cast.
+* Status synergies: reward combinations such as Fire plus Burning or Lightning plus Shocked.
+* Legendary upgrades: limited rule-changing upgrades that redefine a build without exploding project scope.
+
+Implementation ownership:
+
+* Attribute upgrades should use GameplayEffects.
+* Ability behavior changes should be handled by GameplayAbilities reading ASC tags, PlayerState upgrade state, or ability-specific data.
+* Trigger upgrades should use GameplayEvents and GameplayTags rather than direct UI or Character-owned logic.
+* Damage changes should go through `UExecCalc_Damage`, SetByCaller values, or GameplayEffect configuration.
+* Presentation changes should use GameplayCue or Blueprint visual hooks.
+* Upgrade ownership and stacks should live on `AArenaPlayerState`.
+* Upgrade candidate generation and validation should live in `AArenaGameMode`, `AArenaWaveManager`, or another server-owned upgrade manager.
 
 Upgrade examples:
 
@@ -501,6 +632,11 @@ Upgrade examples:
 * Shield value +30%
 * Kill restores Health
 * Critical hit restores Energy
+* Fireball applies Burning
+* Burning enemies explode on death
+* Dash leaves a lightning trail
+* Shield break causes an area blast
+* Lightning damage against Burning enemies causes an overload explosion
 
 For future multiplayer:
 
@@ -508,7 +644,7 @@ For future multiplayer:
 * PlayerController sends Server RPC.
 * Server validates the upgrade.
 * Server applies the corresponding GameplayEffect to that player.
-* PlayerState records that the player has selected an upgrade.
+* PlayerState records the selected upgrade, owned build tags, stack counts, and whether the player has selected an upgrade.
 * GameMode starts next wave after all players finish selection.
 
 ---
@@ -549,16 +685,19 @@ Use Enhanced Input.
 Recommended inputs:
 
 ```text
-WASD        Move
-Mouse       Aim / Face cursor
+WASD        Move (world-relative top-down, camera-relative third-person)
+Shift       Sprint
+Mouse       Cursor aim in top-down / camera look in third-person
 Left Mouse  Basic Attack
 Q           Fireball
 E           Dash
 R           Lightning Storm
 F           Shield
+0 / NumPad0 Toggle top-down / third-person view
 ```
 
 Ability input should be routed through AbilitySystemComponent rather than directly calling ability logic from Character.
+Targeted ability input should resolve through the shared view-aware TargetData path so new skills work in both camera modes.
 
 ---
 
@@ -579,6 +718,7 @@ Rules:
 * Prefer timers, delegates, GAS tasks, or event-driven logic.
 * Keep functions short and focused.
 * Add a brief Chinese comment for newly added functions to state their purpose or extension point.
+* When modifying an existing function, add or update its Chinese comment so the comment reflects the new behavior, responsibility, or extension point.
 * Add Chinese comments for complex logic, especially GAS, replication, input routing, damage, death, or server-authoritative flow.
 * When changing code, update any affected comments so they continue to match the implementation.
 * Avoid redundant comments that merely repeat obvious code.
@@ -607,6 +747,7 @@ After changing code:
 4. Check replication macros.
 5. Check GAS initialization path.
 6. Explain what changed and why.
+7. Update `IMPLEMENTED_FEATURES.md` when the change adds, removes, or materially changes a feature.
 
 ---
 
@@ -667,6 +808,12 @@ Avoid these mistakes:
 * Building matchmaking or online services too early.
 * Creating complex AI before the player combat loop works.
 * Creating too many abilities before damage and AttributeSet are stable.
+* Putting upgrade logic into large Character-level if/boolean branches.
+* Trying to support unlimited random item combinations in the first version.
+* Creating build upgrades that cannot be explained, tested, or shown clearly in a short demo.
+* Implementing a new aimed ability with cursor-only logic that fails in third-person mode.
+* Letting the third-person center trace hit the owning player mesh or capsule.
+* Treating local camera mode or reticle visibility as replicated gameplay state.
 
 ---
 
@@ -710,13 +857,24 @@ Follow this order:
 5. Add WaveManager.
 6. Add wave completion detection.
 
-### Phase 5: Roguelike Upgrade
+### Phase 5A: Upgrade Foundation
 
 1. Add UpgradeDataAsset.
-2. Add three-choice upgrade UI.
-3. Add permanent upgrade GameplayEffects.
-4. Add upgrade phase after each wave.
-5. Add upgrade stacking rules.
+2. Add upgrade rarity, tags, stack limits, and eligibility rules.
+3. Add three-choice upgrade UI.
+4. Add server-side upgrade selection and validation.
+5. Apply upgrade GameplayEffects.
+6. Store selected upgrades, build tags, and stack counts on PlayerState.
+7. Add upgrade phase after each wave.
+
+### Phase 5B: Build Synergy
+
+1. Add Fire, Lightning, Crit, Shield, and Dash build tags.
+2. Add trigger events for OnKill, OnCrit, OnDashEnd, OnShieldBreak, and OnAbilityCast.
+3. Add skill-specific upgrades for Fireball, Dash, Shield, and LightningStorm.
+4. Add combo upgrades that use RequiredTags and BlockedTags.
+5. Add at least one legendary rule-changing upgrade.
+6. Verify that each build path has a visible combat identity.
 
 ### Phase 6: Boss and Polish
 
@@ -755,6 +913,8 @@ The project should be explainable with these points:
 * Used GameplayTags for state control.
 * Built wave-based Roguelike combat loop.
 * Added data-driven upgrade system.
+* Implemented GameplayTag-driven Roguelike build paths.
+* Implemented ability variants, trigger upgrades, and data-driven upgrade pools.
 * Designed architecture to support future Listen Server multiplayer.
 * Implemented server-authoritative combat logic for multiplayer readiness.
 

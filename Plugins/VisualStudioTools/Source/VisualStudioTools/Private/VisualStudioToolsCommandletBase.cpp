@@ -14,6 +14,7 @@
 static constexpr auto HelpSwitch = TEXT("help");
 static constexpr auto OutputSwitch = TEXT("output");
 
+// 构造 Visual Studio Tools 命令行基类，配置通用帮助和输出参数。
 UVisualStudioToolsCommandletBase::UVisualStudioToolsCommandletBase()
 {
 	IsClient = false;
@@ -29,6 +30,7 @@ UVisualStudioToolsCommandletBase::UVisualStudioToolsCommandletBase()
 	HelpParamDescriptions.Add(TEXT("[Optional] Print this help message and quit the commandlet immediately."));
 }
 
+// 输出当前命令行工具的帮助说明和参数列表。
 void UVisualStudioToolsCommandletBase::PrintHelp() const
 {
 	UE_LOG(LogVisualStudioTools, Display, TEXT("%s"), *HelpDescription);
@@ -40,6 +42,7 @@ void UVisualStudioToolsCommandletBase::PrintHelp() const
 	}
 }
 
+// 解析通用参数、创建输出文件，并把具体执行交给 Run 实现。
 int32 UVisualStudioToolsCommandletBase::Main(const FString& Params)
 {
 	TArray<FString> Tokens;

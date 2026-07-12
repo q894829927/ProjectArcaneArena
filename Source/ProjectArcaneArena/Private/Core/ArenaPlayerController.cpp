@@ -1,8 +1,10 @@
 #include "Core/ArenaPlayerController.h"
 
 #include "Core/ArenaPlayerState.h"
+#include "Core/ArenaGameState.h"
 #include "UI/ArenaPlayerHUDWidget.h"
 
+// 构造玩家控制器，设置鼠标显示和基础输入交互选项。
 AArenaPlayerController::AArenaPlayerController()
 {
 	bShowMouseCursor = true;
@@ -11,19 +13,18 @@ AArenaPlayerController::AArenaPlayerController()
 	DefaultMouseCursor = EMouseCursor::Default;
 }
 
+// 本地控制器开始时设置输入模式，并创建/绑定玩家 HUD。
 void AArenaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	FInputModeGameOnly InputMode;
-	// 鼠标第一次点击可能同时用于捕获视口，不能吞掉这次战斗输入。
-	InputMode.SetConsumeCaptureMouseDown(false);
-	SetInputMode(InputMode);
-
 	CreatePlayerHUD();
+	SetThirdPersonInputMode(false);
 	TryBindPlayerHUD();
+	BindGameStateHUD();
 }
 
+// Possess 新 Pawn 后再次尝试绑定 HUD，处理 PlayerState 或 ASC 稍后就绪的情况。
 void AArenaPlayerController::OnPossess(APawn* InPawn)
 {
 	Super::OnPossess(InPawn);
@@ -31,6 +32,7 @@ void AArenaPlayerController::OnPossess(APawn* InPawn)
 	TryBindPlayerHUD();
 }
 
+// 仅在本地控制器上创建玩家 HUD，并加入视口。
 void AArenaPlayerController::CreatePlayerHUD()
 {
 	if (!IsLocalController() || PlayerHUDWidget || !PlayerHUDWidgetClass)
@@ -42,9 +44,52 @@ void AArenaPlayerController::CreatePlayerHUD()
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->AddToViewport();
+		PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
 	}
 }
 
+// Controller 销毁前解除 GameState 动态委托，避免旅行或重连后重复绑定。
+void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindGameStateHUD();
+	ClearPlayerHUDBindingRetry();
+	Super::EndPlay(EndPlayReason);
+}
+
+// 在顶视角显示鼠标，在第三人称隐藏鼠标并显示屏幕中心准星。
+void AArenaPlayerController::SetThirdPersonInputMode(bool bEnableThirdPerson)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	bThirdPersonInputMode = bEnableThirdPerson;
+	bShowMouseCursor = !bThirdPersonInputMode;
+
+	FInputModeGameOnly InputMode;
+	// 顶视角保留第一次鼠标点击，第三人称由 GameOnly 模式持续捕获鼠标增量。
+	InputMode.SetConsumeCaptureMouseDown(false);
+	SetInputMode(InputMode);
+
+	if (!bThirdPersonInputMode)
+	{
+		int32 ViewportSizeX = 0;
+		int32 ViewportSizeY = 0;
+		GetViewportSize(ViewportSizeX, ViewportSizeY);
+		if (ViewportSizeX > 0 && ViewportSizeY > 0)
+		{
+			SetMouseLocation(ViewportSizeX / 2, ViewportSizeY / 2);
+		}
+	}
+
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
+	}
+}
+
+// 尝试把 HUD 绑定到 PlayerState 上的 ASC 和 AttributeSet。
 void AArenaPlayerController::TryBindPlayerHUD()
 {
 	if (!IsLocalController())
@@ -70,9 +115,75 @@ void AArenaPlayerController::TryBindPlayerHUD()
 	}
 
 	PlayerHUDWidget->BindToAbilitySystem(ArenaPlayerState->GetArenaAbilitySystemComponent(), ArenaPlayerState->GetArenaAttributeSet());
+	BindGameStateHUD();
 	ClearPlayerHUDBindingRetry();
 }
 
+// 绑定 GameState 的复制变化并先用当前快照刷新一次 HUD。
+void AArenaPlayerController::BindGameStateHUD()
+{
+	if (!IsLocalController() || !PlayerHUDWidget)
+	{
+		return;
+	}
+
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	if (!ArenaGameState)
+	{
+		return;
+	}
+
+	if (BoundArenaGameState.Get() != ArenaGameState)
+	{
+		UnbindGameStateHUD();
+		BoundArenaGameState = ArenaGameState;
+		ArenaGameState->OnGamePhaseChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleGamePhaseChanged);
+		ArenaGameState->OnCurrentWaveIndexChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleWaveIndexChanged);
+		ArenaGameState->OnRemainingEnemyCountChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleRemainingEnemyCountChanged);
+	}
+
+	PlayerHUDWidget->SetGamePhase(ArenaGameState->GetGamePhase());
+	PlayerHUDWidget->SetWaveState(ArenaGameState->GetCurrentWaveIndex(), ArenaGameState->GetRemainingEnemyCount());
+}
+
+void AArenaPlayerController::UnbindGameStateHUD()
+{
+	if (AArenaGameState* ArenaGameState = BoundArenaGameState.Get())
+	{
+		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(this, &AArenaPlayerController::HandleGamePhaseChanged);
+		ArenaGameState->OnCurrentWaveIndexChanged.RemoveDynamic(this, &AArenaPlayerController::HandleWaveIndexChanged);
+		ArenaGameState->OnRemainingEnemyCountChanged.RemoveDynamic(this, &AArenaPlayerController::HandleRemainingEnemyCountChanged);
+	}
+	BoundArenaGameState.Reset();
+}
+
+void AArenaPlayerController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
+{
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetGamePhase(NewPhase);
+	}
+}
+
+void AArenaPlayerController::HandleWaveIndexChanged(int32 OldValue, int32 NewValue)
+{
+	if (PlayerHUDWidget)
+	{
+		const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+		PlayerHUDWidget->SetWaveState(NewValue, ArenaGameState ? ArenaGameState->GetRemainingEnemyCount() : 0);
+	}
+}
+
+void AArenaPlayerController::HandleRemainingEnemyCountChanged(int32 OldValue, int32 NewValue)
+{
+	if (PlayerHUDWidget)
+	{
+		const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+		PlayerHUDWidget->SetWaveState(ArenaGameState ? ArenaGameState->GetCurrentWaveIndex() : 0, NewValue);
+	}
+}
+
+// 当客户端 GAS 数据尚未复制完成时，安排短间隔重试绑定 HUD。
 void AArenaPlayerController::SchedulePlayerHUDBindingRetry()
 {
 	if (!GetWorld() || GetWorldTimerManager().IsTimerActive(PlayerHUDBindingRetryTimerHandle))
@@ -89,6 +200,7 @@ void AArenaPlayerController::SchedulePlayerHUDBindingRetry()
 		true);
 }
 
+// HUD 成功绑定或不再需要重试时清理定时器。
 void AArenaPlayerController::ClearPlayerHUDBindingRetry()
 {
 	if (GetWorld())

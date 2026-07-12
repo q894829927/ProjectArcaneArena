@@ -75,4 +75,7 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitTargetData> ActiveTargetDataTask;
+
+	bool bConsumedTargetData = false;
+	bool bServerSpawnConsumed = false;
 };

@@ -24,6 +24,7 @@
 #include <CoreGlobals.h>
 #include <map>
 
+// 注册 Visual Studio 蓝图调试辅助模块。
 IMPLEMENT_MODULE(FVisualStudioBlueprintDebuggerHelper, VisualStudioBlueprintDebuggerHelper);
 
 DEFINE_LOG_CATEGORY(LogVisualStudioBlueprintDebuggerHelper);
@@ -39,6 +40,7 @@ struct FVSNodePinRuntimeInformation
 	UEdGraphPin* Pin;
 	FCustomBlueprintPropertyInfo Property;
 
+	// 构造运行时 Pin 调试信息，保存 Pin 和对应属性实例。
 	FVSNodePinRuntimeInformation(UEdGraphPin* InPin, FCustomBlueprintPropertyInfo InProperty)
 		: Pin(InPin)
 		, Property(InProperty)
@@ -77,6 +79,7 @@ VISUALSTUDIOBLUEPRINTDEBUGGERHELPER_API std::map<void*, StackTraceHelper> StackF
 
 VISUALSTUDIOBLUEPRINTDEBUGGERHELPER_API const char* DebuggerHelperVersion = "1.0.0";
 
+// 模块启动时注册蓝图脚本上下文和异常回调。
 void FVisualStudioBlueprintDebuggerHelper::StartupModule()
 {
 	CurrentScriptEntryTag = 0;
@@ -94,6 +97,7 @@ void FVisualStudioBlueprintDebuggerHelper::StartupModule()
 		&FVisualStudioBlueprintDebuggerHelper::OnScriptException);
 }
 
+// 模块关闭时移除已注册的蓝图调试回调。
 void FVisualStudioBlueprintDebuggerHelper::ShutdownModule()
 {
 	FBlueprintCoreDelegates::OnScriptException.RemoveAll(this);
@@ -101,6 +105,7 @@ void FVisualStudioBlueprintDebuggerHelper::ShutdownModule()
 	FBlueprintContextTracker::OnEnterScriptContext.RemoveAll(this);
 }
 
+// 进入蓝图脚本上下文时记录当前脚本入口标签。
 void FVisualStudioBlueprintDebuggerHelper::OnEnterScriptContext(
 	const struct FBlueprintContextTracker& Context,
 	const UObject* SourceObject,
@@ -114,6 +119,7 @@ void FVisualStudioBlueprintDebuggerHelper::OnEnterScriptContext(
 	CurrentScriptEntryTag = Context.GetScriptEntryTag();
 }
 
+// 退出蓝图脚本上下文时清理对应运行时节点和栈帧信息。
 void FVisualStudioBlueprintDebuggerHelper::OnExitScriptContext(const struct FBlueprintContextTracker& Context)
 {
 	if (!IsInGameThread())
@@ -153,6 +159,7 @@ void FVisualStudioBlueprintDebuggerHelper::OnExitScriptContext(const struct FBlu
 	CurrentScriptEntryTag--;
 }
 
+// 蓝图断点或 Tracepoint 命中时收集当前节点和 Pin 运行时调试信息。
 void FVisualStudioBlueprintDebuggerHelper::OnScriptException(
 	const UObject* Owner,
 	const struct FFrame& Stack,

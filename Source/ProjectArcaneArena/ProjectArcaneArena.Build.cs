@@ -16,7 +16,9 @@ public class ProjectArcaneArena : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
-			"UMG"
+			"AIModule",
+			"UMG",
+			"MassEntity"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] {});
