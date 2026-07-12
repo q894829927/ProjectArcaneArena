@@ -58,6 +58,14 @@ protected:
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|Upgrade")
 	TObjectPtr<UImage> UpgradeChoiceIcon2;
 
+	// 原生 fallback 使用 SizeBox 固定图标尺寸；蓝图子类可覆盖默认值。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Upgrade|Layout", meta = (ClampMin = "1.0"))
+	FVector2D UpgradeIconSize = FVector2D(220.0f, 220.0f);
+
+	// 原生 fallback 根面板尺寸，为放大的图标和说明文本保留稳定空间。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Upgrade|Layout", meta = (ClampMin = "1.0"))
+	FVector2D UpgradePanelSize = FVector2D(1200.0f, 460.0f);
+
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Upgrade", meta = (DisplayName = "Upgrade Choices Changed"))
 	void K2_OnUpgradeChoicesChanged();
 
