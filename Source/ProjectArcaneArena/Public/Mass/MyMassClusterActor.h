@@ -59,5 +59,9 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Cluster")
 	float MaximumInitialSpeed = 300.0f;
 
+	/** 各网络 World 使用相同种子生成一致的初始位置和速度；仅用于本地表现模拟。 */
+	UPROPERTY(EditAnywhere, Category = "Cluster")
+	int32 RandomSeed = 1337;
+
 	TArray<FMassEntityHandle> SpawnedEntities;
 };

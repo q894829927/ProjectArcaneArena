@@ -101,6 +101,13 @@ Status meanings:
 
 ## Enemies and Game Loop
 
+### Local Mass Visual Cluster — Implemented
+
+* `AMyMassClusterActor` creates a lightweight HISM-backed Mass Entity cluster for presentation only; it does not own collision, damage, or authoritative gameplay state.
+* `UMyMassMovementProcessor` executes in standalone, server, and client Worlds so every local player sees the cluster move without replicating per-instance transforms.
+* Initial positions, velocities, and maximum speeds use a configurable fixed `RandomSeed`, giving each World the same starting cluster state while simulation remains local.
+* Verification pending: two-player PIE should confirm both windows animate the cluster and begin from matching layouts.
+
 ### Enemy GAS Character and Melee AI — Partial
 
 * `AArenaEnemyCharacter` owns a replicated ASC and AttributeSet, grants configured startup abilities on the server, exposes a death delegate, and handles collision/movement/UI shutdown on death.

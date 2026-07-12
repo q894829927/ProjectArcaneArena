@@ -6,8 +6,9 @@
 UMyMassMovementProcessor::UMyMassMovementProcessor()
 	: EntityQuery(*this)
 {
-	// 在物理模拟之前更新集群位置。
+	// 纯表现集群在服务器和每个客户端 World 独立模拟，不复制上千个实例 Transform。
 	ProcessingPhase = EMassProcessingPhase::PrePhysics;
+	ExecutionFlags = static_cast<int32>(EProcessorExecutionFlags::AllNetModes);
 
 	// 自动加入全局 Mass Processor 执行列表。
 	bAutoRegisterWithProcessingPhases = true;

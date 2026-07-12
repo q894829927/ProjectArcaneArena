@@ -110,6 +110,8 @@ void AMyMassClusterActor::SpawnCluster()
 				SpawnedEntities);
 
 	const FVector Center = GetActorLocation();
+	// 每个客户端 World 使用同一个随机流，避免 FMath 全局随机状态造成初始集群不同。
+	FRandomStream RandomStream(RandomSeed);
 
 	for (int32 Index = 0;
 		 Index < SpawnedEntities.Num();
@@ -123,12 +125,12 @@ void AMyMassClusterActor::SpawnCluster()
 				FMyMovementFragment>(Entity);
 
 		const FVector RandomDirection =
-			FMath::VRand().GetSafeNormal(
+			RandomStream.VRand().GetSafeNormal(
 				UE_SMALL_NUMBER,
 				FVector::ForwardVector);
 
 		const float RandomDistance =
-			FMath::FRandRange(
+			RandomStream.FRandRange(
 				0.0f,
 				SpawnRadius);
 
@@ -139,12 +141,12 @@ void AMyMassClusterActor::SpawnCluster()
 		Movement.ClusterCenter = Center;
 
 		Movement.MaxSpeed =
-			FMath::FRandRange(
+			RandomStream.FRandRange(
 				MinimumInitialSpeed,
 				MaximumInitialSpeed);
 
 		Movement.Velocity =
-			FMath::VRand().GetSafeNormal(
+			RandomStream.VRand().GetSafeNormal(
 				UE_SMALL_NUMBER,
 				FVector::ForwardVector)
 			* Movement.MaxSpeed;
