@@ -9,6 +9,7 @@
 #include "GAS/Targeting/ArenaTargetActor_MouseGround.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
+#include "GameplayPrediction.h"
 
 UArenaGameplayAbility_LightningStorm::UArenaGameplayAbility_LightningStorm()
 {
@@ -232,7 +233,11 @@ void UArenaGameplayAbility_LightningStorm::SpawnLightningStormArea(
 	CueParameters.Instigator = AvatarActor;
 	CueParameters.EffectCauser = LightningStormArea;
 	CueParameters.Location = SpawnTransform.GetLocation();
-	SourceASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Ability_LightningStorm_Cast, CueParameters);
+	{
+		// Cast Cue 由服务器确认的 Area 生成驱动，不沿用客户端预测键，避免拥有者端错误抑制该表现。
+		FScopedPredictionWindow CuePredictionWindow(SourceASC, FPredictionKey(), false);
+		SourceASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Ability_LightningStorm_Cast, CueParameters);
+	}
 
 	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
 	{

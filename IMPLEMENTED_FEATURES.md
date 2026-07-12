@@ -98,6 +98,7 @@ Status meanings:
 ### GameplayCue Routing - Partial
 
 * Native Cue tags and server-confirmed dispatch exist for all five player abilities, enemy melee activation, and physical/fire/lightning damage hits.
+* LightningStorm Cast and Active Cues clear the activation prediction key inside their server-confirmed dispatch scope, so the owning client and simulated clients both receive the authoritative storm presentation exactly once.
 * Shield, Dash, and LightningStorm use paired server Add/Remove Cue lifetimes; Shield only adds on the zero-to-positive transition and removes on depletion or death. Dash and Shield explicitly attach to the Avatar root instead of the Manny skeletal mesh so imported mesh rotation/location offsets cannot displace directional or centered Niagara effects.
 * Successful damage emits one type-specific hit Cue from the authoritative AttributeSet Damage meta-attribute path, using HitResult data when available and target location as fallback.
 * GameplayCue Notify assets exist under `/Game/GAS/GameplayCues` and reference the current Niagara systems. Dash/Shield attached-effect placement and Niagara local-space/loop tuning still require PIE verification; remove any duplicate Niagara component from `BP_ArenaLightningStormArea` after the Storm Active Cue is confirmed.

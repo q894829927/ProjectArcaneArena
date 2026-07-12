@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
+#include "GameplayPrediction.h"
 #include "Net/UnrealNetwork.h"
 #include "TimerManager.h"
 
@@ -71,6 +72,11 @@ void AArenaLightningStormArea::BeginPlay()
 	CueParameters.Instigator = SourceActor.Get();
 	CueParameters.EffectCauser = this;
 	CueParameters.Location = GetActorLocation();
+	// 风暴表现只在服务器确认生成后触发；清除技能预测键，确保施法者客户端不会把权威 Cue 当成已预测事件丢弃。
+	FScopedPredictionWindow CuePredictionWindow(
+		SourceAbilitySystemComponent.Get(),
+		FPredictionKey(),
+		false);
 	SourceAbilitySystemComponent->AddGameplayCue(
 		ArenaGameplayTags::GameplayCue_Ability_LightningStorm_Active,
 		CueParameters);
