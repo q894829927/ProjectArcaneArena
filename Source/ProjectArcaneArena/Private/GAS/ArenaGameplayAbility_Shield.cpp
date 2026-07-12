@@ -1,13 +1,15 @@
 #include "GAS/ArenaGameplayAbility_Shield.h"
 
 #include "AbilitySystemComponent.h"
+#include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
 
-// 构造护盾技能，配置服务端执行、输入标签和激活阻断标签。
+// 构造本地预测护盾技能，资源、冷却和 Shield GE 使用同一 PredictionKey 自动确认或回滚。
 UArenaGameplayAbility_Shield::UArenaGameplayAbility_Shield()
 {
-	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::ServerOnly;
+	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+	NetworkAbilityId = EArenaNetworkAbilityId::Shield;
 	InputTag = ArenaGameplayTags::Ability_Shield;
 
 	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Shield));
@@ -16,7 +18,7 @@ UArenaGameplayAbility_Shield::UArenaGameplayAbility_Shield()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Shield);
 }
 
-// 激活护盾技能，提交消耗/冷却后通过 GE 给自身添加护盾值。
+// 两端提交消耗/冷却并应用同一护盾 GE，服务器结果通过 PredictionKey 确认或回滚客户端预测。
 void UArenaGameplayAbility_Shield::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -52,6 +54,16 @@ void UArenaGameplayAbility_Shield::ActivateAbility(
 	}
 
 	// 护盾数值只通过 GE 修改 AttributeSet，保持 Cost/Cooldown/Clamp 都在 GAS 流程中。
-	SourceASC->ApplyGameplayEffectSpecToSelf(*ShieldSpecHandle.Data.Get());
+	SourceASC->ApplyGameplayEffectSpecToSelf(
+		*ShieldSpecHandle.Data.Get(),
+		ActivationInfo.GetActivationPredictionKey());
+	if (ActorInfo->IsNetAuthority() && ArenaAbilityNetworkDebug::IsAuditEnabled())
+	{
+		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] Shield Key=%d Handle=%s Avatar=%s"),
+			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
+			ActivationInfo.GetActivationPredictionKey().Current,
+			*Handle.ToString(),
+			*GetNameSafe(ActorInfo->AvatarActor.Get()));
+	}
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }

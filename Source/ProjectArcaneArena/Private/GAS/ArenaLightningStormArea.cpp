@@ -67,6 +67,15 @@ void AArenaLightningStormArea::BeginPlay()
 		return;
 	}
 
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = SourceActor.Get();
+	CueParameters.EffectCauser = this;
+	CueParameters.Location = GetActorLocation();
+	SourceAbilitySystemComponent->AddGameplayCue(
+		ArenaGameplayTags::GameplayCue_Ability_LightningStorm_Active,
+		CueParameters);
+	bAddedActiveGameplayCue = true;
+
 	MaxDamageTicks = FMath::Max(1, FMath::CeilToInt(StormDuration / DamageTickInterval));
 	ApplyDamageTick();
 
@@ -79,6 +88,19 @@ void AArenaLightningStormArea::BeginPlay()
 			DamageTickInterval,
 			true);
 	}
+}
+
+void AArenaLightningStormArea::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(DamageTickTimerHandle);
+	if (HasAuthority() && bAddedActiveGameplayCue && SourceAbilitySystemComponent.IsValid())
+	{
+		SourceAbilitySystemComponent->RemoveGameplayCue(
+			ArenaGameplayTags::GameplayCue_Ability_LightningStorm_Active);
+	}
+	bAddedActiveGameplayCue = false;
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void AArenaLightningStormArea::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

@@ -51,6 +51,12 @@ void UArenaGameplayAbility_EnemyMeleeAttack::ActivateAbility(
 	bProcessedHit = false;
 	ApplyAttackStateTag();
 
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = SourceEnemy;
+	CueParameters.EffectCauser = SourceEnemy;
+	CueParameters.Location = SourceEnemy->GetActorLocation();
+	SourceASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Ability_EnemyMelee_Activate, CueParameters);
+
 	UAbilityTask_WaitDelay* HitDelayTask = UAbilityTask_WaitDelay::WaitDelay(this, FMath::Max(HitDelay, 0.0f));
 	UAbilityTask_PlayMontageAndWait* MontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
 		this,

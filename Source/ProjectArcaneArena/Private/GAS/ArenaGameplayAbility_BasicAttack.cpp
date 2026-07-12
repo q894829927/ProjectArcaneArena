@@ -6,6 +6,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
 #include "Animation/AnimMontage.h"
 #include "DrawDebugHelpers.h"
+#include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GAS/Targeting/ArenaTargetActor_MouseGround.h"
 #include "GameplayEffect.h"
@@ -14,6 +15,7 @@
 UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+	NetworkAbilityId = EArenaNetworkAbilityId::BasicAttack;
 	InputTag = ArenaGameplayTags::Ability_BasicAttack;
 	DamageTypeTag = ArenaGameplayTags::Damage_Physical;
 	TargetActorClass = AArenaTargetActor_MouseGround::StaticClass();
@@ -32,6 +34,9 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
+	bConsumedTargetData = false;
+	bServerAttackExecuted = false;
+
 	if (!ActorInfo || !ActorInfo->AvatarActor.IsValid() || !ActorInfo->AbilitySystemComponent.IsValid())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -76,6 +81,11 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
+	if (bConsumedTargetData)
+	{
+		return;
+	}
+	bConsumedTargetData = true;
 
 	const FGameplayAbilitySpecHandle Handle = GetCurrentAbilitySpecHandle();
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
@@ -100,13 +110,6 @@ void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbility
 		AvatarActor->SetActorRotation(AimDirection.Rotation());
 	}
 
-	if (!ActorInfo->IsNetAuthority())
-	{
-		PlayAttackMontage();
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-		return;
-	}
-
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -115,8 +118,16 @@ void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbility
 
 	AvatarActor->SetActorRotation(AimDirection.Rotation());
 	PlayAttackMontage();
-	ExecuteServerAttack(AvatarActor, ActorInfo->AbilitySystemComponent.Get(), AimDirection);
-	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+	if (ActorInfo->IsNetAuthority() && !bServerAttackExecuted)
+	{
+		bServerAttackExecuted = true;
+		ExecuteServerAttack(AvatarActor, ActorInfo->AbilitySystemComponent.Get(), AimDirection);
+	}
+
+	if (!AttackMontage)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
+	}
 }
 
 // TargetData 取消时清理任务并取消当前普攻。
@@ -169,10 +180,15 @@ void UArenaGameplayAbility_BasicAttack::PlayAttackMontage()
 		AttackMontage,
 		FMath::Max(MontagePlayRate, 0.01f),
 		MontageStartSection,
-		false,
+		true,
 		0.0f);
 	if (MontageTask)
 	{
+		ActiveMontageTask = MontageTask;
+		MontageTask->OnCompleted.AddDynamic(this, &UArenaGameplayAbility_BasicAttack::HandleAttackMontageCompleted);
+		MontageTask->OnBlendOut.AddDynamic(this, &UArenaGameplayAbility_BasicAttack::HandleAttackMontageCompleted);
+		MontageTask->OnInterrupted.AddDynamic(this, &UArenaGameplayAbility_BasicAttack::HandleAttackMontageInterrupted);
+		MontageTask->OnCancelled.AddDynamic(this, &UArenaGameplayAbility_BasicAttack::HandleAttackMontageInterrupted);
 		MontageTask->ReadyForActivation();
 	}
 }
@@ -187,6 +203,12 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 	{
 		return;
 	}
+
+	FGameplayCueParameters ActivationCueParameters;
+	ActivationCueParameters.Instigator = AvatarActor;
+	ActivationCueParameters.EffectCauser = AvatarActor;
+	ActivationCueParameters.Location = AvatarActor->GetActorLocation();
+	SourceASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Ability_BasicAttack_Activate, ActivationCueParameters);
 
 	UWorld* World = AvatarActor->GetWorld();
 	if (!World)
@@ -270,6 +292,14 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 			}
 
 			BestTargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec);
+			if (ArenaAbilityNetworkDebug::IsAuditEnabled())
+			{
+				UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] BasicAttack Key=%d Handle=%s Target=%s"),
+					ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
+					GetCurrentActivationInfo().GetActivationPredictionKey().Current,
+					*GetCurrentAbilitySpecHandle().ToString(),
+					*GetNameSafe(BestTarget));
+			}
 		}
 	}
 
@@ -329,4 +359,34 @@ void UArenaGameplayAbility_BasicAttack::DrawAttackRangeDebug(UWorld* World, cons
 		DebugAttackRangeDuration,
 		0,
 		1.5f);
+}
+
+void UArenaGameplayAbility_BasicAttack::HandleAttackMontageCompleted()
+{
+	if (IsActive())
+	{
+		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
+	}
+}
+
+void UArenaGameplayAbility_BasicAttack::HandleAttackMontageInterrupted()
+{
+	if (IsActive())
+	{
+		EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
+	}
+}
+
+void UArenaGameplayAbility_BasicAttack::EndAbility(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo,
+	bool bReplicateEndAbility,
+	bool bWasCancelled)
+{
+	ActiveTargetDataTask = nullptr;
+	ActiveMontageTask = nullptr;
+	bConsumedTargetData = false;
+	bServerAttackExecuted = false;
+	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }

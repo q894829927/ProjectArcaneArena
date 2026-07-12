@@ -3,6 +3,7 @@
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
 #include "Engine/World.h"
+#include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GAS/ArenaLightningStormArea.h"
 #include "GAS/Targeting/ArenaTargetActor_MouseGround.h"
@@ -12,6 +13,7 @@
 UArenaGameplayAbility_LightningStorm::UArenaGameplayAbility_LightningStorm()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+	NetworkAbilityId = EArenaNetworkAbilityId::LightningStorm;
 	InputTag = ArenaGameplayTags::Ability_LightningStorm;
 	DamageTypeTag = ArenaGameplayTags::Damage_Lightning;
 	StormAreaClass = AArenaLightningStormArea::StaticClass();
@@ -29,6 +31,9 @@ void UArenaGameplayAbility_LightningStorm::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
+	bConsumedTargetData = false;
+	bServerSpawnConsumed = false;
+
 	if (!ActorInfo || !ActorInfo->AvatarActor.IsValid() || !ActorInfo->AbilitySystemComponent.IsValid())
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
@@ -75,6 +80,11 @@ void UArenaGameplayAbility_LightningStorm::ActivateAbility(
 void UArenaGameplayAbility_LightningStorm::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
+	if (bConsumedTargetData)
+	{
+		return;
+	}
+	bConsumedTargetData = true;
 
 	const FGameplayAbilitySpecHandle Handle = GetCurrentAbilitySpecHandle();
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
@@ -86,13 +96,7 @@ void UArenaGameplayAbility_LightningStorm::OnTargetDataReady(const FGameplayAbil
 		return;
 	}
 
-	// 客户端只负责提交目标点；实际扣资源、进冷却和生成伤害区域只在服务端执行。
-	if (!ActorInfo->IsNetAuthority())
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
-		return;
-	}
-
+	// 两端使用相同目标点做预测 Commit；服务端仍独占 Area Actor 和周期伤害。
 	AActor* AvatarActor = ActorInfo->AvatarActor.Get();
 	UAbilitySystemComponent* SourceASC = ActorInfo->AbilitySystemComponent.Get();
 
@@ -115,7 +119,11 @@ void UArenaGameplayAbility_LightningStorm::OnTargetDataReady(const FGameplayAbil
 		return;
 	}
 
-	SpawnLightningStormArea(AvatarActor, SourceASC, SpawnTransform);
+	if (ActorInfo->IsNetAuthority() && !bServerSpawnConsumed)
+	{
+		bServerSpawnConsumed = true;
+		SpawnLightningStormArea(AvatarActor, SourceASC, SpawnTransform);
+	}
 	EndAbility(Handle, ActorInfo, ActivationInfo, true, false);
 }
 
@@ -137,7 +145,7 @@ bool UArenaGameplayAbility_LightningStorm::ExtractTargetLocation(
 	}
 
 	OutTargetLocation = FirstTargetData->GetEndPoint();
-	return true;
+	return !OutTargetLocation.ContainsNaN();
 }
 
 bool UArenaGameplayAbility_LightningStorm::BuildStormSpawnTransform(
@@ -219,4 +227,19 @@ void UArenaGameplayAbility_LightningStorm::SpawnLightningStormArea(
 		StormDuration,
 		DamageTickInterval);
 	LightningStormArea->FinishSpawning(SpawnTransform);
+
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = AvatarActor;
+	CueParameters.EffectCauser = LightningStormArea;
+	CueParameters.Location = SpawnTransform.GetLocation();
+	SourceASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Ability_LightningStorm_Cast, CueParameters);
+
+	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
+	{
+		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] LightningStorm Key=%d Handle=%s Area=%s"),
+			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
+			GetCurrentActivationInfo().GetActivationPredictionKey().Current,
+			*GetCurrentAbilitySpecHandle().ToString(),
+			*GetNameSafe(LightningStormArea));
+	}
 }

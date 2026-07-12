@@ -1,12 +1,15 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Abilities/GameplayAbilityTargetTypes.h"
 #include "GAS/ArenaGameplayAbility.h"
 #include "TimerManager.h"
 #include "ArenaGameplayAbility_Dash.generated.h"
 
 class ACharacter;
+class AGameplayAbilityTargetActor;
 class UAbilitySystemComponent;
+class UAbilityTask_WaitTargetData;
 class UAnimMontage;
 
 UCLASS(Blueprintable)
@@ -17,15 +20,18 @@ class PROJECTARCANEARENA_API UArenaGameplayAbility_Dash : public UArenaGameplayA
 public:
 	UArenaGameplayAbility_Dash();
 
+	// 使用已经通过 TargetData 校验的同一水平单位方向启动客户端预测和服务器权威冲刺。
+	void StartDashWithDirection(const FVector& DashDirection);
+
 protected:
-	// 预测拥有者的冲刺移动和 Montage，最终冷却、状态和位置仍由服务器确认。
+	// 启动客户端方向采集；服务器等待相同 TargetData 后再提交并执行权威冲刺。
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
-	// Clears dash timers and tags for both natural completion and cancellation.
+	// 统一清理 TargetData、RootMotion、Montage 关联状态和预测/复制标签。
 	virtual void EndAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
@@ -33,11 +39,20 @@ protected:
 		bool bReplicateEndAbility,
 		bool bWasCancelled) override;
 
+	UFUNCTION()
+	void OnDashTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData);
+
+	UFUNCTION()
+	void OnDashTargetDataCancelled(const FGameplayAbilityTargetDataHandle& TargetData);
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Dash", meta = (ClampMin = "0.0"))
 	float DashDistance = 500.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Dash", meta = (ClampMin = "0.01"))
 	float DashDuration = 0.15f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Dash|Targeting")
+	TSubclassOf<AGameplayAbilityTargetActor> DashDirectionTargetActorClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Dash|Animation")
 	TObjectPtr<UAnimMontage> DashMontage;
@@ -49,7 +64,7 @@ protected:
 	FName DashMontageStartSection = NAME_None;
 
 private:
-	FVector ResolveDashDirection(AActor* AvatarActor) const;
+	bool ExtractAndValidateDashDirection(const FGameplayAbilityTargetDataHandle& TargetData, FVector& OutDirection) const;
 	void PlayDashMontage();
 	void ApplyDashStateTags(UAbilitySystemComponent* ASC);
 	void RemoveDashStateTags();
@@ -59,5 +74,11 @@ private:
 	FTimerHandle DashTimerHandle;
 	TWeakObjectPtr<ACharacter> ActiveDashCharacter;
 	TWeakObjectPtr<UAbilitySystemComponent> ActiveDashASC;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_WaitTargetData> ActiveTargetDataTask;
+
 	bool bAppliedDashStateTags = false;
+	bool bAddedDashGameplayCue = false;
+	bool bConsumedTargetData = false;
 };

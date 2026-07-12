@@ -50,6 +50,15 @@ Status meanings:
 * BasicAttack, Fireball, Dash, Shield, and LightningStorm use GAS cooldown/cost configuration where applicable.
 * The HUD observes ASC tags and Active GameplayEffects to display granted/locked state and cooldown time.
 
+### Predicted Ability Networking - Partial
+
+* BasicAttack, Fireball, Dash, Shield, and LightningStorm use `LocalPredicted` activation and run `CommitAbility` on the owning client and server so configured Cost/Cooldown effects can be predicted and reconciled by GAS.
+* Dash submits one `FGameplayAbilityTargetData_DashDirection` payload through `AArenaTargetActor_DashDirection`; the server rejects malformed, near-zero, vertical, or multi-entry payloads and both sides execute the normalized accepted direction.
+* BasicAttack remains active until its Montage task completes, allowing a rejected or cancelled prediction to stop the local Montage instead of leaving presentation detached from the Ability lifetime.
+* Fireball and LightningStorm guard each server activation against duplicate TargetData consumption, while projectile impact and storm per-target/per-tick guards remain authoritative.
+* Development CVars `arena.Net.RejectNextAbility` and `arena.Net.AbilityAudit` support one-shot server rejection and execution/spawn/damage auditing. Rejection values are `1 Basic`, `2 Fireball`, `3 Dash`, `4 Shield`, and `5 Storm`.
+* Verification pending: narrow Editor build, 150 ms RTT at 2%/5% loss, forced rollback checks, and two-client Dedicated Server PIE.
+
 ## Player Abilities
 
 ### BasicAttack — Implemented
@@ -85,6 +94,14 @@ Status meanings:
 * `NS_LightningStorm` and the Blueprint area subclass provide persistent visual composition; a development debug circle can display the true damage radius.
 
 ## UI and Combat Feedback
+
+### GameplayCue Routing - Partial
+
+* Native Cue tags and server-confirmed dispatch exist for all five player abilities, enemy melee activation, and physical/fire/lightning damage hits.
+* Shield, Dash, and LightningStorm use paired server Add/Remove Cue lifetimes; Shield only adds on the zero-to-positive transition and removes on depletion or death. Dash and Shield explicitly attach to the Avatar root instead of the Manny skeletal mesh so imported mesh rotation/location offsets cannot displace directional or centered Niagara effects.
+* Successful damage emits one type-specific hit Cue from the authoritative AttributeSet Damage meta-attribute path, using HitResult data when available and target location as fallback.
+* GameplayCue Notify assets exist under `/Game/GAS/GameplayCues` and reference the current Niagara systems. Dash/Shield attached-effect placement and Niagara local-space/loop tuning still require PIE verification; remove any duplicate Niagara component from `BP_ArenaLightningStormArea` after the Storm Active Cue is confirmed.
+* `ProjectArcaneArenaEditor` provides a Niagara lifecycle bridge used by project Python tooling to copy verified looping System/Emitter State values and enable Local Space on converted shield effects; this editor-only module has no packaged-game runtime ownership.
 
 ### Player HUD — Implemented
 
@@ -171,4 +188,5 @@ Status meanings:
 * A single-player slow-motion smoke pass verified BasicAttack input/cooldown, Shield cost/cooldown and absorption, LightningStorm cost/cooldown/area damage, enemy server damage, and two enemy death notifications. The configured melee result remains `8 BaseDamage + 5 AttackPower = 13` before Defense/Crit modifiers.
 * Fireball, Dash, replicated attacks, and the remote-client Dash Montage completed their requested multiplayer observation pass.
 * `GameplayCueNotifyPaths=/Game/GAS` was added to project config. After restarting the editor, the latest session log no longer reported the previous missing GameplayCue path warning.
+* The network-polish UHT pass generated reflection code successfully. Its first C++ pass exposed private `FGameplayAbilitySpecHandle::Handle` audit access, which has been replaced with the public `ToString()` API; a build retry remains pending because the same run also hit Windows page-file error `C3859/C1076`.
 * A feature must explicitly say `Verified` before this log should be treated as proof of completed PIE, multiplayer, or packaged-build testing.

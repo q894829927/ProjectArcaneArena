@@ -34,6 +34,9 @@ protected:
 	// 服务端启动周期伤害计时，客户端保留 Actor 用于后续挂接表现。
 	virtual void BeginPlay() override;
 
+	// Area 生命周期结束时由服务器移除持续 Cue，避免客户端残留循环特效。
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	// 复制运行时半径，确保蓝图表现可以读到技能配置后的范围。
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -82,4 +85,5 @@ private:
 	float SkillMultiplier = 1.0f;
 	int32 MaxDamageTicks = 0;
 	int32 DamageTicksApplied = 0;
+	bool bAddedActiveGameplayCue = false;
 };

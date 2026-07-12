@@ -27,6 +27,17 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_MeleeAttack, "Ability.Enemy.MeleeAttack", "Enemy melee attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_MeleeAttack, "Cooldown.Enemy.MeleeAttack", "Enemy melee attack cooldown.");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_BasicAttack_Activate, "GameplayCue.Ability.BasicAttack.Activate", "Basic attack activation presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Fireball_Cast, "GameplayCue.Ability.Fireball.Cast", "Confirmed fireball cast presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Dash_Active, "GameplayCue.Ability.Dash.Active", "Dash active looping presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Shield_Active, "GameplayCue.Ability.Shield.Active", "Shield active looping presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_LightningStorm_Cast, "GameplayCue.Ability.LightningStorm.Cast", "Confirmed lightning storm cast presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_LightningStorm_Active, "GameplayCue.Ability.LightningStorm.Active", "Lightning storm area looping presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_EnemyMelee_Activate, "GameplayCue.Ability.EnemyMelee.Activate", "Enemy melee activation presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Fire, "GameplayCue.Hit.Fire", "Confirmed fire damage hit presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Lightning, "GameplayCue.Hit.Lightning", "Confirmed lightning damage hit presentation.");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Combat, "Phase.Combat", "A combat wave is active.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Upgrade, "Phase.Upgrade", "Players are choosing upgrades.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Victory, "Phase.Victory", "All configured waves are complete.");

@@ -7,6 +7,7 @@
 
 class AGameplayAbilityTargetActor;
 class UAbilitySystemComponent;
+class UAbilityTask_PlayMontageAndWait;
 class UAbilityTask_WaitTargetData;
 class UAnimMontage;
 class UGameplayEffect;
@@ -27,11 +28,25 @@ protected:
 		const FGameplayAbilityActivationInfo ActivationInfo,
 		const FGameplayEventData* TriggerEventData) override;
 
+	// 保持 Ability 活跃至预测 Montage 结束，使服务器拒绝或取消能停止本地预测表现。
+	virtual void EndAbility(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo,
+		bool bReplicateEndAbility,
+		bool bWasCancelled) override;
+
 	UFUNCTION()
 	void OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData);
 
 	UFUNCTION()
 	void OnTargetDataCancelled(const FGameplayAbilityTargetDataHandle& TargetData);
+
+	UFUNCTION()
+	void HandleAttackMontageCompleted();
+
+	UFUNCTION()
+	void HandleAttackMontageInterrupted();
 
 	// 绘制攻击范围，帮助区分输入未触发和攻击未命中。
 	void DrawAttackRangeDebug(UWorld* World, const FVector& Start, const FVector& End, bool bHitTarget) const;
@@ -86,4 +101,10 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_WaitTargetData> ActiveTargetDataTask;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_PlayMontageAndWait> ActiveMontageTask;
+
+	bool bConsumedTargetData = false;
+	bool bServerAttackExecuted = false;
 };

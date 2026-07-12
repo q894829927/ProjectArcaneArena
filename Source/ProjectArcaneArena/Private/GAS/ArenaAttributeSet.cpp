@@ -1,8 +1,11 @@
 #include "GAS/ArenaAttributeSet.h"
 
 #include "AbilitySystemComponent.h"
+#include "Components/SceneComponent.h"
+#include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffectExtension.h"
+#include "GameplayEffectTypes.h"
 #include "Net/UnrealNetwork.h"
 
 // 构造属性集，设置玩家和敌人可共用的基础默认值。
@@ -77,8 +80,10 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 
 			SetShield(GetShield() - ShieldDamage);
 			SetHealth(GetHealth() - RemainingDamage);
+			ExecuteDamageGameplayCue(Data, LocalDamage);
 		}
 
+		RefreshShieldGameplayCue();
 		UpdateDeadTag();
 	}
 	else if (Data.EvaluatedData.Attribute == GetHealingAttribute())
@@ -99,12 +104,14 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	{
 		// 通过 setter 重新走 clamp，确保 MaxHealth 改变后 Health 仍合法。
 		SetHealth(GetHealth());
+		RefreshShieldGameplayCue();
 		UpdateDeadTag();
 	}
 	else if (Data.EvaluatedData.Attribute == GetShieldAttribute())
 	{
 		// Shield 是可叠加的临时吸收量，没有最大护盾属性，只限制不能低于 0。
 		SetShield(GetShield());
+		RefreshShieldGameplayCue();
 	}
 	else if (Data.EvaluatedData.Attribute == GetEnergyAttribute()
 		|| Data.EvaluatedData.Attribute == GetMaxEnergyAttribute())
@@ -187,6 +194,93 @@ void UArenaAttributeSet::UpdateDeadTag() const
 	// 本地 loose tag 供服务端立即判断，replicated loose tag 供客户端稳定观察死亡状态。
 	OwningASC->SetLooseGameplayTagCount(ArenaGameplayTags::State_Dead, DeadTagCount);
 	OwningASC->SetReplicatedLooseGameplayTagCount(ArenaGameplayTags::State_Dead, DeadTagCount);
+}
+
+void UArenaAttributeSet::RefreshShieldGameplayCue()
+{
+	UAbilitySystemComponent* OwningASC = GetOwningAbilitySystemComponent();
+	if (!OwningASC || !OwningASC->IsOwnerActorAuthoritative())
+	{
+		return;
+	}
+
+	const bool bShouldBeActive = GetShield() > KINDA_SMALL_NUMBER && GetHealth() > 0.0f;
+	if (bShouldBeActive == bShieldGameplayCueActive)
+	{
+		return;
+	}
+
+	if (bShouldBeActive)
+	{
+		FGameplayCueParameters CueParameters;
+		AActor* CueAvatar = OwningASC->GetAvatarActor();
+		CueParameters.Instigator = CueAvatar;
+		CueParameters.EffectCauser = CueAvatar;
+		// 护盾以 Capsule/Avatar 根组件为中心，避免 Manny Mesh 原点让光环落在头顶或脚下。
+		CueParameters.TargetAttachComponent = CueAvatar ? CueAvatar->GetRootComponent() : nullptr;
+		OwningASC->AddGameplayCue(ArenaGameplayTags::GameplayCue_Ability_Shield_Active, CueParameters);
+	}
+	else
+	{
+		OwningASC->RemoveGameplayCue(ArenaGameplayTags::GameplayCue_Ability_Shield_Active);
+	}
+
+	bShieldGameplayCueActive = bShouldBeActive;
+	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
+	{
+		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] ShieldCue %s Avatar=%s Shield=%.2f"),
+			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
+			bShouldBeActive ? TEXT("Added") : TEXT("Removed"),
+			*GetNameSafe(OwningASC->GetAvatarActor()),
+			GetShield());
+	}
+}
+
+void UArenaAttributeSet::ExecuteDamageGameplayCue(
+	const FGameplayEffectModCallbackData& Data,
+	float AppliedDamage) const
+{
+	UAbilitySystemComponent* TargetASC = GetOwningAbilitySystemComponent();
+	if (!TargetASC || !TargetASC->IsOwnerActorAuthoritative() || AppliedDamage <= 0.0f)
+	{
+		return;
+	}
+
+	FGameplayTagContainer AssetTags;
+	Data.EffectSpec.GetAllAssetTags(AssetTags);
+	FGameplayTag CueTag = ArenaGameplayTags::GameplayCue_Hit_Physical;
+	if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Fire))
+	{
+		CueTag = ArenaGameplayTags::GameplayCue_Hit_Fire;
+	}
+	else if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Lightning))
+	{
+		CueTag = ArenaGameplayTags::GameplayCue_Hit_Lightning;
+	}
+
+	FGameplayCueParameters CueParameters(Data.EffectSpec.GetEffectContext());
+	CueParameters.RawMagnitude = AppliedDamage;
+	CueParameters.EffectContext = Data.EffectSpec.GetEffectContext();
+	if (const FHitResult* HitResult = CueParameters.EffectContext.GetHitResult())
+	{
+		CueParameters.Location = HitResult->ImpactPoint;
+		CueParameters.Normal = HitResult->ImpactNormal;
+	}
+	else if (const AActor* TargetAvatar = TargetASC->GetAvatarActor())
+	{
+		CueParameters.Location = TargetAvatar->GetActorLocation();
+		CueParameters.Normal = FVector::UpVector;
+	}
+
+	TargetASC->ExecuteGameplayCue(CueTag, CueParameters);
+	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
+	{
+		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] Damage Target=%s Amount=%.2f Type=%s"),
+			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
+			*GetNameSafe(TargetASC->GetAvatarActor()),
+			AppliedDamage,
+			*CueTag.ToString());
+	}
 }
 
 // Health 复制回调，通知 GAS 属性变化委托和 UI。
