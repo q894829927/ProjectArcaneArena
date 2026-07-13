@@ -110,7 +110,7 @@ Status meanings:
 * Unlocking `Upgrade.LightningStorm.Shocked` lets authority Storm ticks apply a four-second, shared `AggregateByTarget` Shocked status after damage, so the first hit creates the state and later Lightning hits benefit from it.
 * `UExecCalc_Damage` recognizes `Damage.Lightning`, finds the target's active `Status.Shocked` GameplayEffect, and applies the highest `SetByCaller.Status.Shocked.LightningDamageBonus` value before critical and Defense modifiers.
 * `UArenaGameplayEffect_Shocked` supplies the non-stacking refresh behavior, death removal rule, granted status tag, and persistent `GameplayCue.Status.Shocked.Active` hook in native defaults.
-* Build-asset automation is split into a shared `arena_asset_tools.py`, category generators for Upgrade DataAssets, native GameplayEffect Blueprint children and looping GameplayCues, a separate Ability/GameMode link step, and the `setup_build_assets.py` orchestrator. The legacy `setup_fire_build.py` remains as a compatibility entry point.
+* Build-asset automation lives under `Content/Python/build_assets`, with shared tools, category generators for Upgrade DataAssets, native GameplayEffect Blueprint children and looping GameplayCues, a separate Ability/GameMode link step, and a documented orchestrator. Root-level `setup_build_assets.py` remains as the single one-click entry point.
 * Fire/Lightning Upgrade, status GE and persistent Cue assets are present at their existing paths. The refactored category scripts and both orchestrator entry points still require an Unreal Editor idempotency regression pass.
 * Verification is deferred for damage stacks, first-hit ordering, shared two-player vulnerability, refresh/death cleanup, and replicated Cue presentation.
 
