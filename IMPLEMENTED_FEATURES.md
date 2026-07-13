@@ -104,6 +104,16 @@ Status meanings:
 * Damage uses a strict two-dimensional center-distance check, skips source/dead targets, and supports configurable radius, duration, and tick interval.
 * `NS_LightningStorm` and the Blueprint area subclass provide persistent visual composition; a development debug circle can display the true damage radius.
 
+### Lightning Build — Partial
+
+* LightningStorm snapshots `Upgrade.LightningStorm.Damage` from the owning PlayerState when its authority Area is spawned, increasing the skill multiplier without hard-coding an Upgrade ID.
+* Unlocking `Upgrade.LightningStorm.Shocked` lets authority Storm ticks apply a four-second, shared `AggregateByTarget` Shocked status after damage, so the first hit creates the state and later Lightning hits benefit from it.
+* `UExecCalc_Damage` recognizes `Damage.Lightning`, finds the target's active `Status.Shocked` GameplayEffect, and applies the highest `SetByCaller.Status.Shocked.LightningDamageBonus` value before critical and Defense modifiers.
+* `UArenaGameplayEffect_Shocked` supplies the non-stacking refresh behavior, death removal rule, granted status tag, and persistent `GameplayCue.Status.Shocked.Active` hook in native defaults.
+* Build-asset automation is split into a shared `arena_asset_tools.py`, category generators for Upgrade DataAssets, native GameplayEffect Blueprint children and looping GameplayCues, a separate Ability/GameMode link step, and the `setup_build_assets.py` orchestrator. The legacy `setup_fire_build.py` remains as a compatibility entry point.
+* Fire/Lightning Upgrade, status GE and persistent Cue assets are present at their existing paths. The refactored category scripts and both orchestrator entry points still require an Unreal Editor idempotency regression pass.
+* Verification is deferred for damage stacks, first-hit ordering, shared two-player vulnerability, refresh/death cleanup, and replicated Cue presentation.
+
 ## UI and Combat Feedback
 
 ### GameplayCue Routing - Partial
@@ -218,4 +228,7 @@ Status meanings:
 * The network-polish UHT pass generated reflection code successfully. Its first C++ pass exposed private `FGameplayAbilitySpecHandle::Handle` audit access, which has been replaced with the public `ToString()` API; a build retry remains pending because the same run also hit Windows page-file error `C3859/C1076`.
 * Upgrade UI movement-stop behavior passed the single-player held-input acceptance flow: entering Upgrade while holding movement stops immediately, and releasing the key before selecting does not resume stale movement afterward.
 * The configured three-wave single-player loop reaches Victory after both upgrade phases; two-player PIE confirms independent choices and the all-players-selected gate before wave advancement.
+* Deferred verification: confirm the authority-generated upgrade seed changes between PIE sessions, remains identical on the Listen Server and every client (including late join), and is displayed consistently by each HUD's top-right seed text.
+* Deferred verification: complete the Fire Build single-player/two-player checks for upgrade eligibility, direct-damage stacks, Burning stack/refresh timing, Shield-first periodic damage, death cleanup, and replicated Burning GameplayCue removal.
+* Deferred verification: complete the Lightning Build single-player/two-player checks for upgrade eligibility, damage scaling, first-hit Shocked ordering, global refresh behavior, death cleanup, shared Lightning vulnerability, and replicated Shocked GameplayCue removal.
 * A feature must explicitly say `Verified` before this log should be treated as proof of completed PIE, multiplayer, or packaged-build testing.

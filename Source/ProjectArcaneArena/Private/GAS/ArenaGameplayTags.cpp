@@ -51,12 +51,17 @@ namespace ArenaGameplayTags
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Fireball_Damage, "Upgrade.Fireball.Damage", "Fireball-specific damage upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Fireball_Burning, "Upgrade.Fireball.Burning", "Fireball applies the Burning status.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_LightningStorm_Damage, "Upgrade.LightningStorm.Damage", "LightningStorm-specific damage upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_LightningStorm_Shocked, "Upgrade.LightningStorm.Shocked", "LightningStorm applies the Shocked status.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Burning, "Status.Burning", "Target is taking periodic fire damage.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Shocked, "Status.Shocked", "Target takes increased Lightning damage.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Status_Burning_Active, "GameplayCue.Status.Burning.Active", "Looping Burning status presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Status_Shocked_Active, "GameplayCue.Status.Shocked.Active", "Looping Shocked status presentation.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Base, "SetByCaller.Damage.Base", "Runtime base damage value.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Burning, "SetByCaller.Damage.Burning", "Runtime Burning damage per stack and tick.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Status_Shocked_LightningDamageBonus, "SetByCaller.Status.Shocked.LightningDamageBonus", "Runtime Lightning vulnerability granted by Shocked.");
 }

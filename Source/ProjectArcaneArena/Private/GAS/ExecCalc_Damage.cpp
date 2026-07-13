@@ -42,6 +42,38 @@ static const FArenaDamageStatics& DamageStatics()
 	return Statics;
 }
 
+// 从目标当前 Shocked ActiveGE 中读取最高闪电易伤，避免多个状态来源意外相加。
+static float GetShockedLightningDamageBonus(const UAbilitySystemComponent* TargetASC)
+{
+	if (!TargetASC || !TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::Status_Shocked))
+	{
+		return 0.0f;
+	}
+
+	FGameplayTagContainer ShockedTags;
+	ShockedTags.AddTag(ArenaGameplayTags::Status_Shocked);
+	const FGameplayEffectQuery ShockedQuery = FGameplayEffectQuery::MakeQuery_MatchAllOwningTags(ShockedTags);
+
+	float HighestBonus = 0.0f;
+	// Status.Shocked 由 GE 授予给目标，因此必须查询 Owning Tags 才能定位对应的 ActiveGE。
+	for (const FActiveGameplayEffectHandle& ActiveEffectHandle : TargetASC->GetActiveEffects(ShockedQuery))
+	{
+		const FActiveGameplayEffect* ActiveEffect = TargetASC->GetActiveGameplayEffect(ActiveEffectHandle);
+		if (!ActiveEffect)
+		{
+			continue;
+		}
+
+		const float EffectBonus = ActiveEffect->Spec.GetSetByCallerMagnitude(
+			ArenaGameplayTags::SetByCaller_Status_Shocked_LightningDamageBonus,
+			false,
+			0.0f);
+		HighestBonus = FMath::Max(HighestBonus, EffectBonus);
+	}
+
+	return FMath::Max(HighestBonus, 0.0f);
+}
+
 // 构造伤害执行计算，注册 Source/Target 需要捕获的属性。
 UExecCalc_Damage::UExecCalc_Damage()
 {
@@ -52,7 +84,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(DamageStatics().DefenseDef);
 }
 
-// 服务端执行最终伤害计算，并把结果输出到 Damage 元属性。
+// 服务端执行最终伤害计算；Lightning 命中 Shocked 时读取状态 GE 的易伤值，再输出到 Damage 元属性。
 void UExecCalc_Damage::Execute_Implementation(
 	const FGameplayEffectCustomExecutionParameters& ExecutionParams,
 	FGameplayEffectCustomExecutionOutput& OutExecutionOutput) const
@@ -107,11 +139,22 @@ void UExecCalc_Damage::Execute_Implementation(
 	const float SkillMultiplier = FMath::Max(
 		Spec.GetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Damage_SkillMultiplier, false, 1.0f),
 		0.0f);
+
+	FGameplayTagContainer DamageAssetTags;
+	Spec.GetAllAssetTags(DamageAssetTags);
+	const float ShockedDamageMultiplier = DamageAssetTags.HasTagExact(ArenaGameplayTags::Damage_Lightning)
+		? 1.0f + GetShockedLightningDamageBonus(TargetASC)
+		: 1.0f;
+
 	// 暴击随机数只在服务端 ExecCalc 中产生，避免客户端决定最终伤害。
 	const float CritMultiplier = FMath::FRand() <= CritChance ? CritDamage : 1.0f;
 	const float DefenseReduction = 100.0f / (100.0f + Defense);
 
-	const float FinalDamage = (BaseDamage + AttackPower) * SkillMultiplier * CritMultiplier * DefenseReduction;
+	const float FinalDamage = (BaseDamage + AttackPower)
+		* SkillMultiplier
+		* ShockedDamageMultiplier
+		* CritMultiplier
+		* DefenseReduction;
 	if (FinalDamage <= 0.0f)
 	{
 		return;

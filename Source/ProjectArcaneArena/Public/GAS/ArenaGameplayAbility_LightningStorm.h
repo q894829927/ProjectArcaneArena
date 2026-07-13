@@ -44,6 +44,9 @@ protected:
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage")
+	TSubclassOf<UGameplayEffect> ShockedEffectClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage")
 	FGameplayTag DamageTypeTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage", meta = (ClampMin = "0.0"))
@@ -67,6 +70,7 @@ protected:
 private:
 	bool ExtractTargetLocation(const FGameplayAbilityTargetDataHandle& TargetData, FVector& OutTargetLocation) const;
 	bool BuildStormSpawnTransform(AActor* AvatarActor, const FVector& TargetLocation, FTransform& OutSpawnTransform) const;
+	// 服务端生成 Area，并注入当前 Lightning 构筑的数值快照。
 	void SpawnLightningStormArea(AActor* AvatarActor, UAbilitySystemComponent* SourceASC, const FTransform& SpawnTransform) const;
 
 	UPROPERTY(Transient)

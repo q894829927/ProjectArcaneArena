@@ -32,6 +32,9 @@ void AArenaLightningStormArea::InitializeStorm(
 	FGameplayTag InDamageTypeTag,
 	float InBaseDamage,
 	float InSkillMultiplier,
+	TSubclassOf<UGameplayEffect> InShockedEffectClass,
+	bool bInShockedUnlocked,
+	float InShockedLightningDamageBonus,
 	float InStormRadius,
 	float InStormDuration,
 	float InDamageTickInterval)
@@ -42,6 +45,9 @@ void AArenaLightningStormArea::InitializeStorm(
 	DamageTypeTag = InDamageTypeTag;
 	BaseDamage = FMath::Max(InBaseDamage, 0.0f);
 	SkillMultiplier = FMath::Max(InSkillMultiplier, 0.0f);
+	ShockedEffectClass = InShockedEffectClass;
+	bShockedUnlocked = bInShockedUnlocked;
+	ShockedLightningDamageBonus = FMath::Max(InShockedLightningDamageBonus, 0.0f);
 	StormRadius = FMath::Max(InStormRadius, 0.0f);
 	StormDuration = FMath::Max(InStormDuration, 0.01f);
 	DamageTickInterval = FMath::Max(InDamageTickInterval, 0.01f);
@@ -173,6 +179,14 @@ void AArenaLightningStormArea::ApplyDamageTick()
 
 		DamagedActors.Add(TargetActor);
 		ApplyDamageToTarget(TargetASC);
+
+		// 伤害先执行，首次命中只负责建立 Shocked；已存在的 Shocked 会被本次命中刷新。
+		if (bShockedUnlocked
+			&& !TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+			&& !TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Invincible))
+		{
+			ApplyShockedToTarget(TargetASC);
+		}
 	}
 
 	++DamageTicksApplied;
@@ -180,7 +194,7 @@ void AArenaLightningStormArea::ApplyDamageTick()
 	{
 		GetWorldTimerManager().ClearTimer(DamageTickTimerHandle);
 	}
-  }
+}
 
 bool AArenaLightningStormArea::CanDamageTarget(AActor* TargetActor, UAbilitySystemComponent* TargetASC) const
 {
@@ -202,6 +216,10 @@ bool AArenaLightningStormArea::CanDamageTarget(AActor* TargetActor, UAbilitySyst
 	}
 
 	if (TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		return false;
+	}
+	if (TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Invincible))
 	{
 		return false;
 	}
@@ -237,6 +255,32 @@ void AArenaLightningStormArea::ApplyDamageToTarget(UAbilitySystemComponent* Targ
 	}
 
 	SourceASC->ApplyGameplayEffectSpecToTarget(*DamageSpec, TargetASC);
+}
+
+// 通过 Duration GE 写入共享易伤值；AggregateByTarget 保证多人只刷新同一状态。
+void AArenaLightningStormArea::ApplyShockedToTarget(UAbilitySystemComponent* TargetASC)
+{
+	UAbilitySystemComponent* SourceASC = SourceAbilitySystemComponent.Get();
+	if (!bShockedUnlocked || ShockedLightningDamageBonus <= 0.0f || !ShockedEffectClass || !SourceASC || !TargetASC)
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
+	EffectContext.AddSourceObject(this);
+	EffectContext.AddInstigator(SourceActor.Get(), this);
+
+	FGameplayEffectSpecHandle ShockedSpecHandle = SourceASC->MakeOutgoingSpec(ShockedEffectClass, 1.0f, EffectContext);
+	if (!ShockedSpecHandle.IsValid())
+	{
+		return;
+	}
+
+	FGameplayEffectSpec* ShockedSpec = ShockedSpecHandle.Data.Get();
+	ShockedSpec->SetSetByCallerMagnitude(
+		ArenaGameplayTags::SetByCaller_Status_Shocked_LightningDamageBonus,
+		ShockedLightningDamageBonus);
+	SourceASC->ApplyGameplayEffectSpecToTarget(*ShockedSpec, TargetASC);
 }
 
 void AArenaLightningStormArea::RefreshAreaRadius() const

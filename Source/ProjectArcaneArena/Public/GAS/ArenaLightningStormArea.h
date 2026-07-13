@@ -18,7 +18,7 @@ class PROJECTARCANEARENA_API AArenaLightningStormArea : public AActor
 public:
 	AArenaLightningStormArea();
 
-	// 由服务端技能注入伤害上下文和范围参数，客户端只接收复制后的表现 Actor。
+	// 由服务端技能注入伤害、Shocked 构筑快照和范围参数，客户端只接收复制后的表现 Actor。
 	void InitializeStorm(
 		UAbilitySystemComponent* InSourceASC,
 		AActor* InSourceActor,
@@ -26,6 +26,9 @@ public:
 		FGameplayTag InDamageTypeTag,
 		float InBaseDamage,
 		float InSkillMultiplier,
+		TSubclassOf<UGameplayEffect> InShockedEffectClass,
+		bool bInShockedUnlocked,
+		float InShockedLightningDamageBonus,
 		float InStormRadius,
 		float InStormDuration,
 		float InDamageTickInterval);
@@ -67,8 +70,12 @@ private:
 
 	// 单次服务端结算范围内目标，所有数值仍通过 GE_Damage 和 ExecCalc_Damage 处理。
 	void ApplyDamageTick();
+	// 过滤自己、死亡和无敌目标，确保无敌期间不会刷新负面状态。
 	bool CanDamageTarget(AActor* TargetActor, UAbilitySystemComponent* TargetASC) const;
+	// 通过 GE_Damage 结算单个目标，本函数不直接修改属性。
 	void ApplyDamageToTarget(UAbilitySystemComponent* TargetASC);
+	// 在本次伤害结算后为存活目标应用或刷新服务器权威 Shocked GE。
+	void ApplyShockedToTarget(UAbilitySystemComponent* TargetASC);
 	void RefreshAreaRadius() const;
 	void DrawDebugDamageRadius() const;
 
@@ -80,10 +87,15 @@ private:
 	UPROPERTY(Transient)
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
+	UPROPERTY(Transient)
+	TSubclassOf<UGameplayEffect> ShockedEffectClass;
+
 	FGameplayTag DamageTypeTag;
 	float BaseDamage = 8.0f;
 	float SkillMultiplier = 1.0f;
+	float ShockedLightningDamageBonus = 0.0f;
 	int32 MaxDamageTicks = 0;
 	int32 DamageTicksApplied = 0;
+	bool bShockedUnlocked = false;
 	bool bAddedActiveGameplayCue = false;
 };

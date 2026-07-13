@@ -2,8 +2,10 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
+#include "Core/ArenaPlayerState.h"
 #include "Engine/World.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
+#include "GAS/ArenaGameplayEffect_Shocked.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GAS/ArenaLightningStormArea.h"
 #include "GAS/Targeting/ArenaTargetActor_MouseGround.h"
@@ -11,12 +13,15 @@
 #include "GameplayEffect.h"
 #include "GameplayPrediction.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogArenaLightningBuild, Log, All);
+
 UArenaGameplayAbility_LightningStorm::UArenaGameplayAbility_LightningStorm()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
 	NetworkAbilityId = EArenaNetworkAbilityId::LightningStorm;
 	InputTag = ArenaGameplayTags::Ability_LightningStorm;
 	DamageTypeTag = ArenaGameplayTags::Damage_Lightning;
+	ShockedEffectClass = UArenaGameplayEffect_Shocked::StaticClass();
 	StormAreaClass = AArenaLightningStormArea::StaticClass();
 	TargetActorClass = AArenaTargetActor_MouseGround::StaticClass();
 
@@ -217,13 +222,40 @@ void UArenaGameplayAbility_LightningStorm::SpawnLightningStormArea(
 		return;
 	}
 
+	// 服务端从 PlayerState 的永久升级记录生成本次 Area 快照，运行中的风暴不受后续选择影响。
+	const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(SourceASC->GetOwnerActor());
+	const float LightningStormDamageBonus = ArenaPlayerState
+		? ArenaPlayerState->GetOwnedUpgradeNumericTotal(
+			ArenaGameplayTags::Ability_LightningStorm,
+			ArenaGameplayTags::Damage_Lightning,
+			ArenaGameplayTags::Upgrade_LightningStorm_Damage)
+		: 0.0f;
+	const float ShockedLightningDamageBonus = ArenaPlayerState
+		? ArenaPlayerState->GetOwnedUpgradeNumericTotal(
+			ArenaGameplayTags::Ability_LightningStorm,
+			ArenaGameplayTags::Damage_Lightning,
+			ArenaGameplayTags::Upgrade_LightningStorm_Shocked)
+		: 0.0f;
+	const bool bShockedUnlocked = SourceASC->HasMatchingGameplayTag(ArenaGameplayTags::Upgrade_LightningStorm_Shocked);
+	const float UpgradedSkillMultiplier = SkillMultiplier * (1.0f + FMath::Max(LightningStormDamageBonus, 0.0f));
+
+	if (bShockedUnlocked && (!ShockedEffectClass || ShockedLightningDamageBonus <= 0.0f))
+	{
+		UE_LOG(LogArenaLightningBuild, Warning,
+			TEXT("LightningStorm Shocked is unlocked for %s but its effect or numeric upgrade value is invalid."),
+			*GetNameSafe(SourceASC->GetOwnerActor()));
+	}
+
 	LightningStormArea->InitializeStorm(
 		SourceASC,
 		AvatarActor,
 		DamageEffectClass,
 		DamageTypeTag,
 		BaseDamage,
-		SkillMultiplier,
+		UpgradedSkillMultiplier,
+		ShockedEffectClass,
+		bShockedUnlocked,
+		ShockedLightningDamageBonus,
 		StormRadius,
 		StormDuration,
 		DamageTickInterval);
