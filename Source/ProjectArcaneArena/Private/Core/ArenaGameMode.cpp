@@ -181,7 +181,7 @@ bool AArenaGameMode::IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState
 	return Upgrade->GrantedGameplayEffect || Upgrade->GrantedAbility || !Upgrade->UpgradeTags.IsEmpty();
 }
 
-// 在服务器通过 GAS 应用升级 GE、首次授予 Ability，并同步永久 Build Tags。
+// 在服务器应用升级授予、同步本地与复制 Build Tags，并允许后续数据层数继续累计。
 bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const
 {
 	UArenaAbilitySystemComponent* ASC = ArenaPlayerState ? ArenaPlayerState->GetArenaAbilitySystemComponent() : nullptr;
@@ -191,7 +191,8 @@ bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UAr
 	}
 
 	const bool bFirstStack = ArenaPlayerState->GetUpgradeStackCount(Upgrade->UpgradeID) == 0;
-	bool bAppliedAnything = false;
+	// Ability/Build Tag 只需在首层授予；后续层通过 OwnedUpgrades 驱动 NumericValue 等能力增幅。
+	bool bAppliedAnything = !bFirstStack && Upgrade->bStackable && !Upgrade->UpgradeTags.IsEmpty();
 	if (Upgrade->GrantedGameplayEffect)
 	{
 		FGameplayEffectContextHandle EffectContext = ASC->MakeEffectContext();
@@ -212,6 +213,8 @@ bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UAr
 
 	if (bFirstStack && !Upgrade->UpgradeTags.IsEmpty())
 	{
+		// 服务端资格检查读取本地 TagMap；复制 loose tags 只负责把相同状态同步给客户端。
+		ASC->AddLooseGameplayTags(Upgrade->UpgradeTags);
 		ASC->AddReplicatedLooseGameplayTags(Upgrade->UpgradeTags);
 		bAppliedAnything = true;
 	}

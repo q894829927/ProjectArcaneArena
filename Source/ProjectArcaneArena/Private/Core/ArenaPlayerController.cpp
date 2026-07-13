@@ -3,6 +3,7 @@
 #include "Core/ArenaGameMode.h"
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaGameState.h"
+#include "Components/Widget.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "UI/ArenaPlayerHUDWidget.h"
 #include "UI/ArenaUpgradeSelectionWidget.h"
@@ -144,7 +145,7 @@ void AArenaPlayerController::RefreshUpgradeSelectionUI()
 	SetUpgradeInputMode(bShouldShow);
 }
 
-// 升级期间切为 UIOnly，清空残留移动输入并立即停止 Pawn；结束后恢复当前视角输入。
+// 升级期间切为 UIOnly 并聚焦首个有效按钮；结束后恢复当前视角输入。
 void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
 {
 	if (!IsLocalController() || bUpgradeInputMode == bEnabled)
@@ -170,7 +171,10 @@ void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
 
 		bShowMouseCursor = true;
 		FInputModeUIOnly InputMode;
-		InputMode.SetWidgetToFocus(UpgradeSelectionWidget->TakeWidget());
+		if (UWidget* InitialFocusTarget = UpgradeSelectionWidget->GetInitialFocusTarget())
+		{
+			InputMode.SetWidgetToFocus(InitialFocusTarget->TakeWidget());
+		}
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		SetInputMode(InputMode);
 	}

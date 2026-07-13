@@ -58,6 +58,23 @@ void UArenaUpgradeSelectionWidget::HideUpgradeChoices()
 	K2_OnUpgradeChoicesChanged();
 }
 
+// 查找第一个可操作候选按钮，避免把不可聚焦的 UserWidget 容器交给 InputMode。
+UWidget* UArenaUpgradeSelectionWidget::GetInitialFocusTarget() const
+{
+	UButton* Buttons[] = { UpgradeChoiceButton0, UpgradeChoiceButton1, UpgradeChoiceButton2 };
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Buttons); ++Index)
+	{
+		UButton* Button = Buttons[Index];
+		if (CurrentChoices.IsValidIndex(Index) && CurrentChoices[Index]
+			&& Button && Button->GetIsEnabled() && Button->GetIsFocusable())
+		{
+			return Button;
+		}
+	}
+
+	return nullptr;
+}
+
 // 蓝图未提供布局时创建可直接操作的原生三选一界面，后续可用 WBP 子类替换外观。
 void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 {

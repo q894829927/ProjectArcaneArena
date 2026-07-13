@@ -8,6 +8,7 @@ class UArenaUpgradeDataAsset;
 class UButton;
 class UImage;
 class UTextBlock;
+class UWidget;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FArenaUpgradeChosenSignature, FName, UpgradeID);
 
@@ -23,6 +24,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "Arena|Upgrade")
 	void HideUpgradeChoices();
+
+	// 返回第一个有效且可聚焦的候选按钮，供 Controller 安全设置 UIOnly 初始焦点。
+	UWidget* GetInitialFocusTarget() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")
 	FArenaUpgradeChosenSignature OnUpgradeChosen;
