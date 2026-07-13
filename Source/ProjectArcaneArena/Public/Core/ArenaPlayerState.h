@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "AbilitySystemInterface.h"
 #include "GameFramework/PlayerState.h"
+#include "GameplayTagContainer.h"
 #include "ArenaPlayerState.generated.h"
 
 class UArenaAbilitySystemComponent;
@@ -17,6 +18,9 @@ struct FArenaOwnedUpgrade
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|Upgrade")
 	FName UpgradeID;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Upgrade")
+	TObjectPtr<UArenaUpgradeDataAsset> UpgradeData;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|Upgrade")
 	int32 StackCount = 0;
@@ -61,13 +65,20 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
 	int32 GetUpgradeStackCount(FName UpgradeID) const;
 
+	// 按 Ability、伤害类型和升级标签汇总数据资产数值，供服务器技能读取专属构筑加成。
+	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
+	float GetOwnedUpgradeNumericTotal(
+		FGameplayTag TargetAbilityTag,
+		FGameplayTag DamageTypeTag,
+		FGameplayTag UpgradeTag) const;
+
 	// 返回本轮是否已经完成选择，GameMode 据此等待全部参与玩家。
 	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
 	bool HasSelectedUpgrade() const { return bHasSelectedUpgrade; }
 
 	// 以下写接口仅供服务器 GameMode 管理每轮候选、选择状态和永久堆叠。
 	void BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsset*>& InCandidates);
-	void CompleteUpgradeSelection(FName UpgradeID);
+	void CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade);
 	void CompleteUpgradeSelectionWithoutReward();
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")

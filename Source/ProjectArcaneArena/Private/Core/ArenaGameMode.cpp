@@ -24,12 +24,17 @@ AArenaGameMode::AArenaGameMode()
 	WaveManagerClass = AArenaWaveManager::StaticClass();
 }
 
-// 服务器创建 WaveManager、接入正式升级阶段，并在配置 WaveData 后启动第一波。
+// 服务器生成本局升级随机流、创建 WaveManager，并在配置 WaveData 后启动第一波。
 void AArenaGameMode::BeginPlay()
 {
 	Super::BeginPlay();
-	UpgradeRandomStream.Initialize(UpgradeRandomSeed);
-	if (!HasAuthority() || !WaveManagerClass)
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	InitializeUpgradeRandomStream();
+	if (!WaveManagerClass)
 	{
 		return;
 	}
@@ -47,6 +52,29 @@ void AArenaGameMode::BeginPlay()
 	{
 		GetWorldTimerManager().SetTimer(InitialWaveTimerHandle, this, &AArenaGameMode::StartNextWave, InitialWaveDelay, false);
 	}
+}
+
+// 使用服务端生成的会话 GUID 派生非零种子；客户端只接收复制值，不参与候选随机决策。
+void AArenaGameMode::InitializeUpgradeRandomStream()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UpgradeRandomSeed = static_cast<int32>(GetTypeHash(FGuid::NewGuid()) & 0x7fffffff);
+	if (UpgradeRandomSeed == 0)
+	{
+		UpgradeRandomSeed = 1;
+	}
+
+	UpgradeRandomStream.Initialize(UpgradeRandomSeed);
+	if (AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>())
+	{
+		ArenaGameState->SetUpgradeRandomSeed(UpgradeRandomSeed);
+	}
+
+	UE_LOG(LogArenaUpgrades, Log, TEXT("Initialized server upgrade random stream with session seed %d."), UpgradeRandomSeed);
 }
 
 // 玩家在 Upgrade 阶段加入时为其补发独立候选，避免中途连接无法完成全员选择。
@@ -218,7 +246,7 @@ void AArenaGameMode::SubmitUpgradeSelection(AArenaPlayerController* RequestingCo
 		return;
 	}
 
-	ArenaPlayerState->CompleteUpgradeSelection(UpgradeID);
+	ArenaPlayerState->CompleteUpgradeSelection(SelectedUpgrade);
 	UE_LOG(LogArenaUpgrades, Log, TEXT("Player %s selected upgrade %s (stack %d)."),
 		*GetNameSafe(ArenaPlayerState),
 		*UpgradeID.ToString(),

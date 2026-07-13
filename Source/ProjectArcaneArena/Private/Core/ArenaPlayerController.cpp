@@ -309,13 +309,15 @@ void AArenaPlayerController::BindGameStateHUD()
 		ArenaGameState->OnGamePhaseChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleGamePhaseChanged);
 		ArenaGameState->OnCurrentWaveIndexChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleWaveIndexChanged);
 		ArenaGameState->OnRemainingEnemyCountChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleRemainingEnemyCountChanged);
+		ArenaGameState->OnUpgradeRandomSeedChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleUpgradeRandomSeedChanged);
 	}
 
 	PlayerHUDWidget->SetGamePhase(ArenaGameState->GetGamePhase());
 	PlayerHUDWidget->SetWaveState(ArenaGameState->GetCurrentWaveIndex(), ArenaGameState->GetRemainingEnemyCount());
+	PlayerHUDWidget->SetUpgradeRandomSeed(ArenaGameState->GetUpgradeRandomSeed());
 }
 
-// 解除 GameState 阶段和波次委托，防止世界切换后引用旧状态对象。
+// 解除 GameState 阶段、波次和随机种子委托，防止世界切换后引用旧状态对象。
 void AArenaPlayerController::UnbindGameStateHUD()
 {
 	if (AArenaGameState* ArenaGameState = BoundArenaGameState.Get())
@@ -323,6 +325,7 @@ void AArenaPlayerController::UnbindGameStateHUD()
 		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(this, &AArenaPlayerController::HandleGamePhaseChanged);
 		ArenaGameState->OnCurrentWaveIndexChanged.RemoveDynamic(this, &AArenaPlayerController::HandleWaveIndexChanged);
 		ArenaGameState->OnRemainingEnemyCountChanged.RemoveDynamic(this, &AArenaPlayerController::HandleRemainingEnemyCountChanged);
+		ArenaGameState->OnUpgradeRandomSeedChanged.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeRandomSeedChanged);
 	}
 	BoundArenaGameState.Reset();
 }
@@ -354,6 +357,15 @@ void AArenaPlayerController::HandleRemainingEnemyCountChanged(int32 OldValue, in
 	{
 		const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
 		PlayerHUDWidget->SetWaveState(ArenaGameState ? ArenaGameState->GetCurrentWaveIndex() : 0, NewValue);
+	}
+}
+
+// 随机种子复制完成后刷新右上角显示，客户端不会使用该值自行抽取候选。
+void AArenaPlayerController::HandleUpgradeRandomSeedChanged(int32 OldValue, int32 NewValue)
+{
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetUpgradeRandomSeed(NewValue);
 	}
 }
 

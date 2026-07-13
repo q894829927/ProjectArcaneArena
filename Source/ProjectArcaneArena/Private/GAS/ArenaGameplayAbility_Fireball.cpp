@@ -2,13 +2,17 @@
 
 #include "AbilitySystemComponent.h"
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
+#include "Core/ArenaPlayerState.h"
 #include "Engine/World.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
+#include "GAS/ArenaGameplayEffect_Burning.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GAS/Targeting/ArenaTargetActor_MouseGround.h"
 #include "GameFramework/Pawn.h"
 #include "GameplayEffect.h"
 #include "Projectile/ArenaFireballProjectile.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogArenaFireBuild, Log, All);
 
 // 构造火球技能，配置预测输入、火焰伤害类型和目标选择/投射物类型。
 UArenaGameplayAbility_Fireball::UArenaGameplayAbility_Fireball()
@@ -17,6 +21,7 @@ UArenaGameplayAbility_Fireball::UArenaGameplayAbility_Fireball()
 	NetworkAbilityId = EArenaNetworkAbilityId::Fireball;
 	InputTag = ArenaGameplayTags::Ability_Fireball;
 	DamageTypeTag = ArenaGameplayTags::Damage_Fire;
+	BurningEffectClass = UArenaGameplayEffect_Burning::StaticClass();
 	ProjectileClass = AArenaFireballProjectile::StaticClass();
 	TargetActorClass = AArenaTargetActor_MouseGround::StaticClass();
 
@@ -183,7 +188,7 @@ bool UArenaGameplayAbility_Fireball::BuildProjectileSpawnTransform(AActor* Avata
 	return true;
 }
 
-// 服务端延迟生成火球投射物，并注入伤害 GE 与 SetByCaller 参数。
+// 服务端汇总 Fire 构筑升级后生成火球，并把快照化的直接伤害和 Burning 参数交给 projectile。
 void UArenaGameplayAbility_Fireball::SpawnFireballProjectile(AActor* AvatarActor, UAbilitySystemComponent* SourceASC, const FTransform& SpawnTransform) const
 {
 	if (!AvatarActor || !SourceASC || !ProjectileClass || !DamageEffectClass)
@@ -210,13 +215,39 @@ void UArenaGameplayAbility_Fireball::SpawnFireballProjectile(AActor* AvatarActor
 		return;
 	}
 
+	const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(SourceASC->GetOwnerActor());
+	const float FireballDamageBonus = ArenaPlayerState
+		? ArenaPlayerState->GetOwnedUpgradeNumericTotal(
+			ArenaGameplayTags::Ability_Fireball,
+			ArenaGameplayTags::Damage_Fire,
+			ArenaGameplayTags::Upgrade_Fireball_Damage)
+		: 0.0f;
+	const float BurningDamagePerStack = ArenaPlayerState
+		? ArenaPlayerState->GetOwnedUpgradeNumericTotal(
+			ArenaGameplayTags::Ability_Fireball,
+			ArenaGameplayTags::Damage_Fire,
+			ArenaGameplayTags::Upgrade_Fireball_Burning)
+		: 0.0f;
+	const bool bBurningUnlocked = SourceASC->HasMatchingGameplayTag(ArenaGameplayTags::Upgrade_Fireball_Burning);
+	const float UpgradedSkillMultiplier = SkillMultiplier * (1.0f + FMath::Max(FireballDamageBonus, 0.0f));
+
+	if (bBurningUnlocked && (!BurningEffectClass || BurningDamagePerStack <= 0.0f))
+	{
+		UE_LOG(LogArenaFireBuild, Warning,
+			TEXT("Fireball Burning is unlocked for %s but its effect or numeric upgrade value is invalid."),
+			*GetNameSafe(SourceASC->GetOwnerActor()));
+	}
+
 	FireballProjectile->InitializeProjectile(
 		SourceASC,
 		AvatarActor,
 		DamageEffectClass,
 		DamageTypeTag,
 		BaseDamage,
-		SkillMultiplier);
+		UpgradedSkillMultiplier,
+		BurningEffectClass,
+		bBurningUnlocked,
+		BurningDamagePerStack);
 	FireballProjectile->FinishSpawning(SpawnTransform);
 
 	FGameplayCueParameters CueParameters;

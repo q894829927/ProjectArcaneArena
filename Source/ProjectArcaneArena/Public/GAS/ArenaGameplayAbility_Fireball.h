@@ -46,6 +46,9 @@ protected:
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage")
+	TSubclassOf<UGameplayEffect> BurningEffectClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage")
 	FGameplayTag DamageTypeTag;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage", meta = (ClampMin = "0.0"))
@@ -70,7 +73,7 @@ private:
 	// 根据角色和目标点计算服务端实际生成 transform。
 	bool BuildProjectileSpawnTransform(AActor* AvatarActor, const FVector& TargetLocation, FTransform& OutSpawnTransform) const;
 
-	// 只在服务端生成 replicated projectile，并注入 GE_Damage 所需参数。
+	// 只在服务端生成 replicated projectile，并注入当前构筑计算后的直接伤害和 Burning 参数。
 	void SpawnFireballProjectile(AActor* AvatarActor, UAbilitySystemComponent* SourceASC, const FTransform& SpawnTransform) const;
 
 	UPROPERTY(Transient)

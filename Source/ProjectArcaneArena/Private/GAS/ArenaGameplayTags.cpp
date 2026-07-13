@@ -49,6 +49,14 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Shield, "Build.Shield", "Player owns progress in the shield build path.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Dash, "Build.Dash", "Player owns progress in the dash build path.");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Fireball_Damage, "Upgrade.Fireball.Damage", "Fireball-specific damage upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Fireball_Burning, "Upgrade.Fireball.Burning", "Fireball applies the Burning status.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Burning, "Status.Burning", "Target is taking periodic fire damage.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Status_Burning_Active, "GameplayCue.Status.Burning.Active", "Looping Burning status presentation.");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Base, "SetByCaller.Damage.Base", "Runtime base damage value.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Burning, "SetByCaller.Damage.Burning", "Runtime Burning damage per stack and tick.");
 }

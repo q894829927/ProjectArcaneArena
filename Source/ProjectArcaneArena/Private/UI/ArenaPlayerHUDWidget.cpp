@@ -130,7 +130,7 @@ namespace
 	}
 }
 
-// 初始化 HUD，并为蓝图未提供的准星、阶段和波次控件创建轻量运行时回退显示。
+// 初始化 HUD，并为蓝图未提供的准星、阶段、波次和随机种子控件创建运行时回退显示。
 void UArenaPlayerHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -192,11 +192,33 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 		{
 			RemainingEnemiesText = CreateRuntimeStateText(TEXT("RemainingEnemiesText_Runtime"), 72.0f);
 		}
+
+		if (!RandomSeedText)
+		{
+			RandomSeedText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("RandomSeedText_Runtime"));
+			RandomSeedText->SetColorAndOpacity(FSlateColor(FLinearColor(0.75f, 0.75f, 0.75f, 1.0f)));
+			RandomSeedText->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+			FSlateFontInfo SeedFont = RandomSeedText->GetFont();
+			SeedFont.Size = 16;
+			SeedFont.OutlineSettings.OutlineSize = 1;
+			RandomSeedText->SetFont(SeedFont);
+
+			if (UCanvasPanelSlot* SeedSlot = RootCanvas->AddChildToCanvas(RandomSeedText))
+			{
+				// 右上角使用负 X 边距，避免贴住视口边缘或随文本长度改变锚点位置。
+				SeedSlot->SetAnchors(FAnchors(1.0f, 0.0f));
+				SeedSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+				SeedSlot->SetPosition(FVector2D(-24.0f, 24.0f));
+				SeedSlot->SetAutoSize(true);
+			}
+		}
 	}
 
 	SetThirdPersonReticleVisible(false);
 	SetGamePhase(EArenaGamePhase::Waiting);
 	SetWaveState(0, 0);
+	SetUpgradeRandomSeed(0);
 }
 
 // 切换准星显示；HitTestInvisible 保证它不会拦截任何战斗输入。
@@ -259,6 +281,21 @@ void UArenaPlayerHUDWidget::SetWaveState(int32 CurrentWaveIndex, int32 Remaining
 			NSLOCTEXT("ArenaPlayerHUDWidget", "EnemiesFormat", "Enemies {0}"),
 			FText::AsNumber(FMath::Max(RemainingEnemyCount, 0))));
 	}
+}
+
+// 将服务器复制的随机种子格式化为右上角调试文本，未同步时显示占位符。
+void UArenaPlayerHUDWidget::SetUpgradeRandomSeed(int32 UpgradeRandomSeed)
+{
+	if (!RandomSeedText)
+	{
+		return;
+	}
+
+	RandomSeedText->SetText(UpgradeRandomSeed > 0
+		? FText::Format(
+			NSLOCTEXT("ArenaPlayerHUDWidget", "UpgradeSeedFormat", "Seed: {0}"),
+			FText::FromString(FString::FromInt(UpgradeRandomSeed)))
+		: NSLOCTEXT("ArenaPlayerHUDWidget", "UpgradeSeedPending", "Seed --"));
 }
 
 // 绑定玩家 HUD 到 ASC/AttributeSet，并注册属性和冷却标签监听。

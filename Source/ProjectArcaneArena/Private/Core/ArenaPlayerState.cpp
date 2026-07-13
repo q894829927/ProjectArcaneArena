@@ -89,6 +89,35 @@ int32 AArenaPlayerState::GetUpgradeStackCount(FName UpgradeID) const
 	return 0;
 }
 
+// 汇总匹配路由标签的已拥有升级数值，避免 Ability 依赖具体 UpgradeID。
+float AArenaPlayerState::GetOwnedUpgradeNumericTotal(
+	FGameplayTag TargetAbilityTag,
+	FGameplayTag DamageTypeTag,
+	FGameplayTag UpgradeTag) const
+{
+	if (!TargetAbilityTag.IsValid() || !DamageTypeTag.IsValid() || !UpgradeTag.IsValid())
+	{
+		return 0.0f;
+	}
+
+	float TotalValue = 0.0f;
+	for (const FArenaOwnedUpgrade& OwnedUpgrade : OwnedUpgrades)
+	{
+		const UArenaUpgradeDataAsset* UpgradeData = OwnedUpgrade.UpgradeData;
+		if (!UpgradeData || OwnedUpgrade.StackCount <= 0
+			|| UpgradeData->TargetAbilityTag != TargetAbilityTag
+			|| UpgradeData->DamageTypeTag != DamageTypeTag
+			|| !UpgradeData->UpgradeTags.HasTagExact(UpgradeTag))
+		{
+			continue;
+		}
+
+		TotalValue += UpgradeData->NumericValue * static_cast<float>(OwnedUpgrade.StackCount);
+	}
+
+	return TotalValue;
+}
+
 // 开始新一轮服务器权威选择，并通过 OwnerOnly 候选复制驱动本地界面。
 void AArenaPlayerState::BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsset*>& InCandidates)
 {
@@ -110,13 +139,14 @@ void AArenaPlayerState::BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsse
 	ForceNetUpdate();
 }
 
-// 记录已验证升级的永久堆叠，并关闭本轮候选。
-void AArenaPlayerState::CompleteUpgradeSelection(FName UpgradeID)
+// 记录已验证升级的数据资产和永久堆叠，并关闭本轮候选。
+void AArenaPlayerState::CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade)
 {
-	if (!HasAuthority() || UpgradeID.IsNone())
+	if (!HasAuthority() || !Upgrade || Upgrade->UpgradeID.IsNone())
 	{
 		return;
 	}
+	const FName UpgradeID = Upgrade->UpgradeID;
 
 	FArenaOwnedUpgrade* ExistingUpgrade = OwnedUpgrades.FindByPredicate(
 		[UpgradeID](const FArenaOwnedUpgrade& Entry)
@@ -125,12 +155,14 @@ void AArenaPlayerState::CompleteUpgradeSelection(FName UpgradeID)
 		});
 	if (ExistingUpgrade)
 	{
+		ExistingUpgrade->UpgradeData = Upgrade;
 		++ExistingUpgrade->StackCount;
 	}
 	else
 	{
 		FArenaOwnedUpgrade& NewUpgrade = OwnedUpgrades.AddDefaulted_GetRef();
 		NewUpgrade.UpgradeID = UpgradeID;
+		NewUpgrade.UpgradeData = Upgrade;
 		NewUpgrade.StackCount = 1;
 	}
 

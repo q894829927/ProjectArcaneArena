@@ -34,6 +34,8 @@ protected:
 	virtual void Logout(AController* Exiting) override;
 
 private:
+	// 由服务器为本局生成一次随机种子，并同步到 GameState 供所有客户端观察。
+	void InitializeUpgradeRandomStream();
 	void HandleUpgradePhaseStarted();
 	void PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlayerState);
 	bool IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
@@ -56,12 +58,10 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Upgrade", meta = (ClampMin = "1", ClampMax = "3"))
 	int32 UpgradeChoiceCount = 3;
 
-	UPROPERTY(EditDefaultsOnly, Category = "Arena|Upgrade")
-	int32 UpgradeRandomSeed = 1337;
-
 	UPROPERTY(Transient)
 	TObjectPtr<AArenaWaveManager> WaveManager;
 
 	FTimerHandle InitialWaveTimerHandle;
+	int32 UpgradeRandomSeed = 0;
 	FRandomStream UpgradeRandomStream;
 };

@@ -56,6 +56,8 @@ private:
 	void HandleWaveIndexChanged(int32 OldValue, int32 NewValue);
 	UFUNCTION()
 	void HandleRemainingEnemyCountChanged(int32 OldValue, int32 NewValue);
+	UFUNCTION()
+	void HandleUpgradeRandomSeedChanged(int32 OldValue, int32 NewValue);
 
 	UFUNCTION()
 	void HandleUpgradeStateChanged();

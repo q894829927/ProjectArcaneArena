@@ -75,6 +75,16 @@ Status meanings:
 * `Q` gathers view-aware TargetData locally and sends it through GAS prediction/RPC flow.
 * The server commits cost/cooldown and spawns one replicated, damage-authoritative fire projectile.
 * Projectile collision filters self/dead targets and applies fire damage through `GE_Damage` SetByCaller values.
+* The server can now snapshot Fireball-specific upgrade values from the owning PlayerState when spawning the projectile; the base Fireball remains unchanged when no matching upgrade exists.
+
+### Fire Build — Partial
+
+* `FArenaOwnedUpgrade` retains its source `UArenaUpgradeDataAsset`, and `AArenaPlayerState` can aggregate numeric values by target Ability, damage type, and upgrade tag without hard-coding Upgrade IDs in abilities.
+* `UArenaGameplayEffect_Burning` defines a four-second, one-second-period, three-stack `AggregateBySource` fire status that grants `Status.Burning`, refreshes duration/period on reapplication, removes itself on `State.Dead`, and drives `GameplayCue.Status.Burning.Active`.
+* `UExecCalc_BurningDamage` applies fixed `SetByCaller.Damage.Burning × StackCount` damage on the authority side, skips dead/invincible targets, and reuses the shared Shield-to-Health Damage meta-attribute pipeline.
+* Fireball direct damage reads `Upgrade.Fireball.Damage`; Fireball applies Burning only when the source owns `Upgrade.Fireball.Burning`, and only after the direct hit leaves the target alive.
+* `DA_Upgrade_FireballDamage`, `DA_Upgrade_FireballBurning`, `GE_Status_Burning`, `GCN_Burning_Active`, and `GA_Fireball` provide the current editor-configured Fire Build assets.
+* Missing verification: complete single-player/two-player PIE checks for upgrade eligibility, damage scaling, stack refresh, death cleanup, and replicated Cue presentation.
 
 ### Dash — Implemented
 
@@ -113,6 +123,7 @@ Status meanings:
 * Third-person mode displays a center reticle; the C++ HUD creates a fallback reticle if the Widget Blueprint does not provide one.
 * Optional `PhaseText`, `WaveText`, `RemainingEnemiesText`, and `DefeatText` bindings observe replicated GameState values without owning game rules.
 * If the Blueprint omits phase/wave/enemy-count bindings, the C++ HUD creates a compact top-center fallback so Combat, Upgrade, Victory, wave index, and remaining enemies remain visible during prototype testing.
+* The HUD displays the authority-generated match upgrade seed in the top-right through an optional `RandomSeedText` binding or a native fallback, updating from replicated GameState events without Tick.
 
 ### Enemy Health Bar and Damage Numbers — Implemented
 
@@ -161,8 +172,8 @@ Status meanings:
 * WaveManager retains a configurable three-second prototype fallback, but GameMode now disables it when the formal upgrade-selection system binds to the Upgrade entry.
 * Missing configuration never counts as wave completion; failed spawns keep Combat active and emit `LogArenaWaves` errors.
 * `DA_Waves_Prototype`, its `BP_ArenaGameMode` reference, three tagged EnemySpawn TargetPoints, and a covering NavMeshBoundsVolume are configured in project assets.
-* Missing: boss content and runtime verification of the formal `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow.
-* Runtime confirmation: clearing a wave enters `Upgrade`, and the server `StartNextWave()` entry successfully advances to the next configured wave.
+* Missing: boss content.
+* Verification: the formal single-player `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow completed successfully.
 
 ## Phase 4 Configured Assets
 
@@ -181,13 +192,17 @@ Status meanings:
 * `UArenaUpgradeDataAsset` defines upgrade identity, text/icon presentation, rarity, eligibility tags, granted GE/Ability, routing tags, numeric metadata, and stack limits.
 * `AArenaPlayerState` owns permanent upgrade stack records, replicated selection completion, and OwnerOnly candidate arrays; local UI observes replicated state delegates.
 * `AArenaGameMode` generates up to three unique eligible choices per player from a configured pool, validates the submitted ID against that player's candidates, applies the GameplayEffect/Ability/tags on the server, and waits for every participating PlayerState before starting the next wave.
+* Each match now uses one authority-generated random upgrade seed instead of a fixed seed. The server owns the only candidate `FRandomStream`, while `AArenaGameState` replicates the seed to every machine for consistent session diagnostics and late joins.
 * `AArenaWaveManager` broadcasts the formal Upgrade entry and disables its three-second prototype auto-advance while the upgrade system is connected.
 * `UArenaUpgradeSelectionWidget` provides a native usable three-button fallback plus optional Blueprint bindings; `AArenaPlayerController` owns UI input mode and sends only the selected ID through a reliable Server RPC.
 * Three transparent 512x512 UI Texture2D assets under `/Game/UI/UpgradeIcons` represent AttackPower, MaxHealth, and MoveSpeed upgrades; the repeatable `import_upgrade_icons.py` tool imports them with UI texture settings, and the native/fallback selection Widget reads each DataAsset `Icon` into its corresponding `UImage`.
 * The native fallback wraps each upgrade `UImage` in a `USizeBox` so parent layout pressure cannot shrink the icon; `UpgradeIconSize` defaults to `220x220` and `UpgradePanelSize` defaults to `1200x460`, with both exposed as configurable layout properties for Blueprint subclasses.
 * Entering the upgrade UI flushes pressed keys, ignores movement input, consumes the controlled Pawn's pending movement vector, and stops its movement component immediately; leaving the UI clears keys again before gameplay input is restored, preventing stale Enhanced Input state from keeping the character moving.
 * Missing configuration is fail-visible: an empty or invalid pool leaves the game in Upgrade and logs `LogArenaUpgrades` errors instead of silently skipping rewards.
-* Missing: configured upgrade DataAssets and GameplayEffects, Blueprint visual pass, PIE verification, ability variants, trigger upgrades, build synergies, and rarity weighting.
+* `DA_Upgrade_AttackPower`, `DA_Upgrade_MaxHealth`, and `DA_Upgrade_MoveSpeed` are configured with their corresponding upgrade GameplayEffects and included in the active upgrade pool.
+* Verification: AttackPower increases later attack damage, MoveSpeed immediately updates CharacterMovement, upgrades persist across waves, and upgrades stop appearing after reaching `MaxStacks`.
+* Verification: in two-player PIE, each player receives an independent candidate set and the next wave starts only after both players complete their selections.
+* Missing: Blueprint visual pass, ability variants, trigger upgrades, build synergies, rarity weighting, and explicit hostile/forged selection RPC testing.
 
 ## Verification Notes
 
@@ -201,5 +216,6 @@ Status meanings:
 * Fireball, Dash, replicated attacks, and the remote-client Dash Montage completed their requested multiplayer observation pass.
 * `GameplayCueNotifyPaths=/Game/GAS` was added to project config. After restarting the editor, the latest session log no longer reported the previous missing GameplayCue path warning.
 * The network-polish UHT pass generated reflection code successfully. Its first C++ pass exposed private `FGameplayAbilitySpecHandle::Handle` audit access, which has been replaced with the public `ToString()` API; a build retry remains pending because the same run also hit Windows page-file error `C3859/C1076`.
-* Upgrade UI movement-stop behavior is implemented but still requires single-player and two-client PIE verification while the player is holding movement input when the Upgrade phase begins.
+* Upgrade UI movement-stop behavior passed the single-player held-input acceptance flow: entering Upgrade while holding movement stops immediately, and releasing the key before selecting does not resume stale movement afterward.
+* The configured three-wave single-player loop reaches Victory after both upgrade phases; two-player PIE confirms independent choices and the all-players-selected gate before wave advancement.
 * A feature must explicitly say `Verified` before this log should be treated as proof of completed PIE, multiplayer, or packaged-build testing.

@@ -15,6 +15,7 @@ void AArenaGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(AArenaGameState, GamePhase);
 	DOREPLIFETIME(AArenaGameState, CurrentWaveIndex);
 	DOREPLIFETIME(AArenaGameState, RemainingEnemyCount);
+	DOREPLIFETIME(AArenaGameState, UpgradeRandomSeed);
 }
 
 // 服务器更新游戏阶段，并让监听服务器本地 UI 与远端 OnRep 获得一致通知。
@@ -61,6 +62,20 @@ void AArenaGameState::SetRemainingEnemyCount(int32 NewRemainingEnemyCount)
 	ForceNetUpdate();
 }
 
+// 保存服务器为本局生成的升级随机种子，并立即安排复制给当前及后加入的客户端。
+void AArenaGameState::SetUpgradeRandomSeed(int32 NewUpgradeRandomSeed)
+{
+	if (!HasAuthority() || UpgradeRandomSeed == NewUpgradeRandomSeed)
+	{
+		return;
+	}
+
+	const int32 OldUpgradeRandomSeed = UpgradeRandomSeed;
+	UpgradeRandomSeed = NewUpgradeRandomSeed;
+	OnUpgradeRandomSeedChanged.Broadcast(OldUpgradeRandomSeed, UpgradeRandomSeed);
+	ForceNetUpdate();
+}
+
 void AArenaGameState::OnRep_GamePhase(EArenaGamePhase OldPhase)
 {
 	OnGamePhaseChanged.Broadcast(OldPhase, GamePhase);
@@ -74,4 +89,10 @@ void AArenaGameState::OnRep_CurrentWaveIndex(int32 OldWaveIndex)
 void AArenaGameState::OnRep_RemainingEnemyCount(int32 OldRemainingEnemyCount)
 {
 	OnRemainingEnemyCountChanged.Broadcast(OldRemainingEnemyCount, RemainingEnemyCount);
+}
+
+// 客户端收到本局随机种子后通知 HUD，显示层不自行生成或修改种子。
+void AArenaGameState::OnRep_UpgradeRandomSeed(int32 OldUpgradeRandomSeed)
+{
+	OnUpgradeRandomSeedChanged.Broadcast(OldUpgradeRandomSeed, UpgradeRandomSeed);
 }

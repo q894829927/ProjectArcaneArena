@@ -31,6 +31,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetWaveState(int32 CurrentWaveIndex, int32 RemainingEnemyCount);
 
+	// 在右上角显示服务器复制的本局升级随机种子，仅用于玩家查看和复现调试。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetUpgradeRandomSeed(int32 UpgradeRandomSeed);
+
 	// 绑定玩家 PlayerState 上的 GAS 数据源，HUD 只监听变化，不拥有玩法状态。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void BindToAbilitySystem(UArenaAbilitySystemComponent* InAbilitySystemComponent, UArenaAttributeSet* InAttributeSet);
@@ -123,6 +127,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> RemainingEnemiesText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> RandomSeedText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> DefeatText;

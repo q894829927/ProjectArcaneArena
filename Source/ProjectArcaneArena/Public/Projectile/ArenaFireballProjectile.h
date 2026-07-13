@@ -19,14 +19,17 @@ public:
 	// 创建可复制 projectile 的碰撞体和移动组件。
 	AArenaFireballProjectile();
 
-	// 由服务端 Fireball Ability 注入伤害上下文，Projectile 自己不持有永久玩法状态。
+	// 由服务端 Fireball Ability 注入构筑快照和伤害上下文，Projectile 不持有永久玩家状态。
 	void InitializeProjectile(
 		UAbilitySystemComponent* InSourceASC,
 		AActor* InSourceActor,
 		TSubclassOf<UGameplayEffect> InDamageEffectClass,
 		FGameplayTag InDamageTypeTag,
 		float InBaseDamage,
-		float InSkillMultiplier);
+		float InSkillMultiplier,
+		TSubclassOf<UGameplayEffect> InBurningEffectClass,
+		bool bInBurningUnlocked,
+		float InBurningDamagePerStack);
 
 protected:
 	// 应用蓝图可调的速度、半径和生命周期。
@@ -73,6 +76,9 @@ private:
 	// 使用 Source ASC 创建 GE_Damage Spec，实际数值计算交给 ExecCalc_Damage。
 	void ApplyDamageToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult);
 
+	// 直接伤害后为存活目标应用服务器权威 Burning ActiveGE。
+	void ApplyBurningToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult);
+
 	// 命中后只由服务端销毁，销毁结果通过 Actor replication 同步给客户端。
 	void FinishProjectile();
 
@@ -82,8 +88,13 @@ private:
 	UPROPERTY(Transient)
 	TSubclassOf<UGameplayEffect> DamageEffectClass;
 
+	UPROPERTY(Transient)
+	TSubclassOf<UGameplayEffect> BurningEffectClass;
+
 	FGameplayTag DamageTypeTag;
 	float BaseDamage = 25.0f;
 	float SkillMultiplier = 1.0f;
+	float BurningDamagePerStack = 0.0f;
+	bool bBurningUnlocked = false;
 	bool bHasImpacted = false;
 };
