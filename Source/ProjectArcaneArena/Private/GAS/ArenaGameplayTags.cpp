@@ -64,4 +64,6 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Burning, "SetByCaller.Damage.Burning", "Runtime Burning damage per stack and tick.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Status_Shocked_LightningDamageBonus, "SetByCaller.Status.Shocked.LightningDamageBonus", "Runtime Lightning vulnerability granted by Shocked.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Health, "SetByCaller.Recovery.Health", "Runtime Health recovery applied after an upgrade choice.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Energy, "SetByCaller.Recovery.Energy", "Runtime Energy recovery applied after an upgrade choice.");
 }

@@ -40,6 +40,8 @@ private:
 	void PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlayerState);
 	bool IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
 	bool ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
+	// 在服务器完成升级后通过 GAS 补满生命和能量，Health 恢复会驱动死亡玩家复活。
+	void RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* ArenaPlayerState) const;
 	bool HaveAllPlayersCompletedUpgradeSelection() const;
 	void TryAdvanceAfterUpgradeSelections();
 

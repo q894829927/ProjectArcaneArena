@@ -8,6 +8,8 @@
 #include "Core/ArenaWaveDataAsset.h"
 #include "Core/ArenaWaveManager.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
+#include "GAS/ArenaAttributeSet.h"
+#include "GAS/ArenaGameplayEffect_UpgradeRecovery.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
@@ -222,7 +224,41 @@ bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UAr
 	return bAppliedAnything;
 }
 
-// 重新验证客户端提交的候选 ID，成功后记录层数并检查是否可以推进波次。
+// 按最新资源上限应用恢复 GE；Health 从零恢复时由 AttributeSet 移除 Dead Tag 并复活玩家。
+void AArenaGameMode::RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* ArenaPlayerState) const
+{
+	UArenaAbilitySystemComponent* ASC = ArenaPlayerState ? ArenaPlayerState->GetArenaAbilitySystemComponent() : nullptr;
+	const UArenaAttributeSet* AttributeSet = ArenaPlayerState ? ArenaPlayerState->GetArenaAttributeSet() : nullptr;
+	if (!ASC || !AttributeSet)
+	{
+		return;
+	}
+
+	const float HealthRecovery = FMath::Max(AttributeSet->GetMaxHealth() - AttributeSet->GetHealth(), 0.0f);
+	const float EnergyRecovery = FMath::Max(AttributeSet->GetMaxEnergy() - AttributeSet->GetEnergy(), 0.0f);
+	if (HealthRecovery <= KINDA_SMALL_NUMBER && EnergyRecovery <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = ASC->MakeEffectContext();
+	EffectContext.AddSourceObject(ArenaPlayerState);
+	const FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(
+		UArenaGameplayEffect_UpgradeRecovery::StaticClass(),
+		1.0f,
+		EffectContext);
+	if (!SpecHandle.IsValid())
+	{
+		UE_LOG(LogArenaUpgrades, Warning, TEXT("Failed to create upgrade recovery effect for %s."), *GetNameSafe(ArenaPlayerState));
+		return;
+	}
+
+	SpecHandle.Data->SetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Recovery_Health, HealthRecovery);
+	SpecHandle.Data->SetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Recovery_Energy, EnergyRecovery);
+	ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+}
+
+// 重新验证候选 ID，成功后记录层数、恢复资源并检查是否可以推进波次。
 void AArenaGameMode::SubmitUpgradeSelection(AArenaPlayerController* RequestingController, FName UpgradeID)
 {
 	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
@@ -250,6 +286,7 @@ void AArenaGameMode::SubmitUpgradeSelection(AArenaPlayerController* RequestingCo
 	}
 
 	ArenaPlayerState->CompleteUpgradeSelection(SelectedUpgrade);
+	RestorePlayerResourcesAfterUpgrade(ArenaPlayerState);
 	UE_LOG(LogArenaUpgrades, Log, TEXT("Player %s selected upgrade %s (stack %d)."),
 		*GetNameSafe(ArenaPlayerState),
 		*UpgradeID.ToString(),

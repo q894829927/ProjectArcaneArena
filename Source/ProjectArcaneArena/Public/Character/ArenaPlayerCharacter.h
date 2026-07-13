@@ -50,6 +50,10 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Player")
 	void K2_OnDeathStarted();
 
+	// 升级恢复移除死亡状态后通知蓝图还原动画、布娃娃或其他死亡表现。
+	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Player")
+	void K2_OnRevived();
+
 	// 眩晕开始或结束的表现入口，不用于决定角色能否移动。
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Player")
 	void K2_OnStunnedChanged(bool bIsStunned);
@@ -67,6 +71,7 @@ private:
 	void UnbindAbilitySystemDelegates();
 	// 根据 Dead/Stunned 优先级统一刷新移动组件状态。
 	void RefreshMovementState();
+	// Dead Tag 增加时执行一次死亡流程，移除时重置死亡门闩并触发复活表现。
 	void HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleMoveSpeedChanged(const FOnAttributeChangeData& Data);
