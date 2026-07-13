@@ -1,5 +1,8 @@
 [*.{cpp,h}]
 
+# Unreal C++ files use Windows line endings consistently across Visual Studio and Git checkouts.
+end_of_line = crlf
+
 # Naming convention rules (note: currently need to be ordered from more to less specific)
 
 cpp_naming_rule.aactor_prefixed.symbols                    = aactor_class
