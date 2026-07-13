@@ -11,6 +11,24 @@ class AArenaWaveManager;
 class UArenaUpgradeDataAsset;
 class UArenaWaveDataAsset;
 
+USTRUCT(BlueprintType)
+struct PROJECTARCANEARENA_API FArenaUpgradeRarityWeights
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena|Upgrade|Rarity", meta = (ClampMin = "1"))
+	int32 Common = 100;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena|Upgrade|Rarity", meta = (ClampMin = "1"))
+	int32 Rare = 40;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena|Upgrade|Rarity", meta = (ClampMin = "1"))
+	int32 Epic = 15;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Arena|Upgrade|Rarity", meta = (ClampMin = "1"))
+	int32 Legendary = 5;
+};
+
 UCLASS()
 class PROJECTARCANEARENA_API AArenaGameMode : public AGameModeBase
 {
@@ -34,11 +52,23 @@ protected:
 	virtual void Logout(AController* Exiting) override;
 
 private:
-	// 由服务器为本局生成一次随机种子，并同步到 GameState 供所有客户端观察。
+	// 由服务器使用可选固定种子或会话随机种子初始化随机流，并同步实际种子供客户端观察。
 	void InitializeUpgradeRandomStream();
+	// 为所有有效玩家生成本轮独立候选，并在全员无奖励可选时继续检查推进条件。
 	void HandleUpgradePhaseStarted();
+	// 过滤候选后执行构筑保底、稀有度加权抽取和确定性洗牌。
 	void PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlayerState);
+	// 从候选数组按稀有度权重抽取一个索引，所有随机数只来自服务器升级随机流。
+	int32 DrawWeightedUpgradeIndex(const TArray<UArenaUpgradeDataAsset*>& Candidates);
+	// 返回升级资产对应的可配置稀有度权重，并防止无效配置产生零权重池。
+	int32 GetUpgradeRarityWeight(const UArenaUpgradeDataAsset* Upgrade) const;
+	// 判断候选是否精确匹配玩家当前拥有的火焰或闪电构筑标签。
+	bool IsUpgradeForOwnedBuild(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
+	// 使用同一服务器随机流打乱最终槽位，避免构筑保底固定出现在首位。
+	void ShuffleUpgradeChoices(TArray<UArenaUpgradeDataAsset*>& Choices);
+	// 按唯一 ID、资格标签和堆叠上限重新验证候选当前是否仍可选择。
 	bool IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
+	// 在服务器授予升级对应的 GameplayEffect、Ability 和持久构筑标签。
 	bool ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
 	// 在服务器完成升级后通过 GAS 补满生命和能量，Health 恢复会驱动死亡玩家复活。
 	void RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* ArenaPlayerState) const;
@@ -59,6 +89,12 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Upgrade", meta = (ClampMin = "1", ClampMax = "3"))
 	int32 UpgradeChoiceCount = 3;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Upgrade|Rarity", meta = (AllowPrivateAccess = "true"))
+	FArenaUpgradeRarityWeights UpgradeRarityWeights;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Upgrade|Random", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
+	int32 UpgradeRandomSeedOverride = 0;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AArenaWaveManager> WaveManager;

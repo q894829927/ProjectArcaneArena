@@ -3,10 +3,39 @@
 #include "Core/ArenaGameMode.h"
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaGameState.h"
+#include "Core/ArenaUpgradeDataAsset.h"
 #include "Components/Widget.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "UI/ArenaPlayerHUDWidget.h"
 #include "UI/ArenaUpgradeSelectionWidget.h"
+
+namespace
+{
+	// 将 OwnerOnly 候选与 PlayerState 永久层数合并为纯本地 UI 快照，不赋予 Widget 玩法写权限。
+	TArray<FArenaUpgradeChoiceViewData> BuildUpgradeChoiceViewData(const AArenaPlayerState* ArenaPlayerState)
+	{
+		TArray<FArenaUpgradeChoiceViewData> ViewData;
+		if (!ArenaPlayerState)
+		{
+			return ViewData;
+		}
+
+		for (UArenaUpgradeDataAsset* Upgrade : ArenaPlayerState->GetUpgradeCandidates())
+		{
+			if (!Upgrade)
+			{
+				continue;
+			}
+
+			FArenaUpgradeChoiceViewData& Choice = ViewData.AddDefaulted_GetRef();
+			Choice.Upgrade = Upgrade;
+			Choice.CurrentStacks = FMath::Max(ArenaPlayerState->GetUpgradeStackCount(Upgrade->UpgradeID), 0);
+			Choice.MaxStacks = FMath::Max(Upgrade->MaxStacks, 1);
+			Choice.ResultingStacks = FMath::Clamp(Choice.CurrentStacks + 1, 1, Choice.MaxStacks);
+		}
+		return ViewData;
+	}
+}
 
 // 构造玩家控制器，设置基础鼠标输入并指定可直接使用的原生升级界面类。
 AArenaPlayerController::AArenaPlayerController()
@@ -114,7 +143,7 @@ void AArenaPlayerController::UnbindUpgradeState()
 	BoundUpgradePlayerState.Reset();
 }
 
-// 根据复制阶段、候选和选择状态决定是否显示本地三选一界面。
+// 根据复制阶段和候选决定是否显示界面，并把 PlayerState 层数整理为只读卡片展示快照。
 void AArenaPlayerController::RefreshUpgradeSelectionUI()
 {
 	if (!IsLocalController())
@@ -136,7 +165,7 @@ void AArenaPlayerController::RefreshUpgradeSelectionUI()
 
 	if (bShouldShow)
 	{
-		UpgradeSelectionWidget->ShowUpgradeChoices(ArenaPlayerState->GetUpgradeCandidates());
+		UpgradeSelectionWidget->ShowUpgradeChoices(BuildUpgradeChoiceViewData(ArenaPlayerState));
 	}
 	else if (UpgradeSelectionWidget)
 	{

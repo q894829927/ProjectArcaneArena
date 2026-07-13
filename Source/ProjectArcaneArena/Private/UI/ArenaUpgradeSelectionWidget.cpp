@@ -33,13 +33,13 @@ void UArenaUpgradeSelectionWidget::NativeConstruct()
 	SetVisibility(ESlateVisibility::Collapsed);
 }
 
-// 仅展示 PlayerState 已复制的候选，并把最终选择意图交还 Controller。
-void UArenaUpgradeSelectionWidget::ShowUpgradeChoices(const TArray<UArenaUpgradeDataAsset*>& InChoices)
+// 仅展示 Controller 从 PlayerState 快照整理出的候选和层数，并把最终选择意图交还 Controller。
+void UArenaUpgradeSelectionWidget::ShowUpgradeChoices(const TArray<FArenaUpgradeChoiceViewData>& InChoices)
 {
 	CurrentChoices.Reset();
-	for (UArenaUpgradeDataAsset* Choice : InChoices)
+	for (const FArenaUpgradeChoiceViewData& Choice : InChoices)
 	{
-		if (Choice)
+		if (Choice.Upgrade)
 		{
 			CurrentChoices.Add(Choice);
 		}
@@ -65,7 +65,7 @@ UWidget* UArenaUpgradeSelectionWidget::GetInitialFocusTarget() const
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Buttons); ++Index)
 	{
 		UButton* Button = Buttons[Index];
-		if (CurrentChoices.IsValidIndex(Index) && CurrentChoices[Index]
+		if (CurrentChoices.IsValidIndex(Index) && CurrentChoices[Index].Upgrade
 			&& Button && Button->GetIsEnabled() && Button->GetIsFocusable())
 		{
 			return Button;
@@ -112,13 +112,19 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 		const FName ButtonName,
 		const FName IconName,
 		const FName TextName,
+		const FName RarityTextName,
+		const FName StackTextName,
 		TObjectPtr<UButton>& OutButton,
 		TObjectPtr<UImage>& OutIcon,
-		TObjectPtr<UTextBlock>& OutText)
+		TObjectPtr<UTextBlock>& OutText,
+		TObjectPtr<UTextBlock>& OutRarityText,
+		TObjectPtr<UTextBlock>& OutStackText)
 	{
 		OutButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), ButtonName);
 		UVerticalBox* ButtonContent = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
 		OutIcon = WidgetTree->ConstructWidget<UImage>(UImage::StaticClass(), IconName);
+		OutRarityText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), RarityTextName);
+		OutStackText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), StackTextName);
 
 		// SizeBox 固定升级图标的布局尺寸，避免 Image 的期望尺寸被父布局压缩。
 		USizeBox* IconSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass());
@@ -129,12 +135,19 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 		OutText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TextName);
 		OutText->SetJustification(ETextJustify::Center);
 		OutText->SetAutoWrapText(true);
+		OutRarityText->SetJustification(ETextJustify::Center);
+		OutStackText->SetJustification(ETextJustify::Center);
+		ButtonContent->AddChildToVerticalBox(OutRarityText);
 		if (UVerticalBoxSlot* IconSlot = ButtonContent->AddChildToVerticalBox(IconSizeBox))
 		{
 			IconSlot->SetHorizontalAlignment(HAlign_Center);
 			IconSlot->SetPadding(FMargin(0.0f, 8.0f, 0.0f, 12.0f));
 		}
 		ButtonContent->AddChildToVerticalBox(OutText);
+		if (UVerticalBoxSlot* StackSlot = ButtonContent->AddChildToVerticalBox(OutStackText))
+		{
+			StackSlot->SetPadding(FMargin(0.0f, 12.0f, 0.0f, 8.0f));
+		}
 		OutButton->AddChild(ButtonContent);
 		if (UHorizontalBoxSlot* ButtonSlot = ChoiceRow->AddChildToHorizontalBox(OutButton))
 		{
@@ -143,9 +156,21 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 		}
 	};
 
-	AddChoice(TEXT("UpgradeChoiceButton0"), TEXT("UpgradeChoiceIcon0"), TEXT("UpgradeChoiceText0"), UpgradeChoiceButton0, UpgradeChoiceIcon0, UpgradeChoiceText0);
-	AddChoice(TEXT("UpgradeChoiceButton1"), TEXT("UpgradeChoiceIcon1"), TEXT("UpgradeChoiceText1"), UpgradeChoiceButton1, UpgradeChoiceIcon1, UpgradeChoiceText1);
-	AddChoice(TEXT("UpgradeChoiceButton2"), TEXT("UpgradeChoiceIcon2"), TEXT("UpgradeChoiceText2"), UpgradeChoiceButton2, UpgradeChoiceIcon2, UpgradeChoiceText2);
+	AddChoice(
+		TEXT("UpgradeChoiceButton0"), TEXT("UpgradeChoiceIcon0"), TEXT("UpgradeChoiceText0"),
+		TEXT("UpgradeChoiceRarityText0"), TEXT("UpgradeChoiceStackText0"),
+		UpgradeChoiceButton0, UpgradeChoiceIcon0, UpgradeChoiceText0,
+		UpgradeChoiceRarityText0, UpgradeChoiceStackText0);
+	AddChoice(
+		TEXT("UpgradeChoiceButton1"), TEXT("UpgradeChoiceIcon1"), TEXT("UpgradeChoiceText1"),
+		TEXT("UpgradeChoiceRarityText1"), TEXT("UpgradeChoiceStackText1"),
+		UpgradeChoiceButton1, UpgradeChoiceIcon1, UpgradeChoiceText1,
+		UpgradeChoiceRarityText1, UpgradeChoiceStackText1);
+	AddChoice(
+		TEXT("UpgradeChoiceButton2"), TEXT("UpgradeChoiceIcon2"), TEXT("UpgradeChoiceText2"),
+		TEXT("UpgradeChoiceRarityText2"), TEXT("UpgradeChoiceStackText2"),
+		UpgradeChoiceButton2, UpgradeChoiceIcon2, UpgradeChoiceText2,
+		UpgradeChoiceRarityText2, UpgradeChoiceStackText2);
 }
 
 // 把三个按钮各自绑定到固定候选索引，重复 Construct 时避免重复委托。
@@ -165,46 +190,123 @@ void UArenaUpgradeSelectionWidget::BindChoiceButtons()
 	}
 }
 
-// 根据候选数量刷新按钮、DataAsset 图标、名称和描述文本。
+// 根据候选数量刷新图标、稀有度、说明和选择后等级，旧蓝图缺少新控件时合并进主文本。
 void UArenaUpgradeSelectionWidget::RefreshChoiceVisuals()
 {
 	UButton* Buttons[] = { UpgradeChoiceButton0, UpgradeChoiceButton1, UpgradeChoiceButton2 };
 	UImage* Icons[] = { UpgradeChoiceIcon0, UpgradeChoiceIcon1, UpgradeChoiceIcon2 };
 	UTextBlock* TextBlocks[] = { UpgradeChoiceText0, UpgradeChoiceText1, UpgradeChoiceText2 };
+	UTextBlock* RarityTextBlocks[] = { UpgradeChoiceRarityText0, UpgradeChoiceRarityText1, UpgradeChoiceRarityText2 };
+	UTextBlock* StackTextBlocks[] = { UpgradeChoiceStackText0, UpgradeChoiceStackText1, UpgradeChoiceStackText2 };
 
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Buttons); ++Index)
 	{
-		const bool bHasChoice = CurrentChoices.IsValidIndex(Index) && CurrentChoices[Index];
+		const bool bHasChoice = CurrentChoices.IsValidIndex(Index) && CurrentChoices[Index].Upgrade;
+		const FArenaUpgradeChoiceViewData* ChoiceView = bHasChoice ? &CurrentChoices[Index] : nullptr;
+		const UArenaUpgradeDataAsset* Choice = ChoiceView ? ChoiceView->Upgrade.Get() : nullptr;
 		if (Buttons[Index])
 		{
 			Buttons[Index]->SetVisibility(bHasChoice ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
 		}
 		if (Icons[Index])
 		{
-			const bool bHasIcon = bHasChoice && !CurrentChoices[Index]->Icon.IsNull();
+			const bool bHasIcon = Choice && !Choice->Icon.IsNull();
 			Icons[Index]->SetVisibility(bHasIcon ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 			if (bHasIcon)
 			{
-				Icons[Index]->SetBrushFromSoftTexture(CurrentChoices[Index]->Icon, false);
+				Icons[Index]->SetBrushFromSoftTexture(Choice->Icon, false);
 			}
 		}
-		if (bHasChoice && TextBlocks[Index])
+
+		const FText RarityText = Choice ? GetRarityDisplayText(Choice->Rarity) : FText::GetEmpty();
+		const FText StackText = ChoiceView ? GetStackDisplayText(*ChoiceView) : FText::GetEmpty();
+		if (RarityTextBlocks[Index])
 		{
-			const UArenaUpgradeDataAsset* Choice = CurrentChoices[Index];
-			TextBlocks[Index]->SetText(FText::FromString(FString::Printf(
-				TEXT("%s\n\n%s"),
-				*Choice->UpgradeName.ToString(),
-				*Choice->Description.ToString())));
+			RarityTextBlocks[Index]->SetVisibility(bHasChoice ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			RarityTextBlocks[Index]->SetText(RarityText);
+			if (Choice)
+			{
+				RarityTextBlocks[Index]->SetColorAndOpacity(FSlateColor(GetRarityDisplayColor(Choice->Rarity)));
+			}
+		}
+		if (StackTextBlocks[Index])
+		{
+			StackTextBlocks[Index]->SetVisibility(bHasChoice ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+			StackTextBlocks[Index]->SetText(StackText);
+		}
+
+		if (Choice && TextBlocks[Index])
+		{
+			FString DisplayText;
+			if (!RarityTextBlocks[Index])
+			{
+				DisplayText += FString::Printf(TEXT("[%s]\n"), *RarityText.ToString());
+			}
+			DisplayText += FString::Printf(TEXT("%s\n\n%s"), *Choice->UpgradeName.ToString(), *Choice->Description.ToString());
+			if (!StackTextBlocks[Index])
+			{
+				DisplayText += FString::Printf(TEXT("\n\n%s"), *StackText.ToString());
+			}
+			TextBlocks[Index]->SetText(FText::FromString(DisplayText));
+		}
+		else if (TextBlocks[Index])
+		{
+			TextBlocks[Index]->SetText(FText::GetEmpty());
 		}
 	}
+}
+
+// 将升级稀有度转换为可本地化的英文短标签，避免 UI 依赖枚举内部名称。
+FText UArenaUpgradeSelectionWidget::GetRarityDisplayText(EArenaUpgradeRarity Rarity) const
+{
+	switch (Rarity)
+	{
+	case EArenaUpgradeRarity::Rare:
+		return NSLOCTEXT("ArenaUpgrade", "RarityRare", "Rare");
+	case EArenaUpgradeRarity::Epic:
+		return NSLOCTEXT("ArenaUpgrade", "RarityEpic", "Epic");
+	case EArenaUpgradeRarity::Legendary:
+		return NSLOCTEXT("ArenaUpgrade", "RarityLegendary", "Legendary");
+	case EArenaUpgradeRarity::Common:
+	default:
+		return NSLOCTEXT("ArenaUpgrade", "RarityCommon", "Common");
+	}
+}
+
+// 为 Common、Rare、Epic 和 Legendary 提供灰白、蓝、紫、金的默认视觉区分。
+FLinearColor UArenaUpgradeSelectionWidget::GetRarityDisplayColor(EArenaUpgradeRarity Rarity) const
+{
+	switch (Rarity)
+	{
+	case EArenaUpgradeRarity::Rare:
+		return FLinearColor(0.302f, 0.639f, 1.0f, 1.0f);
+	case EArenaUpgradeRarity::Epic:
+		return FLinearColor(0.710f, 0.424f, 1.0f, 1.0f);
+	case EArenaUpgradeRarity::Legendary:
+		return FLinearColor(1.0f, 0.710f, 0.180f, 1.0f);
+	case EArenaUpgradeRarity::Common:
+	default:
+		return FLinearColor(0.845f, 0.845f, 0.845f, 1.0f);
+	}
+}
+
+// 使用 Controller 计算的选择后层数显示 Lv. N/Max，并再次夹取数值防止异常配置溢出。
+FText UArenaUpgradeSelectionWidget::GetStackDisplayText(const FArenaUpgradeChoiceViewData& Choice) const
+{
+	const int32 SafeMaxStacks = FMath::Max(Choice.MaxStacks, 1);
+	const int32 SafeResultingStacks = FMath::Clamp(Choice.ResultingStacks, 1, SafeMaxStacks);
+	return FText::Format(
+		NSLOCTEXT("ArenaUpgrade", "ResultingStackLevel", "Lv. {0}/{1}"),
+		FText::AsNumber(SafeResultingStacks),
+		FText::AsNumber(SafeMaxStacks));
 }
 
 // 将有效索引转换为 UpgradeID 广播，Controller 负责发送服务器 RPC。
 void UArenaUpgradeSelectionWidget::BroadcastChoice(int32 ChoiceIndex)
 {
-	if (CurrentChoices.IsValidIndex(ChoiceIndex) && CurrentChoices[ChoiceIndex])
+	if (CurrentChoices.IsValidIndex(ChoiceIndex) && CurrentChoices[ChoiceIndex].Upgrade)
 	{
-		OnUpgradeChosen.Broadcast(CurrentChoices[ChoiceIndex]->UpgradeID);
+		OnUpgradeChosen.Broadcast(CurrentChoices[ChoiceIndex].Upgrade->UpgradeID);
 	}
 }
 

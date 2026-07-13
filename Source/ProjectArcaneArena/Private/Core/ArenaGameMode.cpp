@@ -56,7 +56,7 @@ void AArenaGameMode::BeginPlay()
 	}
 }
 
-// 使用服务端生成的会话 GUID 派生非零种子；客户端只接收复制值，不参与候选随机决策。
+// 优先使用蓝图配置的固定测试种子，否则由会话 GUID 派生非零种子；客户端只接收复制值。
 void AArenaGameMode::InitializeUpgradeRandomStream()
 {
 	if (!HasAuthority())
@@ -64,7 +64,9 @@ void AArenaGameMode::InitializeUpgradeRandomStream()
 		return;
 	}
 
-	UpgradeRandomSeed = static_cast<int32>(GetTypeHash(FGuid::NewGuid()) & 0x7fffffff);
+	UpgradeRandomSeed = UpgradeRandomSeedOverride > 0
+		? UpgradeRandomSeedOverride
+		: static_cast<int32>(GetTypeHash(FGuid::NewGuid()) & 0x7fffffff);
 	if (UpgradeRandomSeed == 0)
 	{
 		UpgradeRandomSeed = 1;
@@ -76,7 +78,9 @@ void AArenaGameMode::InitializeUpgradeRandomStream()
 		ArenaGameState->SetUpgradeRandomSeed(UpgradeRandomSeed);
 	}
 
-	UE_LOG(LogArenaUpgrades, Log, TEXT("Initialized server upgrade random stream with session seed %d."), UpgradeRandomSeed);
+	UE_LOG(LogArenaUpgrades, Log, TEXT("Initialized server upgrade random stream with seed %d%s."),
+		UpgradeRandomSeed,
+		UpgradeRandomSeedOverride > 0 ? TEXT(" (override)") : TEXT(""));
 }
 
 // 玩家在 Upgrade 阶段加入时为其补发独立候选，避免中途连接无法完成全员选择。
@@ -124,7 +128,7 @@ void AArenaGameMode::HandleUpgradePhaseStarted()
 	TryAdvanceAfterUpgradeSelections();
 }
 
-// 从配置池中过滤并随机抽取该玩家当前可选的升级，空池时保留 Upgrade 供排错。
+// 按配置顺序过滤候选，先执行一次同构筑保底，再按稀有度无放回抽取并确定性洗牌。
 void AArenaGameMode::PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlayerState)
 {
 	if (!HasAuthority() || !ArenaPlayerState)
@@ -146,17 +150,126 @@ void AArenaGameMode::PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlay
 
 	TArray<UArenaUpgradeDataAsset*> Choices;
 	const int32 DesiredChoiceCount = FMath::Clamp(UpgradeChoiceCount, 1, 3);
+
+	TArray<UArenaUpgradeDataAsset*> OwnedBuildUpgrades;
+	for (UArenaUpgradeDataAsset* Upgrade : EligibleUpgrades)
+	{
+		if (IsUpgradeForOwnedBuild(ArenaPlayerState, Upgrade))
+		{
+			OwnedBuildUpgrades.Add(Upgrade);
+		}
+	}
+
+	if (!OwnedBuildUpgrades.IsEmpty())
+	{
+		const int32 BuildChoiceIndex = DrawWeightedUpgradeIndex(OwnedBuildUpgrades);
+		if (OwnedBuildUpgrades.IsValidIndex(BuildChoiceIndex))
+		{
+			UArenaUpgradeDataAsset* BuildChoice = OwnedBuildUpgrades[BuildChoiceIndex];
+			Choices.Add(BuildChoice);
+			EligibleUpgrades.RemoveSingle(BuildChoice);
+		}
+	}
+
 	while (!EligibleUpgrades.IsEmpty() && Choices.Num() < DesiredChoiceCount)
 	{
-		const int32 ChosenIndex = UpgradeRandomStream.RandRange(0, EligibleUpgrades.Num() - 1);
+		const int32 ChosenIndex = DrawWeightedUpgradeIndex(EligibleUpgrades);
+		if (!EligibleUpgrades.IsValidIndex(ChosenIndex))
+		{
+			break;
+		}
 		Choices.Add(EligibleUpgrades[ChosenIndex]);
-		EligibleUpgrades.RemoveAtSwap(ChosenIndex);
+		EligibleUpgrades.RemoveAt(ChosenIndex);
 	}
+	ShuffleUpgradeChoices(Choices);
 
 	ArenaPlayerState->BeginUpgradeSelection(Choices);
 	if (Choices.IsEmpty())
 	{
 		UE_LOG(LogArenaUpgrades, Error, TEXT("Player %s has no eligible upgrade choices; Upgrade phase will wait for valid configuration."), *GetNameSafe(ArenaPlayerState));
+	}
+}
+
+// 使用升级资产的稀有度权重抽取一个候选索引，数组顺序保持为 UpgradePool 配置顺序。
+int32 AArenaGameMode::DrawWeightedUpgradeIndex(const TArray<UArenaUpgradeDataAsset*>& Candidates)
+{
+	if (Candidates.IsEmpty())
+	{
+		return INDEX_NONE;
+	}
+
+	double TotalWeight = 0.0;
+	for (const UArenaUpgradeDataAsset* Candidate : Candidates)
+	{
+		TotalWeight += static_cast<double>(GetUpgradeRarityWeight(Candidate));
+	}
+
+	if (TotalWeight <= 0.0)
+	{
+		UE_LOG(LogArenaUpgrades, Warning, TEXT("Upgrade rarity weights produced an empty weighted pool; using deterministic uniform fallback."));
+		return UpgradeRandomStream.RandRange(0, Candidates.Num() - 1);
+	}
+
+	const double Draw = static_cast<double>(UpgradeRandomStream.FRand()) * TotalWeight;
+	double CumulativeWeight = 0.0;
+	for (int32 Index = 0; Index < Candidates.Num(); ++Index)
+	{
+		CumulativeWeight += static_cast<double>(GetUpgradeRarityWeight(Candidates[Index]));
+		if (Draw < CumulativeWeight)
+		{
+			return Index;
+		}
+	}
+
+	return Candidates.Num() - 1;
+}
+
+// 将资产稀有度映射到 GameMode 可调权重，运行时至少返回一以保持所有稀有度可被抽中。
+int32 AArenaGameMode::GetUpgradeRarityWeight(const UArenaUpgradeDataAsset* Upgrade) const
+{
+	if (!Upgrade)
+	{
+		return 1;
+	}
+
+	switch (Upgrade->Rarity)
+	{
+	case EArenaUpgradeRarity::Rare:
+		return FMath::Max(UpgradeRarityWeights.Rare, 1);
+	case EArenaUpgradeRarity::Epic:
+		return FMath::Max(UpgradeRarityWeights.Epic, 1);
+	case EArenaUpgradeRarity::Legendary:
+		return FMath::Max(UpgradeRarityWeights.Legendary, 1);
+	case EArenaUpgradeRarity::Common:
+	default:
+		return FMath::Max(UpgradeRarityWeights.Common, 1);
+	}
+}
+
+// 使用 ASC 当前持有的构筑标签检查候选，火焰和闪电同时存在时共享同一个匹配池。
+bool AArenaGameMode::IsUpgradeForOwnedBuild(
+	const AArenaPlayerState* ArenaPlayerState,
+	const UArenaUpgradeDataAsset* Upgrade) const
+{
+	const UArenaAbilitySystemComponent* ASC = ArenaPlayerState ? ArenaPlayerState->GetArenaAbilitySystemComponent() : nullptr;
+	if (!ASC || !Upgrade)
+	{
+		return false;
+	}
+
+	const bool bOwnsFireBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Fire);
+	const bool bOwnsLightningBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Lightning);
+	return (bOwnsFireBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Fire))
+		|| (bOwnsLightningBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Lightning));
+}
+
+// 使用升级随机流执行 Fisher-Yates 洗牌，使相同种子和相同输入始终得到相同槽位顺序。
+void AArenaGameMode::ShuffleUpgradeChoices(TArray<UArenaUpgradeDataAsset*>& Choices)
+{
+	for (int32 Index = Choices.Num() - 1; Index > 0; --Index)
+	{
+		const int32 SwapIndex = UpgradeRandomStream.RandRange(0, Index);
+		Choices.Swap(Index, SwapIndex);
 	}
 }
 
