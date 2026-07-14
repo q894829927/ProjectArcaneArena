@@ -51,7 +51,7 @@ protected:
 	float SphereRadius = 18.0f;
 
 private:
-	// Pawn overlap 只在服务端触发伤害结算。
+	// Pawn overlap 只在服务端结算；无敌过滤直接伤害并阻止新 Burning，但命中仍结束投射物。
 	UFUNCTION()
 	void OnProjectileOverlap(
 		UPrimitiveComponent* OverlappedComponent,
@@ -76,7 +76,7 @@ private:
 	// 使用 Source ASC 创建 GE_Damage Spec，实际数值计算交给 ExecCalc_Damage。
 	void ApplyDamageToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult);
 
-	// 直接伤害后为存活目标应用服务器权威 Burning ActiveGE。
+	// 直接伤害后为存活且非无敌目标应用服务器权威 Burning ActiveGE。
 	void ApplyBurningToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult);
 
 	// 命中后只由服务端销毁，销毁结果通过 Actor replication 同步给客户端。

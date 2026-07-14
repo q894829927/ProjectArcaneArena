@@ -791,6 +791,19 @@ Review responses are an exception to the normal task response format: findings m
 
 If no issues are found, say that clearly and mention any remaining test gaps or residual risk.
 
+## Review guidelines
+
+- 所有 GitHub Pull Request 代码审查结果必须使用简体中文。
+- 问题标题、原因说明、风险分析和修改建议均使用简体中文。
+- 类名、函数名、变量名、文件路径、GameplayTag 和代码片段保留英文原文。
+- 不要为了翻译而修改代码标识符。
+- 每个问题应明确说明：
+  1. 问题所在文件和代码位置；
+  2. 当前实现存在的问题；
+  3. 可能造成的实际影响；
+  4. 建议的修改方式。
+- 重点检查崩溃、空指针、对象生命周期、GAS 使用错误、网络复制错误和服务端权限问题。
+
 ---
 
 ## Common Mistakes to Avoid
