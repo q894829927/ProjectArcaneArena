@@ -1,7 +1,9 @@
 #include "Core/ArenaPlayerState.h"
 
+#include "Core/ArenaUpgradeDataAsset.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
+#include "Net/UnrealNetwork.h"
 
 // 构造玩家状态，创建长期存在的 ASC 和 AttributeSet。
 AArenaPlayerState::AArenaPlayerState()
@@ -17,6 +19,16 @@ AArenaPlayerState::AArenaPlayerState()
 	AttributeSet = CreateDefaultSubobject<UArenaAttributeSet>(TEXT("AttributeSet"));
 	// 显式注册 AttributeSet 子对象，确保 ASC 能发现并复制属性。
 	AbilitySystemComponent->AddAttributeSetSubobject(AttributeSet.Get());
+}
+
+// 复制 OwnerOnly 候选/持有升级和公共选择完成状态，UI 只观察这些数据。
+void AArenaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME_CONDITION(AArenaPlayerState, UpgradeCandidates, COND_OwnerOnly);
+	DOREPLIFETIME_CONDITION(AArenaPlayerState, OwnedUpgrades, COND_OwnerOnly);
+	DOREPLIFETIME(AArenaPlayerState, bHasSelectedUpgrade);
 }
 
 // 返回标准 GAS 接口需要的 AbilitySystemComponent。
@@ -47,4 +59,147 @@ void AArenaPlayerState::SetGrantedStartupAbilities(bool bNewGrantedStartupAbilit
 void AArenaPlayerState::SetAppliedDefaultAttributes(bool bNewAppliedDefaultAttributes)
 {
 	bAppliedDefaultAttributes = bNewAppliedDefaultAttributes;
+}
+
+// 返回拥有者当前可选的 Upgrade DataAsset 快照，避免外部直接修改复制数组。
+TArray<UArenaUpgradeDataAsset*> AArenaPlayerState::GetUpgradeCandidates() const
+{
+	TArray<UArenaUpgradeDataAsset*> Result;
+	Result.Reserve(UpgradeCandidates.Num());
+	for (UArenaUpgradeDataAsset* Candidate : UpgradeCandidates)
+	{
+		if (Candidate)
+		{
+			Result.Add(Candidate);
+		}
+	}
+	return Result;
+}
+
+// 查询指定升级的永久堆叠层数，供服务器资格校验和 UI 展示。
+int32 AArenaPlayerState::GetUpgradeStackCount(FName UpgradeID) const
+{
+	for (const FArenaOwnedUpgrade& OwnedUpgrade : OwnedUpgrades)
+	{
+		if (OwnedUpgrade.UpgradeID == UpgradeID)
+		{
+			return OwnedUpgrade.StackCount;
+		}
+	}
+	return 0;
+}
+
+// 汇总匹配路由标签的已拥有升级数值，避免 Ability 依赖具体 UpgradeID。
+float AArenaPlayerState::GetOwnedUpgradeNumericTotal(
+	FGameplayTag TargetAbilityTag,
+	FGameplayTag DamageTypeTag,
+	FGameplayTag UpgradeTag) const
+{
+	if (!TargetAbilityTag.IsValid() || !DamageTypeTag.IsValid() || !UpgradeTag.IsValid())
+	{
+		return 0.0f;
+	}
+
+	float TotalValue = 0.0f;
+	for (const FArenaOwnedUpgrade& OwnedUpgrade : OwnedUpgrades)
+	{
+		const UArenaUpgradeDataAsset* UpgradeData = OwnedUpgrade.UpgradeData;
+		if (!UpgradeData || OwnedUpgrade.StackCount <= 0
+			|| UpgradeData->TargetAbilityTag != TargetAbilityTag
+			|| UpgradeData->DamageTypeTag != DamageTypeTag
+			|| !UpgradeData->UpgradeTags.HasTagExact(UpgradeTag))
+		{
+			continue;
+		}
+
+		TotalValue += UpgradeData->NumericValue * static_cast<float>(OwnedUpgrade.StackCount);
+	}
+
+	return TotalValue;
+}
+
+// 开始新一轮服务器权威选择，并通过 OwnerOnly 候选复制驱动本地界面。
+void AArenaPlayerState::BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsset*>& InCandidates)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UpgradeCandidates.Reset();
+	for (UArenaUpgradeDataAsset* Candidate : InCandidates)
+	{
+		if (Candidate)
+		{
+			UpgradeCandidates.Add(Candidate);
+		}
+	}
+	bHasSelectedUpgrade = false;
+	OnUpgradeStateChanged.Broadcast();
+	ForceNetUpdate();
+}
+
+// 记录已验证升级的数据资产和永久堆叠，并关闭本轮候选。
+void AArenaPlayerState::CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade)
+{
+	if (!HasAuthority() || !Upgrade || Upgrade->UpgradeID.IsNone())
+	{
+		return;
+	}
+	const FName UpgradeID = Upgrade->UpgradeID;
+
+	FArenaOwnedUpgrade* ExistingUpgrade = OwnedUpgrades.FindByPredicate(
+		[UpgradeID](const FArenaOwnedUpgrade& Entry)
+		{
+			return Entry.UpgradeID == UpgradeID;
+		});
+	if (ExistingUpgrade)
+	{
+		ExistingUpgrade->UpgradeData = Upgrade;
+		++ExistingUpgrade->StackCount;
+	}
+	else
+	{
+		FArenaOwnedUpgrade& NewUpgrade = OwnedUpgrades.AddDefaulted_GetRef();
+		NewUpgrade.UpgradeID = UpgradeID;
+		NewUpgrade.UpgradeData = Upgrade;
+		NewUpgrade.StackCount = 1;
+	}
+
+	UpgradeCandidates.Reset();
+	bHasSelectedUpgrade = true;
+	OnUpgradeStateChanged.Broadcast();
+	ForceNetUpdate();
+}
+
+// 无奖励完成本轮选择，作为未来主动跳过或特殊波次的服务器扩展入口。
+void AArenaPlayerState::CompleteUpgradeSelectionWithoutReward()
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	UpgradeCandidates.Reset();
+	bHasSelectedUpgrade = true;
+	OnUpgradeStateChanged.Broadcast();
+	ForceNetUpdate();
+}
+
+// OwnerOnly 候选复制后通知本地 Controller 刷新升级界面。
+void AArenaPlayerState::OnRep_UpgradeCandidates()
+{
+	OnUpgradeStateChanged.Broadcast();
+}
+
+// 已拥有升级复制后通知本地展示刷新层数或构筑摘要。
+void AArenaPlayerState::OnRep_OwnedUpgrades()
+{
+	OnUpgradeStateChanged.Broadcast();
+}
+
+// 选择完成状态复制后关闭本地界面或继续等待其他玩家。
+void AArenaPlayerState::OnRep_HasSelectedUpgrade()
+{
+	OnUpgradeStateChanged.Broadcast();
 }

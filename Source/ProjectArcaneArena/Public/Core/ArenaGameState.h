@@ -35,12 +35,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	int32 GetRemainingEnemyCount() const { return RemainingEnemyCount; }
 
+	// 返回服务器为当前对局生成并复制的升级随机种子。
+	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
+	int32 GetUpgradeRandomSeed() const { return UpgradeRandomSeed; }
+
 	// 仅由服务器规则层更新阶段，并通过复制委托驱动客户端表现。
 	void SetGamePhase(EArenaGamePhase NewPhase);
 	// 仅由服务器波次管理器写入当前波次，索引从 1 开始，0 表示尚未开始。
 	void SetCurrentWaveIndex(int32 NewWaveIndex);
 	// 仅由服务器写入存活敌人数，客户端 HUD 只观察该复制值。
 	void SetRemainingEnemyCount(int32 NewRemainingEnemyCount);
+	// 仅由服务器写入本局升级随机种子，客户端不使用该值生成候选。
+	void SetUpgradeRandomSeed(int32 NewUpgradeRandomSeed);
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaGamePhaseChangedSignature OnGamePhaseChanged;
@@ -50,6 +56,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaIntegerStateChangedSignature OnRemainingEnemyCountChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
+	FArenaIntegerStateChangedSignature OnUpgradeRandomSeedChanged;
 
 protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GamePhase, Category = "Arena|Game State")
@@ -61,6 +70,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_RemainingEnemyCount, Category = "Arena|Game State")
 	int32 RemainingEnemyCount = 0;
 
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_UpgradeRandomSeed, Category = "Arena|Game State")
+	int32 UpgradeRandomSeed = 0;
+
 	UFUNCTION()
 	void OnRep_GamePhase(EArenaGamePhase OldPhase);
 
@@ -69,4 +81,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_RemainingEnemyCount(int32 OldRemainingEnemyCount);
+
+	UFUNCTION()
+	void OnRep_UpgradeRandomSeed(int32 OldUpgradeRandomSeed);
 };

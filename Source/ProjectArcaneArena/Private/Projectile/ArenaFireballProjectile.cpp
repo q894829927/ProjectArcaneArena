@@ -39,14 +39,17 @@ AArenaFireballProjectile::AArenaFireballProjectile()
 	InitialLifeSpan = ProjectileLifeSpan;
 }
 
-// 由火球技能在服务端生成后写入伤害来源、伤害 GE 和 SetByCaller 数值。
+// 由火球技能在服务端生成后写入直接伤害与 Burning 的构筑快照和 GE 配置。
 void AArenaFireballProjectile::InitializeProjectile(
 	UAbilitySystemComponent* InSourceASC,
 	AActor* InSourceActor,
 	TSubclassOf<UGameplayEffect> InDamageEffectClass,
 	FGameplayTag InDamageTypeTag,
 	float InBaseDamage,
-	float InSkillMultiplier)
+	float InSkillMultiplier,
+	TSubclassOf<UGameplayEffect> InBurningEffectClass,
+	bool bInBurningUnlocked,
+	float InBurningDamagePerStack)
 {
 	SourceAbilitySystemComponent = InSourceASC;
 	SourceActor = InSourceActor;
@@ -54,6 +57,9 @@ void AArenaFireballProjectile::InitializeProjectile(
 	DamageTypeTag = InDamageTypeTag;
 	BaseDamage = FMath::Max(InBaseDamage, 0.0f);
 	SkillMultiplier = FMath::Max(InSkillMultiplier, 0.0f);
+	BurningEffectClass = InBurningEffectClass;
+	bBurningUnlocked = bInBurningUnlocked;
+	BurningDamagePerStack = FMath::Max(InBurningDamagePerStack, 0.0f);
 }
 
 // 开始播放时同步碰撞半径、速度和生命周期。
@@ -91,6 +97,10 @@ void AArenaFireballProjectile::OnProjectileOverlap(
 	}
 
 	ApplyDamageToTarget(TargetASC, SweepResult);
+	if (!TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		ApplyBurningToTarget(TargetASC, SweepResult);
+	}
 	FinishProjectile();
 }
 
@@ -162,6 +172,32 @@ void AArenaFireballProjectile::ApplyDamageToTarget(UAbilitySystemComponent* Targ
 	}
 
 	SourceASC->ApplyGameplayEffectSpecToTarget(*DamageSpec, TargetASC);
+}
+
+// 构造并应用周期 Burning Spec；数值与解锁状态都来自发射时的服务器构筑快照。
+void AArenaFireballProjectile::ApplyBurningToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult)
+{
+	UAbilitySystemComponent* SourceASC = SourceAbilitySystemComponent.Get();
+	if (!bBurningUnlocked || BurningDamagePerStack <= 0.0f || !BurningEffectClass || !SourceASC || !TargetASC)
+	{
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
+	EffectContext.AddSourceObject(this);
+	EffectContext.AddInstigator(SourceActor.Get(), this);
+	EffectContext.AddHitResult(HitResult);
+
+	FGameplayEffectSpecHandle BurningSpecHandle = SourceASC->MakeOutgoingSpec(BurningEffectClass, 1.0f, EffectContext);
+	if (!BurningSpecHandle.IsValid())
+	{
+		return;
+	}
+
+	FGameplayEffectSpec* BurningSpec = BurningSpecHandle.Data.Get();
+	BurningSpec->SetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Damage_Burning, BurningDamagePerStack);
+	BurningSpec->AddDynamicAssetTag(ArenaGameplayTags::Damage_Fire);
+	SourceASC->ApplyGameplayEffectSpecToTarget(*BurningSpec, TargetASC);
 }
 
 // 结束投射物生命周期，防止重复命中后关闭碰撞并销毁。

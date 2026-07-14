@@ -2,6 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Components/SceneComponent.h"
+#include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffectExtension.h"
@@ -61,7 +62,7 @@ void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attrib
 	ClampAttribute(Attribute, NewValue);
 }
 
-// GE 执行后消费 Damage/Healing 元属性，并同步护盾、生命和死亡标签。
+// GE 执行后消费 Damage/Healing 元属性，并在权威端按实际资源损失发送通用伤害事件。
 void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -71,20 +72,47 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		// Damage 是瞬时 meta attribute：ExecCalc 写入后立刻消费并清零。
 		const float LocalDamage = FMath::Max(GetDamage(), 0.0f);
 		SetDamage(0.0f);
+		UAbilitySystemComponent* TargetASC = GetOwningAbilitySystemComponent();
+		FGameplayTagContainer TargetTagsBeforeDamage;
+		float AppliedDamage = 0.0f;
 
 		if (LocalDamage > 0.0f)
 		{
+			if (TargetASC)
+			{
+				TargetASC->GetOwnedGameplayTags(TargetTagsBeforeDamage);
+			}
+
+			const float ShieldBeforeDamage = GetShield();
+			const float HealthBeforeDamage = GetHealth();
 			// 伤害先消耗护盾，剩余部分才扣 Health。
-			const float ShieldDamage = FMath::Min(GetShield(), LocalDamage);
+			const float ShieldDamage = FMath::Min(ShieldBeforeDamage, LocalDamage);
 			const float RemainingDamage = LocalDamage - ShieldDamage;
 
-			SetShield(GetShield() - ShieldDamage);
-			SetHealth(GetHealth() - RemainingDamage);
-			ExecuteDamageGameplayCue(Data, LocalDamage);
+			SetShield(ShieldBeforeDamage - ShieldDamage);
+			SetHealth(HealthBeforeDamage - RemainingDamage);
+
+			// 过量伤害不计入事件数值，只有真正消耗的 Shield + Health 才能触发被动。
+			AppliedDamage = FMath::Max(ShieldBeforeDamage - GetShield(), 0.0f)
+				+ FMath::Max(HealthBeforeDamage - GetHealth(), 0.0f);
 		}
 
 		RefreshShieldGameplayCue();
 		UpdateDeadTag();
+		if (AppliedDamage > KINDA_SMALL_NUMBER)
+		{
+			ExecuteDamageGameplayCue(Data, AppliedDamage);
+			if (UArenaAbilitySystemComponent* SourceASC = Cast<UArenaAbilitySystemComponent>(
+				Data.EffectSpec.GetEffectContext().GetInstigatorAbilitySystemComponent()))
+			{
+				// 先更新死亡状态再同步触发被动，同时 TargetTags 快照仍保留命中前 Burning/Shocked。
+				SourceASC->RouteAuthoritativeDamageEvent(
+					Data.EffectSpec,
+					TargetASC,
+					TargetTagsBeforeDamage,
+					AppliedDamage);
+			}
+		}
 	}
 	else if (Data.EvaluatedData.Attribute == GetHealingAttribute())
 	{

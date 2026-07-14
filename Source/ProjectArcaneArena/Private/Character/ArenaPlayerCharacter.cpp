@@ -203,7 +203,7 @@ void AArenaPlayerCharacter::RefreshMovementState()
 	}
 }
 
-// State.Dead 是玩家死亡的唯一入口，服务器额外通知 GameMode 评估全员失败。
+// State.Dead 增加时执行死亡流程，移除时恢复移动并重置门闩以支持再次死亡。
 void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag != ArenaGameplayTags::State_Dead)
@@ -212,7 +212,18 @@ void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag,
 	}
 
 	RefreshMovementState();
-	if (NewCount <= 0 || bDeathHandled)
+	if (NewCount <= 0)
+	{
+		const bool bWasDead = bDeathHandled;
+		bDeathHandled = false;
+		if (bWasDead)
+		{
+			K2_OnRevived();
+		}
+		return;
+	}
+
+	if (bDeathHandled)
 	{
 		return;
 	}

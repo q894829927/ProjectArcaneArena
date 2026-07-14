@@ -14,10 +14,12 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Dash, "Ability.Dash", "Dash ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Shield, "Ability.Shield", "Shield ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_LightningStorm, "Ability.LightningStorm", "Lightning storm area ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_Overload, "Ability.Passive.Overload", "Passive elemental Overload ability.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Physical, "Damage.Physical", "Physical damage type.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Fire, "Damage.Fire", "Fire damage type.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Lightning, "Damage.Lightning", "Lightning damage type.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Secondary, "Damage.Secondary", "Secondary damage that passive triggers may choose to ignore.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_BasicAttack, "Cooldown.BasicAttack", "Basic attack cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Fireball, "Cooldown.Fireball", "Fireball cooldown.");
@@ -43,6 +45,35 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Victory, "Phase.Victory", "All configured waves are complete.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Defeat, "Phase.Defeat", "All participating players are dead.");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Fire, "Build.Fire", "Player owns progress in the fire build path.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Lightning, "Build.Lightning", "Player owns progress in the lightning build path.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Crit, "Build.Crit", "Player owns progress in the critical-hit build path.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Shield, "Build.Shield", "Player owns progress in the shield build path.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Dash, "Build.Dash", "Player owns progress in the dash build path.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Fireball_Damage, "Upgrade.Fireball.Damage", "Fireball-specific damage upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Fireball_Burning, "Upgrade.Fireball.Burning", "Fireball applies the Burning status.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_LightningStorm_Damage, "Upgrade.LightningStorm.Damage", "LightningStorm-specific damage upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_LightningStorm_Shocked, "Upgrade.LightningStorm.Shocked", "LightningStorm applies the Shocked status.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Combo_Overload, "Upgrade.Combo.Overload", "Fire and Lightning legendary Overload upgrade.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Burning, "Status.Burning", "Target is taking periodic fire damage.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Shocked, "Status.Shocked", "Target takes increased Lightning damage.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Overload_Lockout, "Status.Overload.Lockout", "Per-source Overload trigger lockout on a target.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Status_Burning_Active, "GameplayCue.Status.Burning.Active", "Looping Burning status presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Status_Shocked_Active, "GameplayCue.Status.Shocked.Active", "Looping Shocked status presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Combo_Overload, "GameplayCue.Combo.Overload", "Overload explosion presentation at a world location.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDamageDealt, "Trigger.OnDamageDealt", "Authoritative damage dealt event.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDamageDealt_Physical, "Trigger.OnDamageDealt.Physical", "Authoritative physical damage dealt event.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDamageDealt_Fire, "Trigger.OnDamageDealt.Fire", "Authoritative fire damage dealt event.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDamageDealt_Lightning, "Trigger.OnDamageDealt.Lightning", "Authoritative lightning damage dealt event.");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Base, "SetByCaller.Damage.Base", "Runtime base damage value.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Burning, "SetByCaller.Damage.Burning", "Runtime Burning damage per stack and tick.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Status_Shocked_LightningDamageBonus, "SetByCaller.Status.Shocked.LightningDamageBonus", "Runtime Lightning vulnerability granted by Shocked.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Health, "SetByCaller.Recovery.Health", "Runtime Health recovery applied after an upgrade choice.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Energy, "SetByCaller.Recovery.Energy", "Runtime Energy recovery applied after an upgrade choice.");
 }

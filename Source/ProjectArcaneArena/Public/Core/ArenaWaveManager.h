@@ -9,6 +9,8 @@ class AArenaEnemyCharacter;
 class ATargetPoint;
 class UArenaWaveDataAsset;
 
+DECLARE_MULTICAST_DELEGATE(FArenaUpgradePhaseStartedSignature);
+
 UCLASS()
 class PROJECTARCANEARENA_API AArenaWaveManager : public AActor
 {
@@ -26,6 +28,11 @@ public:
 
 	// 失败阶段停止尚未执行的生成计时器，避免终局后继续增加敌人。
 	void StopForDefeat();
+
+	// 正式升级系统接管后关闭原型自动跳过，并由 GameMode 监听升级阶段入口。
+	void SetUpgradeSystemEnabled(bool bEnabled);
+
+	FArenaUpgradePhaseStartedSignature OnUpgradePhaseStarted;
 
 protected:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -66,4 +73,5 @@ private:
 	int32 NextPendingSpawnIndex = 0;
 	int32 NextSpawnPointIndex = 0;
 	bool bSpawnFailureInCurrentWave = false;
+	bool bUpgradeSystemEnabled = false;
 };
