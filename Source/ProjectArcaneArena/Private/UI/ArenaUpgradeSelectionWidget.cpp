@@ -75,7 +75,7 @@ UWidget* UArenaUpgradeSelectionWidget::GetInitialFocusTarget() const
 	return nullptr;
 }
 
-// 蓝图未提供布局时创建可直接操作的原生三选一界面，后续可用 WBP 子类替换外观。
+// 蓝图未提供布局时创建可直接操作且支持本地化的原生三选一界面，后续可用 WBP 子类替换外观。
 void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 {
 	if (!WidgetTree)
@@ -98,7 +98,7 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 	}
 
 	UTextBlock* HeaderText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("UpgradeHeaderText"));
-	HeaderText->SetText(FText::FromString(TEXT("Choose an Upgrade")));
+	HeaderText->SetText(NSLOCTEXT("ArenaUpgrade", "ChooseUpgradeHeader", "Choose an Upgrade"));
 	HeaderText->SetJustification(ETextJustify::Center);
 	if (UVerticalBoxSlot* HeaderSlot = ChoicePanel->AddChildToVerticalBox(HeaderText))
 	{
@@ -190,7 +190,7 @@ void UArenaUpgradeSelectionWidget::BindChoiceButtons()
 	}
 }
 
-// 根据候选数量刷新图标、稀有度、说明和选择后等级，旧蓝图缺少新控件时合并进主文本。
+// 根据候选数量刷新图标、稀有度、说明和选择后等级，旧蓝图缺少新控件时用 FText 合并并保留本地化历史。
 void UArenaUpgradeSelectionWidget::RefreshChoiceVisuals()
 {
 	UButton* Buttons[] = { UpgradeChoiceButton0, UpgradeChoiceButton1, UpgradeChoiceButton2 };
@@ -237,17 +237,25 @@ void UArenaUpgradeSelectionWidget::RefreshChoiceVisuals()
 
 		if (Choice && TextBlocks[Index])
 		{
-			FString DisplayText;
+			FText DisplayText = FText::Format(
+				NSLOCTEXT("ArenaUpgrade", "ChoiceNameDescriptionFormat", "{0}\n\n{1}"),
+				Choice->UpgradeName,
+				Choice->Description);
 			if (!RarityTextBlocks[Index])
 			{
-				DisplayText += FString::Printf(TEXT("[%s]\n"), *RarityText.ToString());
+				DisplayText = FText::Format(
+					NSLOCTEXT("ArenaUpgrade", "ChoiceWithRarityFormat", "[{0}]\n{1}"),
+					RarityText,
+					DisplayText);
 			}
-			DisplayText += FString::Printf(TEXT("%s\n\n%s"), *Choice->UpgradeName.ToString(), *Choice->Description.ToString());
 			if (!StackTextBlocks[Index])
 			{
-				DisplayText += FString::Printf(TEXT("\n\n%s"), *StackText.ToString());
+				DisplayText = FText::Format(
+					NSLOCTEXT("ArenaUpgrade", "ChoiceWithStackFormat", "{0}\n\n{1}"),
+					DisplayText,
+					StackText);
 			}
-			TextBlocks[Index]->SetText(FText::FromString(DisplayText));
+			TextBlocks[Index]->SetText(DisplayText);
 		}
 		else if (TextBlocks[Index])
 		{

@@ -76,7 +76,7 @@ void AArenaFireballProjectile::BeginPlay()
 	SetLifeSpan(ProjectileLifeSpan);
 }
 
-// 服务端处理 Pawn overlap，命中可伤害目标后应用伤害并销毁投射物。
+// 服务端处理 Pawn overlap：直接伤害交给 ExecCalc 过滤无敌，Burning 只施加给存活且非无敌目标，命中后始终销毁投射物。
 void AArenaFireballProjectile::OnProjectileOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,
@@ -97,7 +97,8 @@ void AArenaFireballProjectile::OnProjectileOverlap(
 	}
 
 	ApplyDamageToTarget(TargetASC, SweepResult);
-	if (!TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	if (!TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+		&& !TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Invincible))
 	{
 		ApplyBurningToTarget(TargetASC, SweepResult);
 	}

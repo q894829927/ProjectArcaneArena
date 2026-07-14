@@ -48,6 +48,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	// Upgrade 阶段迟加入时生成候选，并在空候选自动完成后重新检查全员门槛。
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
 
@@ -56,7 +57,7 @@ private:
 	void InitializeUpgradeRandomStream();
 	// 为所有有效玩家生成本轮独立候选，并在全员无奖励可选时继续检查推进条件。
 	void HandleUpgradePhaseStarted();
-	// 过滤候选后执行构筑保底、稀有度加权抽取和确定性洗牌。
+	// 过滤并抽取候选；空候选无奖励完成并恢复资源，非空候选进入等待选择状态。
 	void PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlayerState);
 	// 从候选数组按稀有度权重抽取一个索引，所有随机数只来自服务器升级随机流。
 	int32 DrawWeightedUpgradeIndex(const TArray<UArenaUpgradeDataAsset*>& Candidates);
@@ -70,7 +71,7 @@ private:
 	bool IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
 	// 在服务器授予升级 GE/Ability/标签，并把 DataAsset 保存为 AbilitySpec SourceObject。
 	bool ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
-	// 在服务器完成升级后通过 GAS 补满生命和能量，Health 恢复会驱动死亡玩家复活。
+	// 在服务器完成有奖励或无奖励选择后通过 GAS 补满生命和能量，Health 恢复会驱动死亡玩家复活。
 	void RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* ArenaPlayerState) const;
 	bool HaveAllPlayersCompletedUpgradeSelection() const;
 	void TryAdvanceAfterUpgradeSelections();

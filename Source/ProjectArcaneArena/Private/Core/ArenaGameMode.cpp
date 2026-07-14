@@ -83,7 +83,7 @@ void AArenaGameMode::InitializeUpgradeRandomStream()
 		UpgradeRandomSeedOverride > 0 ? TEXT(" (override)") : TEXT(""));
 }
 
-// 玩家在 Upgrade 阶段加入时为其补发独立候选，避免中途连接无法完成全员选择。
+// 玩家在 Upgrade 阶段加入时补发独立候选，并在其无候选自动完成后重新检查波次推进。
 void AArenaGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
@@ -92,6 +92,7 @@ void AArenaGameMode::PostLogin(APlayerController* NewPlayer)
 	if (HasAuthority() && ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade)
 	{
 		PrepareUpgradeChoicesForPlayer(NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr);
+		TryAdvanceAfterUpgradeSelections();
 	}
 }
 
@@ -128,7 +129,7 @@ void AArenaGameMode::HandleUpgradePhaseStarted()
 	TryAdvanceAfterUpgradeSelections();
 }
 
-// 按配置顺序过滤候选，先执行一次同构筑保底，再按稀有度无放回抽取并确定性洗牌。
+// 按配置过滤并抽取候选；空池记录错误、无奖励完成且恢复资源，有候选时才进入等待选择状态。
 void AArenaGameMode::PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlayerState)
 {
 	if (!HasAuthority() || !ArenaPlayerState)
@@ -183,11 +184,15 @@ void AArenaGameMode::PrepareUpgradeChoicesForPlayer(AArenaPlayerState* ArenaPlay
 	}
 	ShuffleUpgradeChoices(Choices);
 
-	ArenaPlayerState->BeginUpgradeSelection(Choices);
 	if (Choices.IsEmpty())
 	{
-		UE_LOG(LogArenaUpgrades, Error, TEXT("Player %s has no eligible upgrade choices; Upgrade phase will wait for valid configuration."), *GetNameSafe(ArenaPlayerState));
+		UE_LOG(LogArenaUpgrades, Error, TEXT("Player %s has no eligible upgrade choices; completing without a reward."), *GetNameSafe(ArenaPlayerState));
+		ArenaPlayerState->CompleteUpgradeSelectionWithoutReward();
+		RestorePlayerResourcesAfterUpgrade(ArenaPlayerState);
+		return;
 	}
+
+	ArenaPlayerState->BeginUpgradeSelection(Choices);
 }
 
 // 使用升级资产的稀有度权重抽取一个候选索引，数组顺序保持为 UpgradePool 配置顺序。

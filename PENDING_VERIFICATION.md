@@ -259,6 +259,8 @@ Wave 5：执行战斗测试
 4. 检查 Wave 4 清理后的最终阶段。
 5. 使用临时缩减 UpgradePool 的四波测试副本，依次选择 Fireball Damage、LightningStorm Damage、Overload，验证第三次升级资格。
 6. 2-player Listen Server 再执行一次，故意让一名玩家延迟选择。
+7. 使用空 UpgradePool 或让全部候选达到 MaxStacks，清理非最终波并观察错误日志、资源恢复和阶段推进。
+8. 在 2-player Upgrade 阶段让迟加入玩家没有符合 RequiredTags 的候选，检查该玩家自动完成后的全员门槛。
 
 ### 通过标准
 
@@ -268,6 +270,8 @@ Wave 5：执行战斗测试
 - Overload 达到 MaxStacks 后不再出现。
 - 升级、Build Tags 和被动 Ability 跨波次保留。
 - 2-player 中必须全员完成选择才进入下一波。
+- 无候选玩家不显示选择 UI、不获得升级，但会恢复 Health/Energy 并且不会阻塞下一波。
+- Upgrade 阶段迟加入且无候选的玩家完成后，服务器会立即重新检查全员选择状态。
 
 ## Fire Build 回归
 
@@ -278,12 +282,14 @@ Wave 5：执行战斗测试
 3. 给目标添加 Shield，观察四次 Burning Tick。
 4. 在 Burning 到期和目标死亡两种情况下观察状态 Tag 与持续 Cue。
 5. 在 2-player PIE 中让两名玩家分别对同一目标施加 Burning。
+6. 给目标添加 `State.Invincible` 后用已解锁 Burning 的 Fireball 命中，观察投射物和目标 ActiveGE。
 
 ### 通过标准
 
 - Fireball 技能倍率为 `1.0 / 1.2 / 1.4 / 1.6`。
 - Burning 每来源最多三层，单层每跳 `5`，重复命中刷新持续时间和周期。
 - Burning 伤害先消耗 Shield，并尊重 Dead/Invincible。
+- Fireball 命中 `State.Invincible` 目标后正常销毁，但不新增或刷新 Burning ActiveGE。
 - 到期或死亡后 ActiveGE、`Status.Burning` 和 Cue 全部清理。
 - 两名玩家的 Burning 按来源独立维护。
 

@@ -172,7 +172,7 @@ void AArenaPlayerState::CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade
 	ForceNetUpdate();
 }
 
-// 无奖励完成本轮选择，作为未来主动跳过或特殊波次的服务器扩展入口。
+// 无候选时由服务器无奖励完成本轮选择并清空候选，避免全员选择门槛永久阻塞。
 void AArenaPlayerState::CompleteUpgradeSelectionWithoutReward()
 {
 	if (!HasAuthority())

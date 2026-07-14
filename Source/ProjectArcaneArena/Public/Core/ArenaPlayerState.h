@@ -79,6 +79,7 @@ public:
 	// 以下写接口仅供服务器 GameMode 管理每轮候选、选择状态和永久堆叠。
 	void BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsset*>& InCandidates);
 	void CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade);
+	// 无候选时不授予升级但完成本轮选择，资源恢复仍由 GameMode 负责。
 	void CompleteUpgradeSelectionWithoutReward();
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")
