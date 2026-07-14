@@ -43,6 +43,7 @@ Status meanings:
 * `GE_Damage` and `UExecCalc_Damage` resolve BaseDamage, SkillMultiplier, AttackPower, Defense, critical chance, and critical multiplier on the authority side.
 * `State.Invincible` prevents normal damage in the execution calculation.
 * Shield absorbs incoming damage before Health; reaching zero Health applies replicated `State.Dead`.
+* After Shield/Health are actually consumed, `UArenaAttributeSet` asks the source `UArenaAbilitySystemComponent` to route one authoritative `Trigger.OnDamageDealt.*` GameplayEvent. The payload contains actual absorbed damage, the Damage Spec context/objects, source plus damage tags, and a pre-hit target-tag snapshot so status synergies and killing blows use one shared event layer.
 
 ### Ability Input and Cooldowns — Implemented
 
@@ -110,9 +111,18 @@ Status meanings:
 * Unlocking `Upgrade.LightningStorm.Shocked` lets authority Storm ticks apply a four-second, shared `AggregateByTarget` Shocked status after damage, so the first hit creates the state and later Lightning hits benefit from it.
 * `UExecCalc_Damage` recognizes `Damage.Lightning`, finds the target's active `Status.Shocked` GameplayEffect, and applies the highest `SetByCaller.Status.Shocked.LightningDamageBonus` value before critical and Defense modifiers.
 * `UArenaGameplayEffect_Shocked` supplies the non-stacking refresh behavior, death removal rule, granted status tag, and persistent `GameplayCue.Status.Shocked.Active` hook in native defaults.
-* Build-asset automation lives under `Content/Python/build_assets`, with shared tools, category generators for Upgrade DataAssets, native GameplayEffect Blueprint children and looping GameplayCues, a separate Ability/GameMode link step, and a documented orchestrator. Root-level `setup_build_assets.py` remains as the single one-click entry point.
+* Build-asset automation lives under `Content/Python/build_assets`, with shared tools, category generators for Upgrade DataAssets, native GameplayEffect/GameplayAbility Blueprint children, looping/burst GameplayCues, and a separate Ability/GameMode/wave link step. Root-level `setup_build_assets.py` remains as the single one-click entry point.
 * Fire/Lightning Upgrade, status GE and persistent Cue assets are present at their existing paths. The refactored category scripts and both orchestrator entry points still require an Unreal Editor idempotency regression pass.
 * Verification is deferred for damage stacks, first-hit ordering, shared two-player vulnerability, refresh/death cleanup, and replicated Cue presentation.
+
+### Fire + Lightning Overload — Partial
+
+* `UArenaGameplayAbility_Overload` is a ServerOnly event-triggered passive that listens for typed Lightning damage, requires `Upgrade.Combo.Overload`, checks the pre-hit `Status.Burning` snapshot, and ignores `Damage.Secondary` to prevent recursive explosions.
+* The passive reads explosion damage from its granted Upgrade DataAsset `SourceObject`; `AArenaGameMode` now preserves that SourceObject when granting upgrade abilities, so runtime behavior does not hard-code an Upgrade ID.
+* A successful trigger emits `GameplayCue.Combo.Overload` at the enemy location and applies `Damage.Lightning + Damage.Secondary` through the existing `GE_Damage` pipeline to living, non-invincible `AArenaEnemyCharacter` targets within 300 units. Burning is not consumed, killing Lightning hits remain eligible, and the explosion inherits AttackPower, Crit, Defense, Shocked vulnerability, and Shield-first handling.
+* `UArenaGameplayEffect_OverloadLockout` uses one-second `AggregateBySource` active effects on each target, allowing different players to trigger independently while limiting each source/target pair.
+* The build-asset generator configs create `GA_Overload`, `GE_Status_OverloadLockout`, `DA_Upgrade_Overload`, an independent placeholder icon asset, and `GCN_Overload_Explosion`; they also connect the Ability classes, append the legendary upgrade to UpgradePool, and configure prototype Wave 4 when run in the editor.
+* Missing verification: compile/UHT, generator execution and idempotency, single-player trigger/lockout/killing-blow behavior, replicated burst Cue, two-source lockout independence, and the four-wave progression.
 
 ## UI and Combat Feedback
 
@@ -183,7 +193,7 @@ Status meanings:
 * Missing configuration never counts as wave completion; failed spawns keep Combat active and emit `LogArenaWaves` errors.
 * `DA_Waves_Prototype`, its `BP_ArenaGameMode` reference, three tagged EnemySpawn TargetPoints, and a covering NavMeshBoundsVolume are configured in project assets.
 * Missing: boss content.
-* Verification: the formal single-player `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow completed successfully.
+* Verification: the currently saved three-wave asset completed the formal single-player `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow. The build-asset link script now configures a fourth nine-enemy wave to provide a third upgrade phase; that generated asset change is pending editor execution and PIE verification.
 
 ## Phase 4 Configured Assets
 
@@ -192,7 +202,7 @@ Status meanings:
 * `GA_EnemyMeleeAttack`: configured with `GE_Damage`, `GE_Cooldown_EnemyMeleeAttack`, `AM_EnemyMeleeAttack`, Montage Play Rate `1.0`, and Hit Delay `0.35`.
 * `BP_ArenaEnemyCharacter`: `GA_EnemyMeleeAttack` is configured in Startup Abilities. Native defaults set `AArenaEnemyAIController` and `Placed in World or Spawned` possession.
 * `BP_ArenaEnemyCharacter`: `K2_OnDeathStarted` plays `AM_EnemyDeath`; its existing three-second lifespan remains the cleanup owner.
-* `DA_Waves_Prototype`: three wave entries using `BP_ArenaEnemyCharacter`, counts `3`, `5`, and `7`, each with `0.5` spawn interval.
+* `DA_Waves_Prototype`: the currently saved asset has three entries using `BP_ArenaEnemyCharacter`, counts `3`, `5`, and `7`, each with `0.5` spawn interval. `configure_build_asset_links.py` updates index four to count `9`, interval `0.5`, non-boss, without duplicating it on repeat runs.
 * `BP_ArenaGameMode`: `DA_Waves_Prototype` is assigned to Wave Data.
 * `Lvl_TopDown`: a NavMeshBoundsVolume and three TargetPoints with Actor Tag `EnemySpawn` are configured.
 * `WBP_PlayerHUD`: optionally add TextBlocks named `PhaseText`, `WaveText`, `RemainingEnemiesText`, and `DefeatText`; set `DefeatText` initial visibility to Collapsed.
@@ -218,7 +228,7 @@ Status meanings:
 * `DA_Upgrade_AttackPower`, `DA_Upgrade_MaxHealth`, and `DA_Upgrade_MoveSpeed` are configured with their corresponding upgrade GameplayEffects and included in the active upgrade pool.
 * Verification: AttackPower increases later attack damage, MoveSpeed immediately updates CharacterMovement, upgrades persist across waves, and upgrades stop appearing after reaching `MaxStacks`.
 * Verification: in two-player PIE, each player receives an independent candidate set and the next wave starts only after both players complete their selections.
-* Missing: Blueprint visual pass, ability variants, trigger upgrades, deeper build synergies, statistical rarity tuning, and explicit hostile/forged selection RPC testing.
+* Missing: Blueprint visual pass, broader ability variants and trigger upgrades, additional build synergies, statistical rarity tuning, and explicit hostile/forged selection RPC testing.
 
 ## Verification Notes
 
@@ -237,4 +247,5 @@ Status meanings:
 * Deferred verification: confirm the authority-generated upgrade seed changes between PIE sessions, remains identical on the Listen Server and every client (including late join), and is displayed consistently by each HUD's top-right seed text.
 * Deferred verification: complete the Fire Build single-player/two-player checks for upgrade eligibility, direct-damage stacks, Burning stack/refresh timing, Shield-first periodic damage, death cleanup, and replicated Burning GameplayCue removal.
 * Deferred verification: complete the Lightning Build single-player/two-player checks for upgrade eligibility, damage scaling, first-hit Shocked ordering, global refresh behavior, death cleanup, shared Lightning vulnerability, and replicated Shocked GameplayCue removal.
+* Deferred verification: compile and run the Overload asset generator twice, then validate Burning retention, one-second per-source/per-target lockout, killing-blow explosions, Secondary recursion prevention, Shocked amplification, burst Cue replication, two-player source independence, and the generated four-wave Victory flow.
 * A feature must explicitly say `Verified` before this log should be treated as proof of completed PIE, multiplayer, or packaged-build testing.

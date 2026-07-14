@@ -68,7 +68,7 @@ private:
 	void ShuffleUpgradeChoices(TArray<UArenaUpgradeDataAsset*>& Choices);
 	// 按唯一 ID、资格标签和堆叠上限重新验证候选当前是否仍可选择。
 	bool IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
-	// 在服务器授予升级对应的 GameplayEffect、Ability 和持久构筑标签。
+	// 在服务器授予升级 GE/Ability/标签，并把 DataAsset 保存为 AbilitySpec SourceObject。
 	bool ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
 	// 在服务器完成升级后通过 GAS 补满生命和能量，Health 恢复会驱动死亡玩家复活。
 	void RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* ArenaPlayerState) const;

@@ -27,7 +27,7 @@ public:
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 	// 修改 BaseValue 前统一 clamp，覆盖 Instant GE 等基础值变化。
 	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
-	// 处理 Damage/Healing 等 meta attribute，并维护死亡标签。
+	// 处理 Damage/Healing 元属性，并在实际伤害生效后路由权威 GameplayEvent。
 	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Health);

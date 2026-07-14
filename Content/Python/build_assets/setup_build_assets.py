@@ -1,4 +1,4 @@
-"""预检并生成全部已配置的 Fire/Lightning 构筑资产。"""
+"""预检并生成全部已配置的 Fire/Lightning/Overload 构筑资产。"""
 
 import importlib
 
@@ -7,8 +7,10 @@ import unreal
 
 GENERATOR_MODULE_NAMES = (
     "generate_gameplay_effect_blueprints",
+    "generate_gameplay_ability_blueprints",
     "generate_upgrade_assets",
     "generate_looping_gameplay_cues",
+    "generate_burst_gameplay_cues",
     "configure_build_asset_links",
 )
 
@@ -33,16 +35,36 @@ def _configured_asset_paths(configs):
 
 def _validate_all(modules):
     """在任何写入前验证所有分类配置及跨分类连接引用。"""
-    effect_module, upgrade_module, cue_module, link_module = modules
+    (
+        effect_module,
+        ability_module,
+        upgrade_module,
+        looping_cue_module,
+        burst_cue_module,
+        link_module,
+    ) = modules
     effect_module.validate_configs()
-    upgrade_module.validate_configs()
-    cue_module.validate_configs()
+    ability_module.validate_configs()
 
-    generated_asset_paths = _configured_asset_paths(
+    generated_dependency_paths = _configured_asset_paths(
         effect_module.EFFECT_BLUEPRINT_CONFIGS
     )
+    generated_dependency_paths.update(
+        _configured_asset_paths(ability_module.ABILITY_BLUEPRINT_CONFIGS)
+    )
+    upgrade_module.validate_configs(generated_dependency_paths)
+    looping_cue_module.validate_configs()
+    burst_cue_module.validate_configs()
+
+    generated_asset_paths = set(generated_dependency_paths)
     generated_asset_paths.update(
         _configured_asset_paths(upgrade_module.UPGRADE_CONFIGS)
+    )
+    generated_asset_paths.update(
+        _configured_asset_paths(looping_cue_module.LOOPING_CUE_CONFIGS)
+    )
+    generated_asset_paths.update(
+        _configured_asset_paths(burst_cue_module.BURST_CUE_CONFIGS)
     )
     link_module.validate_configs(generated_asset_paths)
 
@@ -52,26 +74,28 @@ def main():
     modules = _load_generator_modules()
     _validate_all(modules)
 
-    with unreal.ScopedSlowTask(4, "Generating Project Arcane Arena build assets") as task:
+    with unreal.ScopedSlowTask(6, "Generating Project Arcane Arena build assets") as task:
         task.make_dialog(True)
         for module, progress_text in zip(
             modules,
             (
                 "Generating GameplayEffect Blueprints",
+                "Generating GameplayAbility Blueprints",
                 "Generating Upgrade DataAssets",
                 "Generating looping GameplayCues",
+                "Generating Burst GameplayCues",
                 "Connecting Abilities and UpgradePool",
             ),
         ):
             task.enter_progress_frame(1, progress_text)
             module.run()
 
-    unreal.log("Fire/Lightning build asset setup completed successfully.")
+    unreal.log("Fire/Lightning/Overload build asset setup completed successfully.")
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        unreal.log_error(f"Fire/Lightning build asset setup failed: {error}")
+        unreal.log_error(f"Fire/Lightning/Overload build asset setup failed: {error}")
         raise

@@ -296,7 +296,7 @@ bool AArenaGameMode::IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState
 	return Upgrade->GrantedGameplayEffect || Upgrade->GrantedAbility || !Upgrade->UpgradeTags.IsEmpty();
 }
 
-// 在服务器应用升级授予、同步本地与复制 Build Tags，并允许后续数据层数继续累计。
+// 在服务器应用升级授予、保存 Ability 来源数据并同步 Build Tags，后续层继续累计数值元数据。
 bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const
 {
 	UArenaAbilitySystemComponent* ASC = ArenaPlayerState ? ArenaPlayerState->GetArenaAbilitySystemComponent() : nullptr;
@@ -322,7 +322,12 @@ bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UAr
 
 	if (bFirstStack && Upgrade->GrantedAbility && !ASC->FindAbilitySpecFromClass(Upgrade->GrantedAbility))
 	{
-		ASC->GiveAbility(FGameplayAbilitySpec(Upgrade->GrantedAbility, 1));
+		// SourceObject 保存升级 DataAsset，让被动技能从数据读取数值而不是硬编码 UpgradeID。
+		ASC->GiveAbility(FGameplayAbilitySpec(
+			Upgrade->GrantedAbility,
+			1,
+			INDEX_NONE,
+			const_cast<UArenaUpgradeDataAsset*>(Upgrade)));
 		bAppliedAnything = true;
 	}
 

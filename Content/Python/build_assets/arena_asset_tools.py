@@ -150,6 +150,18 @@ def duplicate_or_load_blueprint(asset_name, destination_path, template_path, par
     return blueprint, generated_class, asset_path
 
 
+def duplicate_or_load_asset(asset_path, template_path, expected_class):
+    """幂等复制普通资产，已存在时只验证类型而不覆盖用户后续修改。"""
+    if unreal.EditorAssetLibrary.does_asset_exist(asset_path):
+        return require_asset(asset_path, expected_class)
+
+    require_asset(template_path, expected_class)
+    asset = unreal.EditorAssetLibrary.duplicate_asset(template_path, asset_path)
+    if asset is None:
+        raise RuntimeError(f"Failed to duplicate asset: {template_path} -> {asset_path}")
+    return require_asset(asset_path, expected_class)
+
+
 def resolve_enum_value(enum_type, value_name):
     """按配置字符串解析 UE Python 枚举值。"""
     if not value_name or not hasattr(enum_type, value_name):

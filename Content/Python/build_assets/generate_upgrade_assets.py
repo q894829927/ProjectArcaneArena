@@ -87,6 +87,31 @@ UPGRADE_CONFIGS = [
         "granted_gameplay_effect_path": None,
         "granted_ability_path": None,
     },
+    {
+        "asset_name": "DA_Upgrade_Overload",
+        "destination_path": "/Game/Data/Upgrade",
+        "upgrade_id": "Upgrade.Combo.Overload",
+        "display_name": "元素过载",
+        "description": "闪电伤害命中燃烧目标时引发范围爆炸，同一来源对同一目标每秒最多触发一次",
+        "rarity": "LEGENDARY",
+        "upgrade_tags": [
+            "Build.Fire",
+            "Build.Lightning",
+            "Upgrade.Combo.Overload",
+        ],
+        "required_tags": ["Build.Fire", "Build.Lightning"],
+        "blocked_tags": [],
+        "target_ability_tag": "Ability.Passive.Overload",
+        "trigger_event_tag": "Trigger.OnDamageDealt.Lightning",
+        "damage_type_tag": "Damage.Lightning",
+        "numeric_value": 20.0,
+        "max_stacks": 1,
+        "stackable": False,
+        "icon_path": "/Game/UI/UpgradeIcons/T_Upgrade_Overload_Icon",
+        "icon_template_path": "/Game/UI/UpgradeIcons/T_Upgrade_LightningStormShocked_Icon",
+        "granted_gameplay_effect_path": None,
+        "granted_ability_path": "/Game/GAS/GameplayAbility/GA_Overload",
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (
@@ -130,7 +155,7 @@ def _validate_config_shape(config, index):
         raise RuntimeError(f"UPGRADE_CONFIGS[{index}] max_stacks must be at least 1.")
 
 
-def _validate_references(config):
+def _validate_references(config, generated_asset_paths):
     """验证升级配置中的 Tag、枚举和可选资产/Class 引用。"""
     rarity_type = tools.require_unreal_type("ArenaUpgradeRarity")
     tools.resolve_enum_value(rarity_type, config["rarity"])
@@ -146,21 +171,25 @@ def _validate_references(config):
     tools.make_tag(config["damage_type_tag"])
 
     if "icon_path" in config and config["icon_path"]:
-        tools.require_asset(config["icon_path"], unreal.Texture2D)
+        if unreal.EditorAssetLibrary.does_asset_exist(config["icon_path"]):
+            tools.require_asset(config["icon_path"], unreal.Texture2D)
+        elif config.get("icon_template_path"):
+            tools.require_asset(config["icon_template_path"], unreal.Texture2D)
+        else:
+            raise RuntimeError(f"Required upgrade icon was not found: {config['icon_path']}")
     if config["granted_gameplay_effect_path"]:
-        tools.resolve_optional_blueprint_class(
-            config["granted_gameplay_effect_path"],
-            unreal.GameplayEffect,
-        )
+        effect_path = config["granted_gameplay_effect_path"]
+        if effect_path not in generated_asset_paths:
+            tools.resolve_optional_blueprint_class(effect_path, unreal.GameplayEffect)
     if config["granted_ability_path"]:
-        tools.resolve_optional_blueprint_class(
-            config["granted_ability_path"],
-            unreal.GameplayAbility,
-        )
+        ability_path = config["granted_ability_path"]
+        if ability_path not in generated_asset_paths:
+            tools.resolve_optional_blueprint_class(ability_path, unreal.GameplayAbility)
 
 
-def validate_configs():
+def validate_configs(generated_asset_paths=None):
     """在写入前验证所有升级配置、引用和现有资产类型。"""
+    generated_asset_paths = set(generated_asset_paths or ())
     upgrade_data_class = tools.require_unreal_type("ArenaUpgradeDataAsset")
     seen_asset_paths = set()
     seen_upgrade_ids = set()
@@ -177,7 +206,16 @@ def validate_configs():
 
         if unreal.EditorAssetLibrary.does_asset_exist(asset_path):
             tools.require_asset(asset_path, upgrade_data_class)
-        _validate_references(config)
+        _validate_references(config, generated_asset_paths)
+
+
+def _ensure_configured_icon(config):
+    """首次缺失时从模板复制独立图标资产，后续运行保留用户替换后的内容。"""
+    icon_path = config.get("icon_path")
+    icon_template_path = config.get("icon_template_path")
+    if icon_path and icon_template_path:
+        tools.duplicate_or_load_asset(icon_path, icon_template_path, unreal.Texture2D)
+        tools.save_asset(icon_path)
 
 
 def _create_or_load_upgrade(config):
@@ -265,6 +303,7 @@ def run():
     """验证后创建或更新全部升级 DataAsset。"""
     validate_configs()
     for config in UPGRADE_CONFIGS:
+        _ensure_configured_icon(config)
         asset, asset_path = _create_or_load_upgrade(config)
         _configure_upgrade(asset, config)
         tools.save_asset(asset_path)

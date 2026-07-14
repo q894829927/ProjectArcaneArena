@@ -20,6 +20,11 @@ EFFECT_BLUEPRINT_CONFIGS = [
         "destination_path": "/Game/GAS/GameplayEffect/Status",
         "parent_class_name": "ArenaGameplayEffect_Shocked",
     },
+    {
+        "asset_name": "GE_Status_OverloadLockout",
+        "destination_path": "/Game/GAS/GameplayEffect/Status",
+        "parent_class_name": "ArenaGameplayEffect_OverloadLockout",
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (
