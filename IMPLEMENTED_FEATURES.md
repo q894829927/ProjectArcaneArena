@@ -82,7 +82,7 @@ Status meanings:
 ### Fire Build — Partial
 
 * `FArenaOwnedUpgrade` retains its source `UArenaUpgradeDataAsset`, and `AArenaPlayerState` can aggregate numeric values by target Ability, damage type, and upgrade tag without hard-coding Upgrade IDs in abilities.
-* `UArenaGameplayEffect_Burning` defines a four-second, one-second-period, three-stack `AggregateBySource` fire status that grants `Status.Burning`, refreshes duration/period on reapplication, removes itself on `State.Dead`, and drives `GameplayCue.Status.Burning.Active`.
+* `UArenaGameplayEffect_Burning` defines a four-second, one-second-period, three-stack `AggregateBySource` fire status that grants `Status.Burning`, refreshes duration/period on reapplication, removes itself on `State.Dead`, and drives `GameplayCue.Status.Burning.Active`. Its periodic Spec intentionally omits the Fireball's initial `HitResult`, so repeated fire-hit Cue bursts resolve from the moving target's current Avatar location instead of the stale impact point.
 * `UExecCalc_BurningDamage` applies fixed `SetByCaller.Damage.Burning × StackCount` damage on the authority side, skips dead/invincible targets, and reuses the shared Shield-to-Health Damage meta-attribute pipeline.
 * Fireball direct damage reads `Upgrade.Fireball.Damage`; Fireball applies Burning only when the source owns `Upgrade.Fireball.Burning` and the direct hit leaves the target alive and non-invincible. Hits against `State.Invincible` still consume the projectile without creating a delayed Burning status.
 * `DA_Upgrade_FireballDamage`, `DA_Upgrade_FireballBurning`, `GE_Status_Burning`, `GCN_Burning_Active`, and `GA_Fireball` provide the current editor-configured Fire Build assets.
@@ -120,10 +120,10 @@ Status meanings:
 
 * `UArenaGameplayAbility_Overload` is a ServerOnly event-triggered passive that listens for typed Lightning damage, requires `Upgrade.Combo.Overload`, checks the pre-hit `Status.Burning` snapshot, and ignores `Damage.Secondary` to prevent recursive explosions.
 * The passive reads explosion damage from its granted Upgrade DataAsset `SourceObject`; `AArenaGameMode` now preserves that SourceObject when granting upgrade abilities, so runtime behavior does not hard-code an Upgrade ID.
-* A successful trigger emits `GameplayCue.Combo.Overload` at the enemy location and applies `Damage.Lightning + Damage.Secondary` through the existing `GE_Damage` pipeline to living, non-invincible `AArenaEnemyCharacter` targets within 300 units. Burning is not consumed, killing Lightning hits remain eligible, and the explosion inherits AttackPower, Crit, Defense, Shocked vulnerability, and Shield-first handling.
+* A successful trigger emits `GameplayCue.Combo.Overload` at the enemy location. Its dedicated `GCN_Overload_Explosion` burst combines enlarged Fire and Lightning Niagara systems at the same world-space point so Overload is visually distinct from a normal Lightning hit. The ability applies `Damage.Lightning + Damage.Secondary` through the existing `GE_Damage` pipeline to living, non-invincible `AArenaEnemyCharacter` targets within 300 units. Burning is not consumed, killing Lightning hits remain eligible, and the explosion inherits AttackPower, Crit, Defense, Shocked vulnerability, and Shield-first handling.
 * `UArenaGameplayEffect_OverloadLockout` uses one-second `AggregateBySource` active effects on each target, allowing different players to trigger independently while limiting each source/target pair.
 * The build-asset generator configs create `GA_Overload`, `GE_Status_OverloadLockout`, `DA_Upgrade_Overload`, an independent placeholder icon asset, and `GCN_Overload_Explosion`; they also connect the Ability classes, append the legendary upgrade to UpgradePool, and configure prototype Wave 4 when run in the editor.
-* Missing verification: compile/UHT, generator execution and idempotency, single-player trigger/lockout/killing-blow behavior, replicated burst Cue, two-source lockout independence, and the four-wave progression.
+* Burst Cue generation and an idempotent second generator run are verified in the editor commandlet. Missing verification remains for compile/UHT, in-game single-player trigger/lockout/killing-blow behavior, replicated dual-element burst presentation, two-source lockout independence, and the four-wave progression.
 
 ### OnKill Energy Recovery — Partial
 

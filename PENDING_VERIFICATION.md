@@ -27,45 +27,6 @@
 待处理：
 ```
 
-## 拾取物资产生成与幂等性
-
-### 测试方法
-
-1. 编译新增 C++ 类并重启 Unreal Editor，确认 Python 可读取 `ArenaPickupActor`、`ArenaPickupDropTableDataAsset` 和 `ArenaPickupType`。
-2. 在编辑器控制台连续执行两次：
-
-```text
-py "../../../../ProjectArcaneArena/Content/Python/setup_pickup_items.py"
-```
-
-3. 检查 `BP_HealthPickup`：Pickup Type 为 Health、Restore Amount 为 `25`、Pickup Life Span 为 `15`。
-4. 检查 `BP_EnergyPickup`：Pickup Type 为 Energy、Restore Amount 为 `20`、Pickup Life Span 为 `15`。
-5. 检查 `DA_PickupDropTable_Default`：Drop Chance 为 `0.25`，Health/Energy 条目权重均为 `1`。
-6. 检查 `BP_ArenaGameMode.PickupDropTable` 指向 `DA_PickupDropTable_Default`，Content Browser 没有 `_1` / `_2` 重复资产。
-
-### 通过标准
-
-- 两次执行都无 Python 异常，资产只有一份，类型和数值与上述配置一致。
-- 三个资产和 `BP_ArenaGameMode` 可正常打开、编译和保存，没有失效 Class 或 None 引用。
-
-## 拾取恢复、边界与生命期
-
-### 测试方法
-
-1. 使用 Standalone PIE，临时把 Drop Chance 设为 `1.0`，分别只保留 Health 或 Energy 一个掉落条目。
-2. 先让玩家损失 Health，击杀一名 WaveManager 管理的敌人并走过 Health 拾取物，记录拾取前后 Health。
-3. 消耗 Energy 后重复 Energy 拾取，记录拾取前后 Energy。
-4. 分别在资源接近上限、已满、`MaxHealth = 0`、`MaxEnergy = 0` 和玩家带 `State.Dead` 时穿过对应拾取物。
-5. 生成一个拾取物后不接触，计时观察约 `15s` 后是否销毁。
-6. 在顶视角和第三人称视角各观察一次 Mesh 和可选 Niagara 的大小、颜色和地面位置。
-7. 测试完成后恢复 Drop Chance 为 `0.25` 和两个等权条目。
-
-### 通过标准
-
-- Health 增加 `25`、Energy 增加 `20`，均不超过对应 Max，HUD 通过 GAS 属性委托更新。
-- 资源已满、Max 为零或玩家死亡时不消耗拾取物；另一名符合条件的玩家仍可拾取。
-- 恢复仅经由 GameplayEffect 与 Healing/Energy 属性管线，无直接属性写入或超上限。
-- 无人拾取时约 `15s` 后由服务器销毁，两种视角下的位置与尺寸均可辨识。
 
 ## 掉落随机、唯一性与波次回归
 
@@ -126,30 +87,7 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 - `GA_Overload`、`GE_Status_OverloadLockout`、`GCN_Overload_Explosion`、`DA_Upgrade_Overload` 和图标均没有重复资产。
 - `GA_EnergyOnKill`、`GE_Trigger_EnergyOnKill`、`DA_Upgrade_EnergyOnKill` 和图标均没有重复资产。
 - 第二次执行没有 Python 异常。
-
-## OnKill 与能量收割资产配置
-
-### 测试方法
-
-1. 打开 `DA_Upgrade_EnergyOnKill`，检查：
-   - Upgrade ID：`Upgrade.Trigger.EnergyOnKill`
-   - Rarity：`Common`
-   - Upgrade Tags：`Upgrade.Trigger.EnergyOnKill`
-   - Target Ability：`Ability.Passive.EnergyOnKill`
-   - Trigger Event：`Trigger.OnKill`
-   - Damage Type：空
-   - NumericValue：`10`
-   - Stackable：true，MaxStacks：`3`
-   - Granted Ability：`GA_EnergyOnKill`
-2. 打开 `GA_EnergyOnKill`，确认 Energy Restore Effect Class 为 `GE_Trigger_EnergyOnKill`。
-3. 打开 `GE_Trigger_EnergyOnKill`，确认父类为 `ArenaGameplayEffect_EnergyRestore`。
-4. 检查 `BP_ArenaGameMode.UpgradePool` 中只有一份 `DA_Upgrade_EnergyOnKill`。
-
-### 通过标准
-
-- 所有字段与上述配置一致，三个资产可正常打开、编译和保存。
-- 没有失效 Class、None 恢复效果、GameplayTag 警告或重复 UpgradePool 条目。
-
+   
 ## OnKill 单人触发、堆叠与防重复
 
 ### 测试方法

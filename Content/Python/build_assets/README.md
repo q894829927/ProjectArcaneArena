@@ -94,7 +94,7 @@ py "../../../../ProjectArcaneArena/Content/Python/build_assets/configure_build_a
 
 新增持续 Cue 时，在 `LOOPING_CUE_CONFIGS` 中配置模板、Cue Tag、Niagara、附着规则和变换覆盖。`rotation` 顺序为 `(Pitch, Yaw, Roll)`，`scale` 顺序为 `(X, Y, Z)`。
 
-新增一次性 Cue 时，在 `BURST_CUE_CONFIGS` 中填写相同放置参数；World Location 表现应使用 `DO_NOT_ATTACH` 和 `KEEP_WORLD`。
+新增一次性 Cue 时，在 `BURST_CUE_CONFIGS` 中填写放置参数，并通过 `niagara_paths` 配置一个或多个同点播放的 Niagara；World Location 表现应使用 `DO_NOT_ATTACH` 和 `KEEP_WORLD`。
 
 最后在 `ABILITY_BINDINGS` 中连接 Ability 属性，并把需要进入随机候选池的升级路径加入 `UPGRADE_POOL_ASSET_PATHS`。
 
