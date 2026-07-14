@@ -6,7 +6,9 @@
 #include "ArenaWaveManager.generated.h"
 
 class AArenaEnemyCharacter;
+class AArenaPickupActor;
 class ATargetPoint;
+class UArenaPickupDropTableDataAsset;
 class UArenaWaveDataAsset;
 
 DECLARE_MULTICAST_DELEGATE(FArenaUpgradePhaseStartedSignature);
@@ -19,8 +21,11 @@ class PROJECTARCANEARENA_API AArenaWaveManager : public AActor
 public:
 	AArenaWaveManager();
 
-	// GameMode 在服务器创建后注入波次数据，并收集带 EnemySpawn Tag 的 TargetPoint。
-	void Initialize(UArenaWaveDataAsset* InWaveData);
+	// GameMode 注入波次、全局掉落表和本局种子，并初始化独立的服务器掉落随机流。
+	void Initialize(
+		UArenaWaveDataAsset* InWaveData,
+		UArenaPickupDropTableDataAsset* InPickupDropTable,
+		int32 InMatchRandomSeed);
 
 	// 首次从 Waiting 开始，之后仅允许从 Upgrade 进入下一波。
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Arena|Wave")
@@ -41,9 +46,14 @@ private:
 	void CollectSpawnPoints();
 	bool BuildPendingSpawnList(int32 WaveArrayIndex);
 	void SpawnNextEnemy();
+	// 为当前死亡敌人执行一次服务器掉落抽取，失败不会影响波次推进。
+	void TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy);
+	// 按掉落表有效正权重抽取一个 Pickup Class。
+	TSubclassOf<AArenaPickupActor> DrawWeightedPickupClass();
 	void CheckWaveCompletion();
 	void UpdateReplicatedEnemyCount();
 
+	// 唯一处理受管理敌人的死亡计数、掉落抽取和波次完成检查。
 	UFUNCTION()
 	void HandleEnemyDeath(AArenaEnemyCharacter* Enemy);
 
@@ -61,6 +71,9 @@ private:
 	TObjectPtr<UArenaWaveDataAsset> WaveData;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UArenaPickupDropTableDataAsset> PickupDropTable;
+
+	UPROPERTY(Transient)
 	TArray<TObjectPtr<ATargetPoint>> SpawnPoints;
 
 	UPROPERTY(Transient)
@@ -72,6 +85,7 @@ private:
 	int32 CurrentWaveArrayIndex = INDEX_NONE;
 	int32 NextPendingSpawnIndex = 0;
 	int32 NextSpawnPointIndex = 0;
+	FRandomStream PickupRandomStream;
 	bool bSpawnFailureInCurrentWave = false;
 	bool bUpgradeSystemEnabled = false;
 };

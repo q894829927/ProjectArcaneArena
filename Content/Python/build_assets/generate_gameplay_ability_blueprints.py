@@ -15,6 +15,11 @@ ABILITY_BLUEPRINT_CONFIGS = [
         "destination_path": "/Game/GAS/GameplayAbility",
         "parent_class_name": "ArenaGameplayAbility_Overload",
     },
+    {
+        "asset_name": "GA_EnergyOnKill",
+        "destination_path": "/Game/GAS/GameplayAbility",
+        "parent_class_name": "ArenaGameplayAbility_EnergyOnKill",
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (

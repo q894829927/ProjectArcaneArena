@@ -31,7 +31,7 @@ void UArenaAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 	}
 }
 
-// 仅由权威来源发送一次事件；载荷保留命中前目标标签，供击杀与状态组合被动可靠判断。
+// 由权威来源派发实际伤害事件，并在目标首次死亡时追加一次 OnKill 结果事件。
 void UArenaAbilitySystemComponent::RouteAuthoritativeDamageEvent(
 	const FGameplayEffectSpec& DamageSpec,
 	UAbilitySystemComponent* TargetAbilitySystemComponent,
@@ -81,7 +81,16 @@ void UArenaAbilitySystemComponent::RouteAuthoritativeDamageEvent(
 	GetOwnedGameplayTags(EventPayload.InstigatorTags);
 	EventPayload.InstigatorTags.AppendTags(DamageAssetTags);
 	EventPayload.TargetTags = TargetTagsBeforeDamage;
+	// 在任何伤害被动同步执行前锁定本次击杀结果，避免嵌套伤害改变原始事件判定。
+	const bool bKilledTarget = !TargetTagsBeforeDamage.HasTag(ArenaGameplayTags::State_Dead)
+		&& TargetAbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead);
 
 	// 事件发送给来源 ASC，自身拥有的被动 Ability 通过 AbilityTriggers 响应。
 	HandleGameplayEvent(DamageEventTag, &EventPayload);
+	if (bKilledTarget)
+	{
+		// OnKill 复用同一伤害上下文和命中前目标标签，供后续状态击杀协同可靠判断。
+		EventPayload.EventTag = ArenaGameplayTags::Trigger_OnKill;
+		HandleGameplayEvent(ArenaGameplayTags::Trigger_OnKill, &EventPayload);
+	}
 }

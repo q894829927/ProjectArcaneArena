@@ -44,6 +44,7 @@ Status meanings:
 * `State.Invincible` prevents normal damage in the execution calculation.
 * Shield absorbs incoming damage before Health; reaching zero Health applies replicated `State.Dead`.
 * After Shield/Health are actually consumed, `UArenaAttributeSet` asks the source `UArenaAbilitySystemComponent` to route one authoritative `Trigger.OnDamageDealt.*` GameplayEvent. The payload contains actual absorbed damage, the Damage Spec context/objects, source plus damage tags, and a pre-hit target-tag snapshot so status synergies and killing blows use one shared event layer.
+* The same authority route emits `Trigger.OnKill` after the typed damage event when the target changes from alive before the hit to `State.Dead` after settlement. The outcome is captured before synchronous passives run, preventing nested, periodic, area, and repeated dead-target damage from duplicating the original kill event.
 
 ### Ability Input and Cooldowns — Implemented
 
@@ -124,6 +125,13 @@ Status meanings:
 * The build-asset generator configs create `GA_Overload`, `GE_Status_OverloadLockout`, `DA_Upgrade_Overload`, an independent placeholder icon asset, and `GCN_Overload_Explosion`; they also connect the Ability classes, append the legendary upgrade to UpgradePool, and configure prototype Wave 4 when run in the editor.
 * Missing verification: compile/UHT, generator execution and idempotency, single-player trigger/lockout/killing-blow behavior, replicated burst Cue, two-source lockout independence, and the four-wave progression.
 
+### OnKill Energy Recovery — Partial
+
+* `UArenaGameplayAbility_EnergyOnKill` is a ServerOnly event-triggered passive that accepts authoritative `Trigger.OnKill` events for `AArenaEnemyCharacter` targets and remains blocked while the source player is dead.
+* The passive reads its Upgrade DataAsset from the AbilitySpec `SourceObject`, looks up the permanent stack count on `AArenaPlayerState`, and applies `NumericValue × StackCount` through `UArenaGameplayEffect_EnergyRestore` and `SetByCaller.Recovery.Energy` instead of writing the attribute directly.
+* Generator configs define `DA_Upgrade_EnergyOnKill`, `GA_EnergyOnKill`, `GE_Trigger_EnergyOnKill`, an independent placeholder icon, and an idempotent UpgradePool entry. The Common upgrade restores `10/20/30` Energy across three stacks and has no damage-type routing requirement.
+* Missing verification: compile/UHT, generator idempotency, direct/periodic/Secondary kill attribution, stack scaling, Energy clamp behavior, duplicate prevention, and two-player last-hit ownership.
+
 ## UI and Combat Feedback
 
 ### GameplayCue Routing - Partial
@@ -194,6 +202,14 @@ Status meanings:
 * `DA_Waves_Prototype`, its `BP_ArenaGameMode` reference, three tagged EnemySpawn TargetPoints, and a covering NavMeshBoundsVolume are configured in project assets.
 * Missing: boss content.
 * Verification: the currently saved three-wave asset completed the formal single-player `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow. The build-asset link script now configures a fourth nine-enemy wave to provide a third upgrade phase; that generated asset change is pending editor execution and PIE verification.
+
+### Server-Authoritative Pickup Drops — Partial
+
+* After a tracked enemy is removed from `AArenaWaveManager::AliveEnemies`, the authority uses an independent deterministic random stream derived from the match seed to roll at most one pickup without changing the upgrade-candidate random sequence.
+* `UArenaPickupDropTableDataAsset` provides a global drop chance and weighted Pickup Blueprint classes. Missing tables, empty entries, invalid weights, and spawn failures disable or skip drops without blocking enemy counts, Upgrade, or Victory.
+* Replicated `AArenaPickupActor` instances use server-only Pawn overlap and shared first-eligible-player ownership. Dead players, full resources, and zero resource maxima do not consume the pickup; successful consumption is replicated through authority destruction and unused pickups expire after a configurable lifespan.
+* Health pickups apply `SetByCaller.Recovery.Health` through `UArenaGameplayEffect_HealthRestore` and the existing Healing meta-attribute path. Energy pickups reuse `UArenaGameplayEffect_EnergyRestore`; neither pickup writes attributes directly.
+* `Content/Python/pickup_items` contains an idempotent asset setup flow for `BP_HealthPickup`, `BP_EnergyPickup`, `DA_PickupDropTable_Default`, and the `BP_ArenaGameMode` link. C++ compilation, editor asset generation, probability/reproducibility, resource-boundary, lifetime, dual-view, and two-player pickup behavior remain pending verification.
 
 ## Phase 4 Configured Assets
 

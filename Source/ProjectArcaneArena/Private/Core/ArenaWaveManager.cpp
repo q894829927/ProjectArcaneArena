@@ -1,10 +1,13 @@
 #include "Core/ArenaWaveManager.h"
 
 #include "Character/ArenaEnemyCharacter.h"
+#include "Components/CapsuleComponent.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaWaveDataAsset.h"
 #include "Engine/TargetPoint.h"
 #include "EngineUtils.h"
+#include "Item/ArenaPickupActor.h"
+#include "Item/ArenaPickupDropTableDataAsset.h"
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogArenaWaves, Log, All);
@@ -16,8 +19,11 @@ AArenaWaveManager::AArenaWaveManager()
 	bReplicates = false;
 }
 
-// 注入数据并发现关卡刷怪点，缺少配置时保持 Waiting 并输出明确日志。
-void AArenaWaveManager::Initialize(UArenaWaveDataAsset* InWaveData)
+// 注入波次和掉落数据，使用派生种子隔离升级与掉落随机序列。
+void AArenaWaveManager::Initialize(
+	UArenaWaveDataAsset* InWaveData,
+	UArenaPickupDropTableDataAsset* InPickupDropTable,
+	int32 InMatchRandomSeed)
 {
 	if (!HasAuthority())
 	{
@@ -25,6 +31,14 @@ void AArenaWaveManager::Initialize(UArenaWaveDataAsset* InWaveData)
 	}
 
 	WaveData = InWaveData;
+	PickupDropTable = InPickupDropTable;
+	constexpr int32 PickupSeedSalt = 0x4C4F4F54;
+	int32 PickupSeed = InMatchRandomSeed ^ PickupSeedSalt;
+	if (PickupSeed == 0)
+	{
+		PickupSeed = 1;
+	}
+	PickupRandomStream.Initialize(PickupSeed);
 	CollectSpawnPoints();
 	if (!WaveData)
 	{
@@ -33,6 +47,23 @@ void AArenaWaveManager::Initialize(UArenaWaveDataAsset* InWaveData)
 	if (SpawnPoints.IsEmpty())
 	{
 		UE_LOG(LogArenaWaves, Error, TEXT("No TargetPoint with Actor Tag '%s' was found."), *SpawnPointActorTag.ToString());
+	}
+	if (!PickupDropTable)
+	{
+		UE_LOG(LogArenaWaves, Warning, TEXT("WaveManager has no PickupDropTable; enemy drops are disabled."));
+	}
+	else
+	{
+		// 启动时即报告空表或全部无效权重，避免错误配置只在偶然抽中掉落时才暴露。
+		const bool bHasValidPickupEntry = PickupDropTable->Entries.ContainsByPredicate(
+			[](const FArenaPickupDropEntry& Entry)
+			{
+				return Entry.PickupClass && Entry.Weight > 0.0f;
+			});
+		if (!bHasValidPickupEntry)
+		{
+			UE_LOG(LogArenaWaves, Warning, TEXT("PickupDropTable has no valid positive-weight entry; enemy drops are disabled."));
+		}
 	}
 }
 
@@ -197,7 +228,7 @@ void AArenaWaveManager::SpawnNextEnemy()
 	}
 }
 
-// 死亡广播只处理当前 Alive 集合中的敌人，保证计数最多扣减一次。
+// 死亡广播只处理当前 Alive 集合中的敌人，保证计数扣减和掉落抽取最多各执行一次。
 void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 {
 	if (!HasAuthority() || !Enemy || AliveEnemies.Remove(Enemy) == 0)
@@ -206,8 +237,97 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 	}
 
 	Enemy->OnEnemyDeath.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
+	TrySpawnPickupDrop(Enemy);
 	UpdateReplicatedEnemyCount();
 	CheckWaveCompletion();
+}
+
+// 每名受管理敌人只经过本入口一次，因此单次死亡最多生成一个共享拾取物。
+void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy)
+{
+	if (!HasAuthority() || !Enemy || !PickupDropTable || !GetWorld())
+	{
+		return;
+	}
+
+	const float DropChance = FMath::Clamp(PickupDropTable->DropChance, 0.0f, 1.0f);
+	if (DropChance <= 0.0f || PickupRandomStream.FRand() >= DropChance)
+	{
+		return;
+	}
+
+	const TSubclassOf<AArenaPickupActor> PickupClass = DrawWeightedPickupClass();
+	if (!PickupClass)
+	{
+		UE_LOG(LogArenaWaves, Warning, TEXT("Pickup drop roll succeeded, but the drop table has no valid positive-weight entry."));
+		return;
+	}
+
+	float CapsuleHalfHeight = 0.0f;
+	if (const UCapsuleComponent* Capsule = Enemy->GetCapsuleComponent())
+	{
+		CapsuleHalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	}
+	const FVector SpawnLocation = Enemy->GetActorLocation()
+		- FVector(0.0f, 0.0f, CapsuleHalfHeight)
+		+ FVector(0.0f, 0.0f, 35.0f);
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AArenaPickupActor* Pickup = GetWorld()->SpawnActor<AArenaPickupActor>(
+		PickupClass,
+		SpawnLocation,
+		FRotator::ZeroRotator,
+		SpawnParameters);
+	if (!Pickup)
+	{
+		UE_LOG(LogArenaWaves, Warning, TEXT("Failed to spawn pickup %s for enemy %s."),
+			*GetNameSafe(PickupClass.Get()),
+			*GetNameSafe(Enemy));
+	}
+}
+
+// 只统计有效 Class 和正权重，确保错误条目不会影响其他可用掉落。
+TSubclassOf<AArenaPickupActor> AArenaWaveManager::DrawWeightedPickupClass()
+{
+	if (!PickupDropTable)
+	{
+		return nullptr;
+	}
+
+	double TotalWeight = 0.0;
+	for (const FArenaPickupDropEntry& Entry : PickupDropTable->Entries)
+	{
+		if (Entry.PickupClass && Entry.Weight > 0.0f)
+		{
+			TotalWeight += static_cast<double>(Entry.Weight);
+		}
+	}
+	if (TotalWeight <= 0.0)
+	{
+		return nullptr;
+	}
+
+	const double Draw = static_cast<double>(PickupRandomStream.FRand()) * TotalWeight;
+	double CumulativeWeight = 0.0;
+	TSubclassOf<AArenaPickupActor> LastValidClass;
+	for (const FArenaPickupDropEntry& Entry : PickupDropTable->Entries)
+	{
+		if (!Entry.PickupClass || Entry.Weight <= 0.0f)
+		{
+			continue;
+		}
+
+		LastValidClass = Entry.PickupClass;
+		CumulativeWeight += static_cast<double>(Entry.Weight);
+		if (Draw < CumulativeWeight)
+		{
+			return Entry.PickupClass;
+		}
+	}
+
+	return LastValidClass;
 }
 
 // 全部敌人清空后进入 Victory 或广播正式 Upgrade 入口，生成失败则保留 Combat 供排错。

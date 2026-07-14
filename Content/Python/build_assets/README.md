@@ -1,6 +1,6 @@
 # 构筑资产 Python 生成器
 
-本目录集中管理 Fire/Lightning/Overload 构筑使用的 Upgrade DataAsset、GameplayEffect/GameplayAbility Blueprint、持续/爆发 GameplayCue，以及 Ability/GameMode/原型波次资产连接。
+本目录集中管理 Fire/Lightning/Overload 构筑与事件触发升级使用的 Upgrade DataAsset、GameplayEffect/GameplayAbility Blueprint、持续/爆发 GameplayCue，以及 Ability/GameMode/原型波次资产连接。
 
 生成器只负责编辑器资产配置，不修改运行时玩法状态。所有脚本都应在 Unreal Editor 已加载项目 C++ 反射类型后执行。
 
@@ -82,6 +82,7 @@ py "../../../../ProjectArcaneArena/Content/Python/build_assets/configure_build_a
 - 省略 `icon_path` 会保留现有图标。
 - 设置 `icon_path = None` 会清空图标。
 - `granted_gameplay_effect_path` 或 `granted_ability_path` 设置为 `None` 会清空对应授予项。
+- 与伤害类型无关的事件升级可以把 `damage_type_tag` 设置为 `None`，例如 `Trigger.OnKill` 驱动的能量恢复。
 - GameplayTag 必须已在项目中注册，否则预检会停止且不写入资产。
 - `upgrade_id` 用于服务器选择和堆叠记录，应保持稳定，不要因显示文本变化而修改。
 
@@ -104,5 +105,6 @@ py "../../../../ProjectArcaneArena/Content/Python/build_assets/configure_build_a
 - UpgradePool 使用规范化包路径去重，重复运行不会追加同一升级。
 - `DA_Waves_Prototype` 第四项会被更新为 `BP_ArenaEnemyCharacter × 9`，不会重复追加第五项。
 - Overload 首次生成时会从现有 Shocked 图标复制一个独立的 `T_Upgrade_Overload_Icon` 占位资产；之后替换该纹理不会被脚本覆盖。
+- EnergyOnKill 首次生成时会复制独立的 `T_Upgrade_EnergyOnKill_Icon` 占位资产；之后可替换为正式图标且不会被脚本覆盖。
 - 总入口会先完成所有分类预检，减少执行到中途才发现缺失依赖的情况。
 - 修改配置后可连续运行两次，第二次不应创建重复资产或 UpgradePool 条目。

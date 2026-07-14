@@ -18,7 +18,7 @@ public:
 	// 根据输入标签查找对应 AbilitySpec，并交给 GAS 标准激活流程处理。
 	void AbilityInputTagPressed(const FGameplayTag& InputTag);
 
-	// 在服务端把实际生效的伤害转换为来源 ASC 上的类型化 GameplayEvent。
+	// 在服务端路由实际伤害，并在目标首次死亡时向来源 ASC 追加 OnKill GameplayEvent。
 	void RouteAuthoritativeDamageEvent(
 		const FGameplayEffectSpec& DamageSpec,
 		UAbilitySystemComponent* TargetAbilitySystemComponent,

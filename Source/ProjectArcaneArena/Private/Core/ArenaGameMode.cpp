@@ -13,6 +13,7 @@
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
+#include "Item/ArenaPickupDropTableDataAsset.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogArenaUpgrades, Log, All);
 
@@ -26,7 +27,7 @@ AArenaGameMode::AArenaGameMode()
 	WaveManagerClass = AArenaWaveManager::StaticClass();
 }
 
-// 服务器生成本局升级随机流、创建 WaveManager，并在配置 WaveData 后启动第一波。
+// 服务器生成本局随机种子、创建 WaveManager，并注入波次与全局掉落配置。
 void AArenaGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -49,7 +50,7 @@ void AArenaGameMode::BeginPlay()
 
 	WaveManager->SetUpgradeSystemEnabled(true);
 	WaveManager->OnUpgradePhaseStarted.AddUObject(this, &AArenaGameMode::HandleUpgradePhaseStarted);
-	WaveManager->Initialize(WaveData);
+	WaveManager->Initialize(WaveData, PickupDropTable, UpgradeRandomSeed);
 	if (WaveData)
 	{
 		GetWorldTimerManager().SetTimer(InitialWaveTimerHandle, this, &AArenaGameMode::StartNextWave, InitialWaveDelay, false);

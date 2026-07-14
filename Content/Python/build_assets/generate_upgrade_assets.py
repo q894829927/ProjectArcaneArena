@@ -112,6 +112,27 @@ UPGRADE_CONFIGS = [
         "granted_gameplay_effect_path": None,
         "granted_ability_path": "/Game/GAS/GameplayAbility/GA_Overload",
     },
+    {
+        "asset_name": "DA_Upgrade_EnergyOnKill",
+        "destination_path": "/Game/Data/Upgrade",
+        "upgrade_id": "Upgrade.Trigger.EnergyOnKill",
+        "display_name": "能量收割",
+        "description": "击杀敌人时恢复 10 点能量，最多叠加 3 层",
+        "rarity": "COMMON",
+        "upgrade_tags": ["Upgrade.Trigger.EnergyOnKill"],
+        "required_tags": [],
+        "blocked_tags": [],
+        "target_ability_tag": "Ability.Passive.EnergyOnKill",
+        "trigger_event_tag": "Trigger.OnKill",
+        "damage_type_tag": None,
+        "numeric_value": 10.0,
+        "max_stacks": 3,
+        "stackable": True,
+        "icon_path": "/Game/UI/UpgradeIcons/T_Upgrade_EnergyOnKill_Icon",
+        "icon_template_path": "/Game/UI/UpgradeIcons/T_Upgrade_LightningStormShocked_Icon",
+        "granted_gameplay_effect_path": None,
+        "granted_ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnKill",
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (
@@ -168,7 +189,7 @@ def _validate_references(config, generated_asset_paths):
         tools.make_tag(tag_name)
     tools.make_tag(config["target_ability_tag"])
     tools.make_optional_tag(config["trigger_event_tag"])
-    tools.make_tag(config["damage_type_tag"])
+    tools.make_optional_tag(config["damage_type_tag"])
 
     if "icon_path" in config and config["icon_path"]:
         if unreal.EditorAssetLibrary.does_asset_exist(config["icon_path"]):
@@ -292,7 +313,7 @@ def _configure_upgrade(asset, config):
     )
     asset.set_editor_property(
         "damage_type_tag",
-        tools.make_tag(config["damage_type_tag"]),
+        tools.make_optional_tag(config["damage_type_tag"]),
     )
     asset.set_editor_property("numeric_value", float(config["numeric_value"]))
     asset.set_editor_property("max_stacks", int(config["max_stacks"]))

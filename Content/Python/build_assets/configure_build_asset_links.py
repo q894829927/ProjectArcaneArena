@@ -30,6 +30,11 @@ ABILITY_BINDINGS = [
         "property_name": "overload_lockout_effect_class",
         "effect_blueprint_path": "/Game/GAS/GameplayEffect/Status/GE_Status_OverloadLockout",
     },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnKill",
+        "property_name": "energy_restore_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnKill",
+    },
 ]
 
 GAME_MODE_PATH = "/Game/GameMode/BP_ArenaGameMode"
@@ -41,6 +46,7 @@ UPGRADE_POOL_ASSET_PATHS = [
     "/Game/Data/Upgrade/DA_Upgrade_LightningStormDamage",
     "/Game/Data/Upgrade/DA_Upgrade_LightningStormShocked",
     "/Game/Data/Upgrade/DA_Upgrade_Overload",
+    "/Game/Data/Upgrade/DA_Upgrade_EnergyOnKill",
 ]
 
 

@@ -27,11 +27,88 @@
 待处理：
 ```
 
+## 拾取物资产生成与幂等性
+
+### 测试方法
+
+1. 编译新增 C++ 类并重启 Unreal Editor，确认 Python 可读取 `ArenaPickupActor`、`ArenaPickupDropTableDataAsset` 和 `ArenaPickupType`。
+2. 在编辑器控制台连续执行两次：
+
+```text
+py "../../../../ProjectArcaneArena/Content/Python/setup_pickup_items.py"
+```
+
+3. 检查 `BP_HealthPickup`：Pickup Type 为 Health、Restore Amount 为 `25`、Pickup Life Span 为 `15`。
+4. 检查 `BP_EnergyPickup`：Pickup Type 为 Energy、Restore Amount 为 `20`、Pickup Life Span 为 `15`。
+5. 检查 `DA_PickupDropTable_Default`：Drop Chance 为 `0.25`，Health/Energy 条目权重均为 `1`。
+6. 检查 `BP_ArenaGameMode.PickupDropTable` 指向 `DA_PickupDropTable_Default`，Content Browser 没有 `_1` / `_2` 重复资产。
+
+### 通过标准
+
+- 两次执行都无 Python 异常，资产只有一份，类型和数值与上述配置一致。
+- 三个资产和 `BP_ArenaGameMode` 可正常打开、编译和保存，没有失效 Class 或 None 引用。
+
+## 拾取恢复、边界与生命期
+
+### 测试方法
+
+1. 使用 Standalone PIE，临时把 Drop Chance 设为 `1.0`，分别只保留 Health 或 Energy 一个掉落条目。
+2. 先让玩家损失 Health，击杀一名 WaveManager 管理的敌人并走过 Health 拾取物，记录拾取前后 Health。
+3. 消耗 Energy 后重复 Energy 拾取，记录拾取前后 Energy。
+4. 分别在资源接近上限、已满、`MaxHealth = 0`、`MaxEnergy = 0` 和玩家带 `State.Dead` 时穿过对应拾取物。
+5. 生成一个拾取物后不接触，计时观察约 `15s` 后是否销毁。
+6. 在顶视角和第三人称视角各观察一次 Mesh 和可选 Niagara 的大小、颜色和地面位置。
+7. 测试完成后恢复 Drop Chance 为 `0.25` 和两个等权条目。
+
+### 通过标准
+
+- Health 增加 `25`、Energy 增加 `20`，均不超过对应 Max，HUD 通过 GAS 属性委托更新。
+- 资源已满、Max 为零或玩家死亡时不消耗拾取物；另一名符合条件的玩家仍可拾取。
+- 恢复仅经由 GameplayEffect 与 Healing/Energy 属性管线，无直接属性写入或超上限。
+- 无人拾取时约 `15s` 后由服务器销毁，两种视角下的位置与尺寸均可辨识。
+
+## 掉落随机、唯一性与波次回归
+
+### 测试方法
+
+1. 在 `BP_ArenaGameMode` 设置固定 `UpgradeRandomSeedOverride`，记录一局中每名敌人的死亡顺序、是否掉落以及掉落类型。
+2. 使用同一种子和同一敌人死亡顺序重新开局，对比掉落序列和每次 Upgrade 候选顺序。
+3. 使用足够多的击杀统计总掉落比例和 Health/Energy 类型比例。
+4. 临时将 Drop Chance 设为 `1.0`，对同一敌人的死亡处理设断点或观察 World Outliner，确认一次死亡最多出现一个 Pickup Actor。
+5. 依次测试 `PickupDropTable = None`、Entries 为空、全部 Weight 为零、Pickup Class 为空和故意配置无法生成的 Class，完整清理波次。
+6. 恢复正式掉落表配置。
+
+### 通过标准
+
+- 相同种子与死亡顺序产生相同掉落序列，启用掉落前后的 Upgrade 候选顺序不变。
+- 大量样本中总掉率长期接近 `25%`，Health/Energy 长期接近 `1:1`。
+- 每名受 WaveManager 管理的敌人每次死亡最多生成一个拾取物，手工摆放且未注册的敌人不掉落。
+- 无表、空表、零权重和生成失败均只记录日志，`RemainingEnemyCount`、Upgrade、Victory 和 Defeat 流程仍正常。
+
+## 2-player Listen Server 共享拾取
+
+### 测试方法
+
+1. PIE 设置为 `2 Players` 和 `Play As Listen Server`，使用独立窗口，临时把 Drop Chance 设为 `1.0`。
+2. 击杀一名 WaveManager 管理的敌人，确认 Host 和 Client 在同一世界位置看到同一个拾取物。
+3. 让两名都缺少对应资源的玩家同时接近，记录最先重叠的玩家和双方属性变化。
+4. 让资源已满的玩家先穿过拾取物，再让缺少资源的另一名玩家穿过。
+5. 生成拾取物后进入 Upgrade 或 Victory，观察其是否继续存在到被拾取或超时。
+6. 在两个窗口分别切换顶视角/第三人称视角后重复。
+7. 测试完成后恢复 Drop Chance 为 `0.25`。
+
+### 通过标准
+
+- 只有服务器生成一个复制 Pickup Actor，Host 和 Client 看到同一个生成/销毁结果。
+- 首个符合条件的玩家获得恢复，另一名玩家不变；客户端不自行修改属性或销毁 Actor。
+- 资源已满玩家不会抢走拾取物，另一名缺少资源的玩家仍可拾取。
+- 进入 Upgrade/Victory 不会立即清除掉落物，最终由成功拾取或服务器生命期销毁。
+
 ## 构筑资产生成器幂等性
 
 ### 测试方法
 
-1. 打开 `BP_ArenaGameMode`，记录 UpgradePool 中 `DA_Upgrade_Overload` 的数量。
+1. 打开 `BP_ArenaGameMode`，记录 UpgradePool 中 `DA_Upgrade_Overload` 与 `DA_Upgrade_EnergyOnKill` 的数量。
 2. 打开 `DA_Waves_Prototype`，记录 Waves 数量和第四波配置。
 3. 在编辑器控制台再次执行：
 
@@ -40,14 +117,74 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 ```
 
 4. 等待脚本成功完成，关闭并重新打开上述两个资产。
-5. 检查 Content Browser 中是否出现名称带 `_1`、`_2` 的重复 Overload 资产。
+5. 检查 Content Browser 中是否出现名称带 `_1`、`_2` 的重复 Overload 或 EnergyOnKill 资产。
 
 ### 通过标准
 
-- UpgradePool 中只有一份 `DA_Upgrade_Overload`。
+- UpgradePool 中只有一份 `DA_Upgrade_Overload` 和一份 `DA_Upgrade_EnergyOnKill`。
 - Waves 仍只有四项，第四波仍为 `BP_ArenaEnemyCharacter × 9`、间隔 `0.5`、非 Boss。
 - `GA_Overload`、`GE_Status_OverloadLockout`、`GCN_Overload_Explosion`、`DA_Upgrade_Overload` 和图标均没有重复资产。
+- `GA_EnergyOnKill`、`GE_Trigger_EnergyOnKill`、`DA_Upgrade_EnergyOnKill` 和图标均没有重复资产。
 - 第二次执行没有 Python 异常。
+
+## OnKill 与能量收割资产配置
+
+### 测试方法
+
+1. 打开 `DA_Upgrade_EnergyOnKill`，检查：
+   - Upgrade ID：`Upgrade.Trigger.EnergyOnKill`
+   - Rarity：`Common`
+   - Upgrade Tags：`Upgrade.Trigger.EnergyOnKill`
+   - Target Ability：`Ability.Passive.EnergyOnKill`
+   - Trigger Event：`Trigger.OnKill`
+   - Damage Type：空
+   - NumericValue：`10`
+   - Stackable：true，MaxStacks：`3`
+   - Granted Ability：`GA_EnergyOnKill`
+2. 打开 `GA_EnergyOnKill`，确认 Energy Restore Effect Class 为 `GE_Trigger_EnergyOnKill`。
+3. 打开 `GE_Trigger_EnergyOnKill`，确认父类为 `ArenaGameplayEffect_EnergyRestore`。
+4. 检查 `BP_ArenaGameMode.UpgradePool` 中只有一份 `DA_Upgrade_EnergyOnKill`。
+
+### 通过标准
+
+- 所有字段与上述配置一致，三个资产可正常打开、编译和保存。
+- 没有失效 Class、None 恢复效果、GameplayTag 警告或重复 UpgradePool 条目。
+
+## OnKill 单人触发、堆叠与防重复
+
+### 测试方法
+
+1. 使用临时 GameMode，把 UpgradePool 缩减为 `DA_Upgrade_EnergyOnKill`，不要覆盖正式资产。
+2. 分别取得一、二、三层升级；每次选择后用 `showdebug abilitysystem` 确认 `Upgrade.Trigger.EnergyOnKill` 和 `Ability.Passive.EnergyOnKill` 存在。
+3. 每个层级先消耗足够 Energy，再用 BasicAttack 完成一次击杀，记录击杀前后 Energy。
+4. 第三层后再进入升级阶段，检查该升级不再进入候选。
+5. 将 Energy 调整到接近 MaxEnergy 后击杀敌人，再把测试 MaxEnergy 设置为 `0` 重复一次。
+6. 准备高血量敌人，使其先承受周期或范围伤害；在敌人死亡后继续观察剩余 Burning Tick、Storm Tick 或其他范围命中。
+
+### 通过标准
+
+- 一、二、三层每次击杀分别恢复 `10/20/30 Energy`。
+- Energy 不超过 MaxEnergy；MaxEnergy 为 `0` 时保持 `0`。
+- 达到三层后升级不再出现，且 AbilitySpec 仍只有一份被动 Ability。
+- 同一敌人从存活变为死亡只恢复一次，死亡后的周期、范围或重复命中不追加恢复。
+
+## OnKill 全伤害来源与多人归属
+
+### 测试方法
+
+1. 单人分别使用 BasicAttack、Fireball 直接伤害、Burning 最后一跳、LightningStorm 和 Overload Secondary 完成击杀。
+2. 使用一次 LightningStorm 或 Overload 同时击杀至少两名敌人，记录总 Energy 恢复。
+3. 启动 2-player Listen Server，让两名玩家共同攻击同一敌人，并分别安排 Host 与 Client 完成最后一击。
+4. 在来源玩家死亡后，让其先前施加的 Burning 完成击杀。
+5. 开启 `arena.Net.AbilityAudit 1` 或在 `RouteAuthoritativeDamageEvent` 设置断点，检查 `Trigger.OnKill` 的 Target、EventMagnitude、TargetTags 和 EffectContext。
+
+### 通过标准
+
+- 每种经过 Damage Meta Attribute 的伤害都能在首次致死时派发一次 `Trigger.OnKill`。
+- 一次范围伤害击杀多名敌人时，每个死亡目标分别恢复一次 Energy。
+- 2-player 中只有实际最后一击来源玩家恢复，另一个玩家不获得共享奖励。
+- 来源玩家已拥有 `State.Dead` 时，OnKill 仍可被路由，但 EnergyOnKill 被动不激活。
+- 客户端不自行应用恢复 GE，Energy 由服务器修改并通过属性复制更新 HUD。
 
 ## Overload 资产配置
 

@@ -1,4 +1,4 @@
-"""预检并生成全部已配置的 Fire/Lightning/Overload 构筑资产。"""
+"""预检并生成全部已配置的构筑与触发升级资产。"""
 
 import importlib
 
@@ -90,12 +90,12 @@ def main():
             task.enter_progress_frame(1, progress_text)
             module.run()
 
-    unreal.log("Fire/Lightning/Overload build asset setup completed successfully.")
+    unreal.log("Build and trigger upgrade asset setup completed successfully.")
 
 
 if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        unreal.log_error(f"Fire/Lightning/Overload build asset setup failed: {error}")
+        unreal.log_error(f"Build and trigger upgrade asset setup failed: {error}")
         raise

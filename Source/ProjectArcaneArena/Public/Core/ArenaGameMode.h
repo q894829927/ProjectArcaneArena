@@ -8,6 +8,7 @@
 class AArenaPlayerController;
 class AArenaPlayerState;
 class AArenaWaveManager;
+class UArenaPickupDropTableDataAsset;
 class UArenaUpgradeDataAsset;
 class UArenaWaveDataAsset;
 
@@ -81,6 +82,9 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave")
 	TObjectPtr<UArenaWaveDataAsset> WaveData;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Pickup")
+	TObjectPtr<UArenaPickupDropTableDataAsset> PickupDropTable;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave", meta = (ClampMin = "0.0"))
 	float InitialWaveDelay = 1.0f;
