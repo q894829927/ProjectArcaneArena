@@ -7,6 +7,7 @@
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayTags.h"
+#include "GAS/ArenaGameplayAbility_EnemyAttackBase.h"
 #include "GAS/ArenaGameplayAbility_EnemyMeleeAttack.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffect.h"
@@ -53,6 +54,57 @@ void AArenaEnemyCharacter::SetCombatTarget(AActor* NewCombatTarget)
 	}
 }
 
+// 使用 StartupAbilities 中第一个 EnemyAttackBase 子类作为主攻击，激活资格继续交给 GAS 判断。
+bool AArenaEnemyCharacter::TryActivatePrimaryAttack()
+{
+	if (!HasAuthority() || !AbilitySystemComponent || IsDeadOrStunned())
+	{
+		return false;
+	}
+
+	const TSubclassOf<UGameplayAbility> PrimaryAttackClass = FindPrimaryAttackAbilityClass();
+	return PrimaryAttackClass
+		&& AbilitySystemComponent->TryActivateAbilityByClass(PrimaryAttackClass);
+}
+
+// 从主攻击 CDO 读取决策距离，避免 AI 与具体近战或远程 Ability 的数值分叉。
+float AArenaEnemyCharacter::GetPrimaryAttackRange() const
+{
+	const TSubclassOf<UGameplayAbility> PrimaryAttackClass = FindPrimaryAttackAbilityClass();
+	const UArenaGameplayAbility_EnemyAttackBase* PrimaryAttackCDO = PrimaryAttackClass
+		? Cast<UArenaGameplayAbility_EnemyAttackBase>(PrimaryAttackClass.GetDefaultObject())
+		: nullptr;
+	return PrimaryAttackCDO ? FMath::Max(PrimaryAttackCDO->GetAttackRange(), 0.0f) : 0.0f;
+}
+
+// 通过主攻击 CDO 执行与 Ability 激活相同的视线或弹道检查，供 AI 决定是否停步。
+bool AArenaEnemyCharacter::HasPrimaryAttackPath(AActor* TargetActor)
+{
+	const TSubclassOf<UGameplayAbility> PrimaryAttackClass = FindPrimaryAttackAbilityClass();
+	const UArenaGameplayAbility_EnemyAttackBase* PrimaryAttackCDO = PrimaryAttackClass
+		? Cast<UArenaGameplayAbility_EnemyAttackBase>(PrimaryAttackClass.GetDefaultObject())
+		: nullptr;
+	return PrimaryAttackCDO && PrimaryAttackCDO->HasAttackPathForAI(this, TargetActor);
+}
+
+// 只取消配置的主攻击 Spec，不影响敌人未来可能拥有的被动或其他辅助 Ability。
+void AArenaEnemyCharacter::CancelPrimaryAttack()
+{
+	if (!HasAuthority() || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	const TSubclassOf<UGameplayAbility> PrimaryAttackClass = FindPrimaryAttackAbilityClass();
+	FGameplayAbilitySpec* PrimaryAttackSpec = PrimaryAttackClass
+		? AbilitySystemComponent->FindAbilitySpecFromClass(PrimaryAttackClass)
+		: nullptr;
+	if (PrimaryAttackSpec && PrimaryAttackSpec->IsActive())
+	{
+		AbilitySystemComponent->CancelAbilityHandle(PrimaryAttackSpec->Handle);
+	}
+}
+
 // 通过 AbilityTag 请求 ASC 激活近战技能，冷却和状态阻断继续由 GAS 判断。
 bool AArenaEnemyCharacter::TryActivateMeleeAttack()
 {
@@ -78,6 +130,20 @@ float AArenaEnemyCharacter::GetMeleeAttackRange() const
 	}
 
 	return 170.0f;
+}
+
+// 按数组顺序选择首个通用敌人攻击类，使蓝图只需替换 StartupAbility 即可切换战斗类型。
+TSubclassOf<UGameplayAbility> AArenaEnemyCharacter::FindPrimaryAttackAbilityClass() const
+{
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : StartupAbilities)
+	{
+		if (AbilityClass && AbilityClass->IsChildOf(UArenaGameplayAbility_EnemyAttackBase::StaticClass()))
+		{
+			return AbilityClass;
+		}
+	}
+
+	return nullptr;
 }
 
 bool AArenaEnemyCharacter::IsDeadOrStunned() const

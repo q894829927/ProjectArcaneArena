@@ -49,6 +49,8 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	// 玩家完成 Pawn 创建和 GAS 初始化后，编辑器测试模式可按顺序授予起始升级。
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
 	// Upgrade 阶段迟加入时生成候选，并在空候选自动完成后重新检查全员门槛。
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
@@ -74,6 +76,10 @@ private:
 	bool ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
 	// 在服务器完成有奖励或无奖励选择后通过 GAS 补满生命和能量，Health 恢复会驱动死亡玩家复活。
 	void RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* ArenaPlayerState) const;
+#if WITH_EDITOR
+	// 编辑器测试模式通过正式升级路径顺序授予 DataAsset，保留标签、层数和 Ability SourceObject。
+	void ApplyDebugStartingUpgrades(AArenaPlayerState* ArenaPlayerState) const;
+#endif
 	bool HaveAllPlayersCompletedUpgradeSelection() const;
 	void TryAdvanceAfterUpgradeSelections();
 
@@ -100,6 +106,14 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Upgrade|Random", meta = (AllowPrivateAccess = "true", ClampMin = "0"))
 	int32 UpgradeRandomSeedOverride = 0;
+
+#if WITH_EDITORONLY_DATA
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Debug|Upgrade")
+	bool bEnableDebugStartingUpgrades = false;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Debug|Upgrade", meta = (EditCondition = "bEnableDebugStartingUpgrades"))
+	TArray<TObjectPtr<UArenaUpgradeDataAsset>> DebugStartingUpgrades;
+#endif
 
 	UPROPERTY(Transient)
 	TObjectPtr<AArenaWaveManager> WaveManager;

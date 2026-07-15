@@ -32,6 +32,14 @@ public:
 	// 服务器 AI 写入当前战斗目标，Ability 激活后仍会重新校验该目标。
 	void SetCombatTarget(AActor* NewCombatTarget);
 	AActor* GetCombatTarget() const { return CombatTarget.Get(); }
+	// 激活 StartupAbilities 中第一个 EnemyAttackBase 子类，供近战与远程 AI 共用。
+	bool TryActivatePrimaryAttack();
+	// 返回主攻击 CDO 的距离，AI 将它与主攻击路径共同用于追击和停步决策。
+	float GetPrimaryAttackRange() const;
+	// 使用主攻击自身的视线或弹道规则判断当前目标是否可攻击。
+	bool HasPrimaryAttackPath(AActor* TargetActor);
+	// 取消当前主攻击实例，目标死亡或失效时阻止迟到命中和 Projectile。
+	void CancelPrimaryAttack();
 	// 由 AIController 通过 AbilityTag 请求激活近战技能。
 	bool TryActivateMeleeAttack();
 	// AI 使用 Ability CDO 的攻击距离决定追击接受半径，最终命中仍由 Ability 校验。
@@ -83,6 +91,8 @@ private:
 	void ApplyDefaultAttributes();
 	// 服务器授予敌人启动技能，敌人生命周期内只执行一次。
 	void GrantStartupAbilities();
+	// 按 StartupAbilities 固定顺序查找第一个通用敌人攻击类，保持数据配置确定性。
+	TSubclassOf<UGameplayAbility> FindPrimaryAttackAbilityClass() const;
 	// 绑定死亡标签和 Health 属性变化，用事件驱动死亡与反馈。
 	void BindAbilitySystemDelegates();
 	// 解绑死亡标签和 Health 属性变化委托。

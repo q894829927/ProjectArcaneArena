@@ -29,6 +29,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_LightningStorm, "Cooldown.LightningStorm", "Lightning storm cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_MeleeAttack, "Ability.Enemy.MeleeAttack", "Enemy melee attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_MeleeAttack, "Cooldown.Enemy.MeleeAttack", "Enemy melee attack cooldown.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_RangedAttack, "Ability.Enemy.RangedAttack", "Enemy ranged projectile attack ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_RangedAttack, "Cooldown.Enemy.RangedAttack", "Enemy ranged attack cooldown.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_BasicAttack_Activate, "GameplayCue.Ability.BasicAttack.Activate", "Basic attack activation presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Fireball_Cast, "GameplayCue.Ability.Fireball.Cast", "Confirmed fireball cast presentation.");

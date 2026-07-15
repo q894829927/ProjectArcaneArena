@@ -14,7 +14,7 @@
 | `generate_upgrade_assets.py` | 创建或更新 `ArenaUpgradeDataAsset` | `UPGRADE_CONFIGS` |
 | `generate_looping_gameplay_cues.py` | 复制模板并配置持续型 GameplayCue | `LOOPING_CUE_CONFIGS` |
 | `generate_burst_gameplay_cues.py` | 复制模板并配置一次性爆发 GameplayCue | `BURST_CUE_CONFIGS` |
-| `configure_build_asset_links.py` | 设置 Ability 的 GE、更新 UpgradePool，并幂等配置原型第四波 | `ABILITY_BINDINGS`、`UPGRADE_POOL_ASSET_PATHS` |
+| `configure_build_asset_links.py` | 设置 Ability 的 GE、更新 UpgradePool，并在远程敌人资产存在时保持四波混合配置 | `ABILITY_BINDINGS`、`UPGRADE_POOL_ASSET_PATHS` |
 | `setup_build_assets.py` | 统一预检并按依赖顺序运行所有分类生成器 | `GENERATOR_MODULE_NAMES` |
 
 `Content/Python/setup_build_assets.py` 是根目录一键入口，实际实现位于本目录。

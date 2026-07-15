@@ -31,7 +31,7 @@ void AArenaEnemyAIController::OnUnPossess()
 	Super::OnUnPossess();
 }
 
-// 服务器周期性执行 Idle/Chase/Attack 三态决策。
+// 在服务器按主攻击距离和实际攻击路径驱动追击；弹道被挡时缩小到达半径并继续绕路。
 void AArenaEnemyAIController::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -52,15 +52,7 @@ void AArenaEnemyAIController::Tick(float DeltaSeconds)
 		StopMovement();
 		ClearFocus(EAIFocusPriority::Gameplay);
 		Enemy->SetCombatTarget(nullptr);
-
-		if (Enemy->IsAttacking())
-		{
-			FGameplayTagContainer AttackAbilityTags(ArenaGameplayTags::Ability_Enemy_MeleeAttack);
-			if (UAbilitySystemComponent* EnemyASC = Enemy->GetAbilitySystemComponent())
-			{
-				EnemyASC->CancelAbilities(&AttackAbilityTags);
-			}
-		}
+		Enemy->CancelPrimaryAttack();
 
 		CurrentTarget = FindNearestLivingPlayer();
 	}
@@ -81,9 +73,10 @@ void AArenaEnemyAIController::Tick(float DeltaSeconds)
 
 	Enemy->SetCombatTarget(Target);
 	SetFocus(Target);
-	const float AttackRange = Enemy->GetMeleeAttackRange();
+	const float AttackRange = Enemy->GetPrimaryAttackRange();
 	const float Distance = FVector::Dist2D(Enemy->GetActorLocation(), Target->GetActorLocation());
-	if (Distance <= AttackRange && LineOfSightTo(Target))
+	const bool bHasAttackPath = Enemy->HasPrimaryAttackPath(Target);
+	if (Distance <= AttackRange && bHasAttackPath)
 	{
 		StopMovement();
 		const FVector FacingDirection = (Target->GetActorLocation() - Enemy->GetActorLocation()).GetSafeNormal2D();
@@ -91,12 +84,15 @@ void AArenaEnemyAIController::Tick(float DeltaSeconds)
 		{
 			Enemy->SetActorRotation(FacingDirection.Rotation());
 		}
-		Enemy->TryActivateMeleeAttack();
+		Enemy->TryActivatePrimaryAttack();
 		return;
 	}
 
-	// 攻击距离按双方 Actor 中心计算，因此寻路到达判定不能额外叠加胶囊体半径。
-	MoveToActor(Target, FMath::Max(AttackRange - MoveAcceptancePadding, 0.0f), false, true, true, nullptr, true);
+	// 无视线时不能继续使用攻击距离作为到达半径，否则位于墙后但已进射程会被误判为寻路完成。
+	const float AcceptanceRadius = bHasAttackPath
+		? FMath::Max(AttackRange - MoveAcceptancePadding, 0.0f)
+		: OccludedMoveAcceptanceRadius;
+	MoveToActor(Target, AcceptanceRadius, false, true, true, nullptr, true);
 }
 
 // 从 GameState PlayerArray 选择最近的存活 Pawn，兼容未来 Listen Server 双人模式。
@@ -140,13 +136,14 @@ bool AArenaEnemyAIController::IsValidCombatTarget(const AActor* Candidate) const
 		&& !TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead);
 }
 
-// 清理寻路、朝向和 Enemy 上的临时目标，避免死亡或眩晕后继续攻击。
+// 清理寻路、主攻击、朝向和临时目标，避免死亡、眩晕或阶段结束后继续释放。
 void AArenaEnemyAIController::StopCombatMovement()
 {
 	StopMovement();
 	ClearFocus(EAIFocusPriority::Gameplay);
 	if (AArenaEnemyCharacter* Enemy = ControlledEnemy.Get())
 	{
+		Enemy->CancelPrimaryAttack();
 		Enemy->SetCombatTarget(nullptr);
 	}
 }

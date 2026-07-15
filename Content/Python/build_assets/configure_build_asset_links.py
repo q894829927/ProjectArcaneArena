@@ -40,6 +40,7 @@ ABILITY_BINDINGS = [
 GAME_MODE_PATH = "/Game/GameMode/BP_ArenaGameMode"
 PROTOTYPE_WAVE_DATA_PATH = "/Game/Blueprints/DataAsset/DA_Waves_Prototype"
 PROTOTYPE_ENEMY_PATH = "/Game/Characters/ArenaEnemy/BP_ArenaEnemyCharacter"
+PROTOTYPE_RANGED_ENEMY_PATH = "/Game/Characters/ArenaEnemy/BP_ArenaRangedEnemy"
 UPGRADE_POOL_ASSET_PATHS = [
     "/Game/Data/Upgrade/DA_Upgrade_FireballDamage",
     "/Game/Data/Upgrade/DA_Upgrade_FireballBurning",
@@ -93,7 +94,7 @@ def _validate_ability_binding(binding, index, generated_asset_paths):
 
 
 def validate_configs(generated_asset_paths=None):
-    """验证 Ability 连接、GameMode 属性和升级池引用。"""
+    """验证 Ability、升级池以及近战/远程原型波次所需引用。"""
     generated_asset_paths = set(generated_asset_paths or ())
     seen_binding_properties = set()
     for index, binding in enumerate(ABILITY_BINDINGS):
@@ -121,7 +122,7 @@ def validate_configs(generated_asset_paths=None):
             f"GameMode {GAME_MODE_PATH} does not expose 'upgrade_pool': {error}"
         )
 
-    # 第四波只依赖现有原型资产，预检其反射类型和可写 Waves 字段。
+    # 混合波依赖近战原型与可选远程原型；远程尚未生成时不阻断其他构筑资产连接。
     wave_data_class = tools.require_unreal_type("ArenaWaveDataAsset")
     tools.require_unreal_type("ArenaWaveConfig")
     tools.require_unreal_type("ArenaWaveEnemyEntry")
@@ -130,6 +131,16 @@ def validate_configs(generated_asset_paths=None):
         PROTOTYPE_ENEMY_PATH,
         tools.require_unreal_type("ArenaEnemyCharacter"),
     )
+    if unreal.EditorAssetLibrary.does_asset_exist(PROTOTYPE_RANGED_ENEMY_PATH):
+        tools.require_blueprint(
+            PROTOTYPE_RANGED_ENEMY_PATH,
+            tools.require_unreal_type("ArenaEnemyCharacter"),
+        )
+    else:
+        unreal.log_warning(
+            "Ranged enemy asset is not generated yet; build asset setup will "
+            "leave the current wave enemy arrays unchanged."
+        )
     try:
         wave_data.get_editor_property("waves")
     except Exception as error:
@@ -184,50 +195,70 @@ def _configure_upgrade_pool():
     unreal.log(f"Configured GameMode UpgradePool: {GAME_MODE_PATH}")
 
 
-def _configure_prototype_wave_four():
-    """幂等写入第四波九名近战敌人，为正常流程提供第三次升级机会。"""
+def _make_wave_enemy_entry(enemy_class, count):
+    """构造一条确定顺序的敌人类型与数量配置。"""
+    enemy_entry = tools.require_unreal_type("ArenaWaveEnemyEntry")()
+    enemy_entry.set_editor_property("enemy_class", enemy_class)
+    enemy_entry.set_editor_property("count", count)
+    return enemy_entry
+
+
+def _configure_prototype_enemy_mixes():
+    """只替换前四波 Enemies，避免后续构筑脚本把混合波覆盖回纯近战。"""
+    if not unreal.EditorAssetLibrary.does_asset_exist(PROTOTYPE_RANGED_ENEMY_PATH):
+        unreal.log_warning(
+            f"Skipped mixed wave configuration because {PROTOTYPE_RANGED_ENEMY_PATH} is missing."
+        )
+        return
+
     wave_data = tools.require_asset(
         PROTOTYPE_WAVE_DATA_PATH,
         tools.require_unreal_type("ArenaWaveDataAsset"),
     )
-    _, enemy_class = tools.require_blueprint(
+    _, melee_enemy_class = tools.require_blueprint(
         PROTOTYPE_ENEMY_PATH,
         tools.require_unreal_type("ArenaEnemyCharacter"),
     )
+    _, ranged_enemy_class = tools.require_blueprint(
+        PROTOTYPE_RANGED_ENEMY_PATH,
+        tools.require_unreal_type("ArenaEnemyCharacter"),
+    )
 
-    enemy_entry = tools.require_unreal_type("ArenaWaveEnemyEntry")()
-    enemy_entry.set_editor_property("enemy_class", enemy_class)
-    enemy_entry.set_editor_property("count", 9)
-
-    wave_four = tools.require_unreal_type("ArenaWaveConfig")()
-    wave_four.set_editor_property("enemies", [enemy_entry])
-    wave_four.set_editor_property("spawn_interval", 0.5)
-    wave_four.set_editor_property("boss_wave", False)
-    wave_four.set_editor_property("reward_count", 3)
+    wave_mixes = (
+        ((melee_enemy_class, 3),),
+        ((melee_enemy_class, 3), (ranged_enemy_class, 2)),
+        ((melee_enemy_class, 4), (ranged_enemy_class, 3)),
+        ((melee_enemy_class, 5), (ranged_enemy_class, 4)),
+    )
 
     waves = list(wave_data.get_editor_property("waves"))
     if len(waves) < 3:
         raise RuntimeError(
             f"{PROTOTYPE_WAVE_DATA_PATH} must keep its first three prototype waves."
         )
-    if len(waves) == 3:
-        waves.append(wave_four)
-    else:
-        waves[3] = wave_four
+    while len(waves) < len(wave_mixes):
+        waves.append(tools.require_unreal_type("ArenaWaveConfig")())
+
+    for wave_index, wave_mix in enumerate(wave_mixes):
+        entries = [
+            _make_wave_enemy_entry(enemy_class, count)
+            for enemy_class, count in wave_mix
+        ]
+        waves[wave_index].set_editor_property("enemies", entries)
 
     wave_data.modify()
     wave_data.set_editor_property("waves", waves)
     tools.save_asset(PROTOTYPE_WAVE_DATA_PATH)
-    unreal.log(f"Configured prototype Wave 4: {PROTOTYPE_WAVE_DATA_PATH}")
+    unreal.log(f"Configured prototype melee/ranged wave mixes: {PROTOTYPE_WAVE_DATA_PATH}")
 
 
 def run():
-    """验证后连接 Ability/UpgradePool，并幂等补齐原型第四波。"""
+    """验证后连接 Ability/UpgradePool，并保持前四波混合敌人配置。"""
     validate_configs()
     for binding in ABILITY_BINDINGS:
         _configure_ability_binding(binding)
     _configure_upgrade_pool()
-    _configure_prototype_wave_four()
+    _configure_prototype_enemy_mixes()
 
 
 def main():

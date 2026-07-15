@@ -57,6 +57,19 @@ void AArenaGameMode::BeginPlay()
 	}
 }
 
+// Super 完成 RestartPlayer/Possess 后 ASC 已初始化，此时测试升级可复用正式服务器授予流程。
+void AArenaGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+
+#if WITH_EDITOR
+	if (HasAuthority() && bEnableDebugStartingUpgrades)
+	{
+		ApplyDebugStartingUpgrades(NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr);
+	}
+#endif
+}
+
 // 优先使用蓝图配置的固定测试种子，否则由会话 GUID 派生非零种子；客户端只接收复制值。
 void AArenaGameMode::InitializeUpgradeRandomStream()
 {
@@ -381,6 +394,51 @@ void AArenaGameMode::RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* Arena
 	SpecHandle.Data->SetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Recovery_Energy, EnergyRecovery);
 	ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 }
+
+#if WITH_EDITOR
+// 测试起始升级严格按数组顺序校验并授予，使依赖 Build Tags 的后续升级获得与正式选择相同的状态。
+void AArenaGameMode::ApplyDebugStartingUpgrades(AArenaPlayerState* ArenaPlayerState) const
+{
+	if (!HasAuthority() || !ArenaPlayerState)
+	{
+		return;
+	}
+
+	for (UArenaUpgradeDataAsset* Upgrade : DebugStartingUpgrades)
+	{
+		if (!Upgrade)
+		{
+			UE_LOG(LogArenaUpgrades, Warning, TEXT("Skipped an empty DebugStartingUpgrades entry for %s."), *GetNameSafe(ArenaPlayerState));
+			continue;
+		}
+
+		if (!IsUpgradeEligible(ArenaPlayerState, Upgrade))
+		{
+			UE_LOG(LogArenaUpgrades, Warning,
+				TEXT("Debug starting upgrade %s is not eligible for %s; check array order and required tags."),
+				*Upgrade->UpgradeID.ToString(),
+				*GetNameSafe(ArenaPlayerState));
+			continue;
+		}
+
+		if (!ApplyUpgrade(ArenaPlayerState, Upgrade))
+		{
+			UE_LOG(LogArenaUpgrades, Warning, TEXT("Failed to apply debug starting upgrade %s to %s."),
+				*Upgrade->UpgradeID.ToString(),
+				*GetNameSafe(ArenaPlayerState));
+			continue;
+		}
+
+		ArenaPlayerState->CompleteUpgradeSelection(Upgrade);
+		UE_LOG(LogArenaUpgrades, Log, TEXT("Granted debug starting upgrade %s to %s (stack %d)."),
+			*Upgrade->UpgradeID.ToString(),
+			*GetNameSafe(ArenaPlayerState),
+			ArenaPlayerState->GetUpgradeStackCount(Upgrade->UpgradeID));
+	}
+
+	RestorePlayerResourcesAfterUpgrade(ArenaPlayerState);
+}
+#endif
 
 // 重新验证候选 ID，成功后记录层数、恢复资源并检查是否可以推进波次。
 void AArenaGameMode::SubmitUpgradeSelection(AArenaPlayerController* RequestingController, FName UpgradeID)

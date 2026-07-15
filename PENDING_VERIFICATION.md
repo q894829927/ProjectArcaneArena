@@ -152,10 +152,10 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
    - Granted Tag：`Status.Overload.Lockout`
 4. `GCN_Overload_Explosion`
    - Cue Tag：`GameplayCue.Combo.Overload`
-   - Niagara：`NS_Hit_Lightning_once`
+   - Niagara：`NS_Hit_Lightning_once` 与 `NS_Hit_Fire_Once`
    - Attach Policy：不附着
    - Attachment Rule：Keep World
-   - Scale Override：`2.5 / 2.5 / 2.5`
+   - Scale Override：`3.0 / 3.0 / 3.0`
 
 ### 通过标准
 
@@ -163,42 +163,39 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 
 ## Overload 单人完整测试环境
 
-正式四波只有三次升级选择，单人从零开始同时获得 Burning 与 Overload 需要四次选择。因此完整单人测试使用独立测试资产。
+验证状态：**Verified（2026-07-15）**。测试关卡、调试起始升级、三个落地木桩和正式 GAS 升级授予路径均成功用于单人 PIE。
+
+完成 C++ 编译并重启编辑器后，先运行独立测试资产生成器：
+
+```text
+py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_test.py"
+```
+
+生成器使用正式升级授予路径直接配置完整构筑，并创建三个静止高血量木桩；不要修改正式 GameMode、WaveData 或玩家 StartupAbilities。脚本不会创建、复制或切换地图，避免 Python 持有 Inactive World 或未保存的 World Partition External Actor。
 
 ### 测试方法
 
-1. 复制 `DA_Waves_Prototype` 为临时 `DA_Waves_OverloadTest`。
-2. 配置五波；前四波各使用一名低血量敌人，第五波使用至少三名敌人。
-3. 复制或新建临时 GameMode，WaveData 指向测试 WaveData。
-4. 临时 UpgradePool 只保留：
-   - `DA_Upgrade_FireballDamage`
-   - `DA_Upgrade_FireballBurning`
-   - `DA_Upgrade_LightningStormDamage`
-   - `DA_Upgrade_Overload`
-5. 依次完成选择：
-
-```text
-Wave 1 后：Fireball Damage
-Wave 2 后：Fireball Burning
-Wave 3 后：LightningStorm Damage
-Wave 4 后：Overload
-Wave 5：执行战斗测试
-```
-
-6. 第五波让至少两名敌人的中心距离小于 `300`。可以调整 EnemySpawn TargetPoint，或在专用测试关卡中集中放置敌人。
-7. 测试完成后切回正式 GameMode，不提交临时测试资产。
+1. 第一次执行脚本后，打开正式 `Lvl_TopDown`，使用 `File > Save Current Level As...` 保存为 `/Game/Tests/Overload/Lvl_OverloadTest`。
+2. 保持新测试关卡已打开，再执行一次相同脚本。
+3. 检查 World Settings 的 GameMode Override 为 `BP_ArenaGameMode_OverloadTest`。
+4. 检查关卡中存在 `OverloadDummy_Primary`、`OverloadDummy_Inside250` 和 `OverloadDummy_Outside350`。
+5. 开始 PIE，使用 `showdebug abilitysystem` 检查玩家的构筑标签和被动 Ability。
+6. 结束 PIE 后仍保留正式关卡和正式 GameMode 资产不变。
 
 ### 通过标准
 
-- 四次升级均可按顺序取得。
-- Overload 只在同时拥有 `Build.Fire` 和 `Build.Lightning` 后进入候选。
+- 玩家进入 PIE 后直接拥有 Fireball Damage、Fireball Burning、LightningStorm Damage 和 Overload。
+- 起始升级仍按 RequiredTags 顺序验证，不能绕过缺失的 `Build.Fire` 或 `Build.Lightning`。
 - 玩家 ASC 最终包含 `Upgrade.Combo.Overload`，并拥有 `Ability.Passive.Overload`。
+- 三个木桩均为 `5000 Health / 0 Shield / 0 Defense / 0 MoveSpeed`，不会获得敌人近战 Ability。
 
 ## Overload 基础触发与范围
 
+验证状态：**Partial Verified（2026-07-15）**。已确认 Fireball 赋予 `Status.Burning`、LightningStorm 在主木桩位置触发火焰 + 闪电爆发、250 距离木桩受伤且 350 距离木桩不受伤。
+
 ### 测试方法
 
-1. 使用上述单人测试环境进入第五波。
+1. 使用上述独立测试环境直接开始 PIE；该测试 GameMode 已关闭正式 WaveData，不需要进入指定波次。
 2. 打开控制台输入 `slomo 0.2`，便于观察 Storm Tick 和爆炸 Cue。
 3. 先用 Fireball 命中目标，使用 `showdebug abilitysystem` 确认目标具有 `Status.Burning`。
 4. 对 Burning 目标释放 LightningStorm。
@@ -324,6 +321,25 @@ Wave 5：执行战斗测试
 - 爆炸不伤害任一玩家。
 - 本地视角切换不复制输入，也不增加 Area、事件或爆炸数量。
 
+## 远程敌人最小战斗闭环
+
+### 测试方法
+
+1. 编译并重启编辑器后运行 `Content/Python/ranged_enemy/setup_ranged_enemy.py` 两次，确认资产创建与重复执行都成功。
+2. 单人 PIE 观察远程敌人在约 `950` 距离停步、转向、播放 Montage，并在约 `0.45s` 后生成一个 Projectile；确认冷却约 `1.6s`。
+3. 在前摇中离开射程、躲到墙后、击杀或眩晕敌人，确认攻击打空且没有迟到 Projectile。
+4. 发射后横向移动躲避，并让 Projectile 分别命中墙、Shield 玩家和 Dash 无敌玩家。
+5. 2-player Listen Server 让未被锁定的玩家走入弹道，观察双方 Montage、Projectile、属性和伤害数字。
+6. 分别用顶视角与第三人称检查弹道高度、可读性和躲避空间。
+
+### 通过标准
+
+- 每次有效释放只由服务器生成一个复制 Projectile，Host 与 Client 看到同一个 Actor 和销毁结果。
+- Projectile 不追踪、不穿墙、不伤害敌人；任意存活玩家可挡弹，一次最多结算一次物理伤害。
+- Shield 优先承伤；Dash 无敌玩家不掉血但 Projectile 仍被消耗。
+- 前摇失效不会生成 Projectile，发射后的 Projectile 不因原目标移动而改向。
+- 目标死亡后 AI 取消前摇并重新选择最近的存活玩家。
+
 ## 四波正式流程
 
 ### 测试方法
@@ -339,7 +355,7 @@ Wave 5：执行战斗测试
 
 ### 通过标准
 
-- 四波分别生成 `3 / 5 / 7 / 9` 名敌人。
+- 四波分别生成 `3M / 3M+2R / 4M+3R / 5M+4R`，总数仍为 `3 / 5 / 7 / 9`。
 - 前三波清理后进入 Upgrade，第四波清理后直接进入 Victory。
 - Overload 在双构筑条件满足后可以进入第三次候选。
 - Overload 达到 MaxStacks 后不再出现。
