@@ -47,6 +47,11 @@ public:
 	// 接收 Controller 的选择请求，全部规则由服务器重新验证后才应用升级。
 	void SubmitUpgradeSelection(AArenaPlayerController* RequestingController, FName UpgradeID);
 
+#if WITH_EDITOR
+	// 仅供编辑器测试道具复用正式资格校验、GAS 应用、层数记录和资源恢复。
+	bool TryGrantDebugUpgrade(AArenaPlayerState* ArenaPlayerState, UArenaUpgradeDataAsset* Upgrade) const;
+#endif
+
 protected:
 	virtual void BeginPlay() override;
 	// 玩家完成 Pawn 创建和 GAS 初始化后，编辑器测试模式可按顺序授予起始升级。

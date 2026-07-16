@@ -689,3 +689,29 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.
 - Host、Owner Client 和 Simulated Client 看到同一个复制 Area 和同一次持续 Cue。
 - 每个 Area 的伤害来源、AttackPower、OnCrit、OnKill 和 Overload 归属于对应玩家 ASC。
 - 视角切换不会复制相机状态，也不会增加事件、Area、Cue 或伤害次数。
+
+## 通用升级拾取物测试关卡
+
+### 测试方法
+
+1. 关闭 Live Coding 或编辑器，完成一次窄范围 `ProjectArcaneArenaEditor Win64 Development` 编译并重启编辑器。
+2. 打开 `/Game/Tests/Overload/Lvl_OverloadTest`，执行：
+
+```text
+py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_test.py"
+```
+
+3. 再执行一次脚本，检查 World Outliner 中仍只有 15 个 `UpgradePickup_*` 和 3 个 `OverloadDummy_*`。
+4. PIE 中依次拾取基础升级与其依赖升级；离开碰撞球后重新进入，测试可堆叠升级直到 MaxStacks。
+5. 先直接触碰缺少 RequiredTags 的升级，再补齐前置并重新触碰同一道具。
+6. 双人 PIE 中让两名玩家分别拾取同一升级，检查各自 PlayerState 层数、Build Tags 和技能行为。
+
+### 通过标准
+
+- 15 个升级拾取物和三个木桩均贴合地面，重复运行脚本不会累积测试 Actor。
+- 每个道具的放大球体、ASCII 升级名称和简短效果均可见；球体与文字颜色可区分属性/构筑，名称与描述在顶视角和第三人称中朝向各自本地相机且不严重互相遮挡。
+- 玩家仍从正式 Character StartupAbilities 获得 BasicAttack、Fireball、Dash、Shield 和 LightningStorm。
+- 升级只由服务器授予；成功后层数、GameplayEffect、GrantedAbility、Build Tags、生命和能量恢复与正式升级选择一致。
+- 缺少 RequiredTags、命中 BlockedTags 或达到 MaxStacks 时拒绝授予，道具不消失；补齐条件后可再次拾取。
+- 道具对不同玩家独立生效，不因第一名玩家拾取而销毁，也不会让客户端直接修改升级状态。
+- 三个木桩保持 `5000 Health`、无 AI、无移动，并继续支持中心、250、350 距离边界测试。

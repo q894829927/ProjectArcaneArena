@@ -406,6 +406,42 @@ void AArenaGameMode::RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* Arena
 }
 
 #if WITH_EDITOR
+// 编辑器测试奖励仍执行服务器资格验证与正式 GAS 授予，成功后记录层数并恢复资源。
+bool AArenaGameMode::TryGrantDebugUpgrade(
+	AArenaPlayerState* ArenaPlayerState,
+	UArenaUpgradeDataAsset* Upgrade) const
+{
+	if (!HasAuthority() || !ArenaPlayerState || !Upgrade)
+	{
+		return false;
+	}
+
+	if (!IsUpgradeEligible(ArenaPlayerState, Upgrade))
+	{
+		UE_LOG(LogArenaUpgrades, Warning,
+			TEXT("Debug upgrade %s is not eligible for %s; check required tags and stack limits."),
+			*Upgrade->UpgradeID.ToString(),
+			*GetNameSafe(ArenaPlayerState));
+		return false;
+	}
+
+	if (!ApplyUpgrade(ArenaPlayerState, Upgrade))
+	{
+		UE_LOG(LogArenaUpgrades, Warning, TEXT("Failed to apply debug upgrade %s to %s."),
+			*Upgrade->UpgradeID.ToString(),
+			*GetNameSafe(ArenaPlayerState));
+		return false;
+	}
+
+	ArenaPlayerState->CompleteUpgradeSelection(Upgrade);
+	RestorePlayerResourcesAfterUpgrade(ArenaPlayerState);
+	UE_LOG(LogArenaUpgrades, Log, TEXT("Granted debug upgrade %s to %s (stack %d)."),
+		*Upgrade->UpgradeID.ToString(),
+		*GetNameSafe(ArenaPlayerState),
+		ArenaPlayerState->GetUpgradeStackCount(Upgrade->UpgradeID));
+	return true;
+}
+
 // 测试起始升级严格按数组顺序校验并授予，使依赖 Build Tags 的后续升级获得与正式选择相同的状态。
 void AArenaGameMode::ApplyDebugStartingUpgrades(AArenaPlayerState* ArenaPlayerState) const
 {
@@ -422,31 +458,9 @@ void AArenaGameMode::ApplyDebugStartingUpgrades(AArenaPlayerState* ArenaPlayerSt
 			continue;
 		}
 
-		if (!IsUpgradeEligible(ArenaPlayerState, Upgrade))
-		{
-			UE_LOG(LogArenaUpgrades, Warning,
-				TEXT("Debug starting upgrade %s is not eligible for %s; check array order and required tags."),
-				*Upgrade->UpgradeID.ToString(),
-				*GetNameSafe(ArenaPlayerState));
-			continue;
-		}
-
-		if (!ApplyUpgrade(ArenaPlayerState, Upgrade))
-		{
-			UE_LOG(LogArenaUpgrades, Warning, TEXT("Failed to apply debug starting upgrade %s to %s."),
-				*Upgrade->UpgradeID.ToString(),
-				*GetNameSafe(ArenaPlayerState));
-			continue;
-		}
-
-		ArenaPlayerState->CompleteUpgradeSelection(Upgrade);
-		UE_LOG(LogArenaUpgrades, Log, TEXT("Granted debug starting upgrade %s to %s (stack %d)."),
-			*Upgrade->UpgradeID.ToString(),
-			*GetNameSafe(ArenaPlayerState),
-			ArenaPlayerState->GetUpgradeStackCount(Upgrade->UpgradeID));
+		TryGrantDebugUpgrade(ArenaPlayerState, Upgrade);
 	}
 
-	RestorePlayerResourcesAfterUpgrade(ArenaPlayerState);
 }
 #endif
 
