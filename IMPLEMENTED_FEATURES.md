@@ -40,11 +40,11 @@ Status meanings:
 
 ### Server-Authoritative Damage — Implemented
 
-* `GE_Damage` and `UExecCalc_Damage` resolve BaseDamage, SkillMultiplier, AttackPower, Defense, critical chance, and critical multiplier on the authority side.
+* `GE_Damage` and `UExecCalc_Damage` resolve BaseDamage, SkillMultiplier, AttackPower, Defense, critical chance, and critical multiplier on the authority side. A successful roll adds `Damage.Critical` to that target's independent Damage Spec, so downstream systems reuse the one authoritative result.
 * `State.Invincible` prevents normal damage in the execution calculation.
 * Shield absorbs incoming damage before Health; reaching zero Health applies replicated `State.Dead`.
 * After Shield/Health are actually consumed, `UArenaAttributeSet` asks the source `UArenaAbilitySystemComponent` to route one authoritative `Trigger.OnDamageDealt.*` GameplayEvent. The payload contains actual absorbed damage, the Damage Spec context/objects, source plus damage tags, and a pre-hit target-tag snapshot so status synergies and killing blows use one shared event layer.
-* The same authority route emits `Trigger.OnKill` after the typed damage event when the target changes from alive before the hit to `State.Dead` after settlement. The outcome is captured before synchronous passives run, preventing nested, periodic, area, and repeated dead-target damage from duplicating the original kill event.
+* The same authority route emits `Trigger.OnCrit` for actual critical damage and `Trigger.OnKill` when the target changes from alive before the hit to `State.Dead` after settlement. Event order is typed OnDamage, OnCrit, then OnKill; the outcomes are captured before synchronous passives run so a critical killing blow can trigger both result events exactly once.
 * Each authority damage settlement emits one `LogArenaDamage` entry containing the source Avatar, target Avatar, resolved skill/status label, and actual Shield plus Health loss after clamping. Burning and Overload are labeled explicitly; unknown sources fall back to their source/effect class name.
 
 ### Ability Input and Cooldowns — Implemented
@@ -113,7 +113,7 @@ Status meanings:
 * Unlocking `Upgrade.LightningStorm.Shocked` lets authority Storm ticks apply a four-second, shared `AggregateByTarget` Shocked status after damage, so the first hit creates the state and later Lightning hits benefit from it.
 * `UExecCalc_Damage` recognizes `Damage.Lightning`, finds the target's active `Status.Shocked` GameplayEffect, and applies the highest `SetByCaller.Status.Shocked.LightningDamageBonus` value before critical and Defense modifiers.
 * `UArenaGameplayEffect_Shocked` supplies the non-stacking refresh behavior, death removal rule, granted status tag, and persistent `GameplayCue.Status.Shocked.Active` hook in native defaults.
-* Build-asset automation lives under `Content/Python/build_assets`, with shared tools, category generators for Upgrade DataAssets, native GameplayEffect/GameplayAbility Blueprint children, looping/burst GameplayCues, and a separate Ability/GameMode/wave link step. Root-level `setup_build_assets.py` remains as the single one-click entry point.
+* Build-asset automation lives under `Content/Python/build_assets`, with shared tools, category generators for Upgrade DataAssets, native GameplayEffect/GameplayAbility Blueprint children, looping/burst/damage-number GameplayCues, and a separate Ability/GameMode/wave link step. Root-level `setup_build_assets.py` remains as the single one-click entry point.
 * Fire/Lightning Upgrade, status GE and persistent Cue assets are present at their existing paths. The refactored category scripts and both orchestrator entry points still require an Unreal Editor idempotency regression pass.
 * Verification is deferred for damage stacks, first-hit ordering, shared two-player vulnerability, refresh/death cleanup, and replicated Cue presentation.
 
@@ -141,14 +141,23 @@ Status meanings:
 * Generator configs define `DA_Upgrade_EnergyOnKill`, `GA_EnergyOnKill`, `GE_Trigger_EnergyOnKill`, an independent placeholder icon, and an idempotent UpgradePool entry. The Common upgrade restores `10/20/30` Energy across three stacks and has no damage-type routing requirement.
 * Missing verification: compile/UHT, generator idempotency, direct/periodic/Secondary kill attribution, stack scaling, Energy clamp behavior, duplicate prevention, and two-player last-hit ownership.
 
+### Crit Build — Partial
+
+* `UExecCalc_Damage` performs the only authority-side critical roll using strict `< CritChance`, then marks the current independent Spec with `Damage.Critical`; Burning's fixed periodic execution remains outside this critical path.
+* `UArenaAbilitySystemComponent` routes `Trigger.OnCrit` only after Shield or Health actually loses value. BasicAttack, Fireball, LightningStorm, Overload Secondary, and pure Shield absorption are eligible, while each target in a multi-target hit resolves independently.
+* `DA_Upgrade_CritChance` applies `+0.05 CritChance` per stack through `UArenaGameplayEffect_CritChanceUpgrade` and a generic `SetByCaller.Upgrade.NumericValue`, grants `Build.Crit`, and caps at five stacks.
+* `UArenaGameplayAbility_EnergyOnCrit` reads `DA_Upgrade_EnergyOnCrit` from its AbilitySpec SourceObject and restores `5/10/15 Energy` through the existing Instant Energy recovery GE. The passive is ServerOnly, requires the permanent PlayerState upgrade stack, and accepts Secondary critical damage by design.
+* Authoritative damage now executes `GameplayCue.Damage.Number` or `GameplayCue.Damage.Critical` with actual Shield plus Health loss. `UArenaGameplayCueNotify_DamageNumber` creates the existing local non-replicated number Actor; critical numbers use a larger gold presentation and Health delegates no longer create duplicate numbers.
+* Generator configs define both Crit upgrades, their GE/Ability Blueprint children, placeholder icons, two damage-number Cue assets, Ability binding, and idempotent UpgradePool entries. The narrow Editor build/UHT and first editor generation pass succeeded, with all 30 generated or linked assets entering Content Validation without an asset error in the captured log. A second idempotency run, field inspection, PIE behavior, multiplayer ownership, and presentation verification remain pending.
+
 ## UI and Combat Feedback
 
 ### GameplayCue Routing - Partial
 
-* Native Cue tags and server-confirmed dispatch exist for all five player abilities, enemy melee activation, and physical/fire/lightning damage hits.
+* Native Cue tags and server-confirmed dispatch exist for all five player abilities, enemy melee activation, physical/fire/lightning hits, and normal/critical damage numbers.
 * LightningStorm Cast and Active Cues clear the activation prediction key inside their server-confirmed dispatch scope, so the owning client and simulated clients both receive the authoritative storm presentation exactly once.
 * Shield, Dash, and LightningStorm use paired server Add/Remove Cue lifetimes; Shield only adds on the zero-to-positive transition and removes on depletion or death. Dash and Shield explicitly attach to the Avatar root instead of the Manny skeletal mesh so imported mesh rotation/location offsets cannot displace directional or centered Niagara effects.
-* Successful damage emits one type-specific hit Cue from the authoritative AttributeSet Damage meta-attribute path, using HitResult data when available and target location as fallback.
+* Successful damage emits one type-specific hit Cue plus one normal-or-critical number Cue from the authoritative AttributeSet Damage meta-attribute path, using actual Shield plus Health loss and HitResult/target-location fallback.
 * GameplayCue Notify assets exist under `/Game/GAS/GameplayCues` and reference the current Niagara systems. Dash/Shield attached-effect placement and Niagara local-space/loop tuning still require PIE verification; remove any duplicate Niagara component from `BP_ArenaLightningStormArea` after the Storm Active Cue is confirmed.
 * `ProjectArcaneArenaEditor` provides a Niagara lifecycle bridge used by project Python tooling to copy verified looping System/Emitter State values and enable Local Space on converted shield effects; this editor-only module has no packaged-game runtime ownership.
 * Two-client PIE confirmation: after clearing the server activation prediction key for Storm Cast/Active dispatch, both the owning client and the other client can see the same LightningStorm presentation.
@@ -162,10 +171,10 @@ Status meanings:
 * If the Blueprint omits phase/wave/enemy-count bindings, the C++ HUD creates a compact top-center fallback so Combat, Upgrade, Victory, wave index, and remaining enemies remain visible during prototype testing.
 * The HUD displays the authority-generated match upgrade seed in the top-right through an optional `RandomSeedText` binding or a native fallback, updating from replicated GameState events without Tick.
 
-### Enemy Health Bar and Damage Numbers — Implemented
+### Enemy Health Bar and Damage Numbers — Partial
 
 * Enemy health bars observe the enemy AttributeSet and hide during death handling.
-* Local, non-replicated damage-number Actors display observed Health loss without owning damage state.
+* Local, non-replicated damage-number Actors are spawned by server-confirmed GameplayCues and display actual Shield plus Health loss without owning damage state. Critical numbers use a larger gold style; Health delegates remain responsible only for bars and local hit reactions.
 
 ## Enemies and Game Loop
 

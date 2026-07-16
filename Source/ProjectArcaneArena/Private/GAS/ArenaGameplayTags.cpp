@@ -16,11 +16,13 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_LightningStorm, "Ability.LightningStorm", "Lightning storm area ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_Overload, "Ability.Passive.Overload", "Passive elemental Overload ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnKill, "Ability.Passive.EnergyOnKill", "Passive Energy recovery on enemy kill ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnCrit, "Ability.Passive.EnergyOnCrit", "Passive Energy recovery on critical damage ability.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Physical, "Damage.Physical", "Physical damage type.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Fire, "Damage.Fire", "Fire damage type.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Lightning, "Damage.Lightning", "Lightning damage type.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Secondary, "Damage.Secondary", "Secondary damage that passive triggers may choose to ignore.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Critical, "Damage.Critical", "This damage Spec resolved as a critical hit on authority.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_BasicAttack, "Cooldown.BasicAttack", "Basic attack cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Fireball, "Cooldown.Fireball", "Fireball cooldown.");
@@ -42,6 +44,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Fire, "GameplayCue.Hit.Fire", "Confirmed fire damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Lightning, "GameplayCue.Hit.Lightning", "Confirmed lightning damage hit presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Number, "GameplayCue.Damage.Number", "Confirmed normal damage number presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Critical, "GameplayCue.Damage.Critical", "Confirmed critical damage number presentation.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Combat, "Phase.Combat", "A combat wave is active.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Upgrade, "Phase.Upgrade", "Players are choosing upgrades.");
@@ -60,6 +64,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_LightningStorm_Shocked, "Upgrade.LightningStorm.Shocked", "LightningStorm applies the Shocked status.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Combo_Overload, "Upgrade.Combo.Overload", "Fire and Lightning legendary Overload upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_EnergyOnKill, "Upgrade.Trigger.EnergyOnKill", "Stackable Energy recovery on kill upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Crit_Chance, "Upgrade.Crit.Chance", "Stackable critical-hit chance upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_EnergyOnCrit, "Upgrade.Trigger.EnergyOnCrit", "Stackable Energy recovery on critical damage upgrade.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Burning, "Status.Burning", "Target is taking periodic fire damage.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Shocked, "Status.Shocked", "Target takes increased Lightning damage.");
@@ -74,6 +80,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDamageDealt_Fire, "Trigger.OnDamageDealt.Fire", "Authoritative fire damage dealt event.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDamageDealt_Lightning, "Trigger.OnDamageDealt.Lightning", "Authoritative lightning damage dealt event.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnKill, "Trigger.OnKill", "Authoritative living-to-dead damage outcome event.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnCrit, "Trigger.OnCrit", "Authoritative critical damage outcome event.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Base, "SetByCaller.Damage.Base", "Runtime base damage value.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");
@@ -81,4 +88,5 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Status_Shocked_LightningDamageBonus, "SetByCaller.Status.Shocked.LightningDamageBonus", "Runtime Lightning vulnerability granted by Shocked.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Health, "SetByCaller.Recovery.Health", "Runtime Health recovery magnitude.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Energy, "SetByCaller.Recovery.Energy", "Runtime Energy recovery magnitude.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Upgrade_NumericValue, "SetByCaller.Upgrade.NumericValue", "Runtime numeric value supplied by an upgrade DataAsset.");
 }

@@ -133,6 +133,48 @@ UPGRADE_CONFIGS = [
         "granted_gameplay_effect_path": None,
         "granted_ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnKill",
     },
+    {
+        "asset_name": "DA_Upgrade_CritChance",
+        "destination_path": "/Game/Data/Upgrade",
+        "upgrade_id": "Upgrade.Crit.Chance",
+        "display_name": "致命精准",
+        "description": "暴击率提高 5%，最多叠加 5 层",
+        "rarity": "COMMON",
+        "upgrade_tags": ["Build.Crit", "Upgrade.Crit.Chance"],
+        "required_tags": [],
+        "blocked_tags": [],
+        "target_ability_tag": None,
+        "trigger_event_tag": None,
+        "damage_type_tag": None,
+        "numeric_value": 0.05,
+        "max_stacks": 5,
+        "stackable": True,
+        "icon_path": "/Game/UI/UpgradeIcons/T_Upgrade_CritChance_Icon",
+        "icon_template_path": "/Game/UI/UpgradeIcons/T_Upgrade_AttackPower_Icon",
+        "granted_gameplay_effect_path": "/Game/GAS/GameplayEffect/Upgrade/GE_Upgrade_CritChance",
+        "granted_ability_path": None,
+    },
+    {
+        "asset_name": "DA_Upgrade_EnergyOnCrit",
+        "destination_path": "/Game/Data/Upgrade",
+        "upgrade_id": "Upgrade.Trigger.EnergyOnCrit",
+        "display_name": "暴击充能",
+        "description": "暴击造成伤害时恢复 5 点能量，最多叠加 3 层",
+        "rarity": "RARE",
+        "upgrade_tags": ["Build.Crit", "Upgrade.Trigger.EnergyOnCrit"],
+        "required_tags": ["Build.Crit"],
+        "blocked_tags": [],
+        "target_ability_tag": "Ability.Passive.EnergyOnCrit",
+        "trigger_event_tag": "Trigger.OnCrit",
+        "damage_type_tag": None,
+        "numeric_value": 5.0,
+        "max_stacks": 3,
+        "stackable": True,
+        "icon_path": "/Game/UI/UpgradeIcons/T_Upgrade_EnergyOnCrit_Icon",
+        "icon_template_path": "/Game/UI/UpgradeIcons/T_Upgrade_EnergyOnKill_Icon",
+        "granted_gameplay_effect_path": None,
+        "granted_ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnCrit",
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (
@@ -187,7 +229,7 @@ def _validate_references(config, generated_asset_paths):
         + list(config["blocked_tags"])
     ):
         tools.make_tag(tag_name)
-    tools.make_tag(config["target_ability_tag"])
+    tools.make_optional_tag(config["target_ability_tag"])
     tools.make_optional_tag(config["trigger_event_tag"])
     tools.make_optional_tag(config["damage_type_tag"])
 
@@ -305,7 +347,7 @@ def _configure_upgrade(asset, config):
     )
     asset.set_editor_property(
         "target_ability_tag",
-        tools.make_tag(config["target_ability_tag"]),
+        tools.make_optional_tag(config["target_ability_tag"]),
     )
     asset.set_editor_property(
         "trigger_event_tag",

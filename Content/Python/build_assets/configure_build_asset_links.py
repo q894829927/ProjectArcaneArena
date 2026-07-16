@@ -35,6 +35,11 @@ ABILITY_BINDINGS = [
         "property_name": "energy_restore_effect_class",
         "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnKill",
     },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnCrit",
+        "property_name": "energy_restore_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnCrit",
+    },
 ]
 
 GAME_MODE_PATH = "/Game/GameMode/BP_ArenaGameMode"
@@ -48,6 +53,8 @@ UPGRADE_POOL_ASSET_PATHS = [
     "/Game/Data/Upgrade/DA_Upgrade_LightningStormShocked",
     "/Game/Data/Upgrade/DA_Upgrade_Overload",
     "/Game/Data/Upgrade/DA_Upgrade_EnergyOnKill",
+    "/Game/Data/Upgrade/DA_Upgrade_CritChance",
+    "/Game/Data/Upgrade/DA_Upgrade_EnergyOnCrit",
 ]
 
 

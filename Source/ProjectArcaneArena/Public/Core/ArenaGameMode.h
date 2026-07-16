@@ -66,13 +66,13 @@ private:
 	int32 DrawWeightedUpgradeIndex(const TArray<UArenaUpgradeDataAsset*>& Candidates);
 	// 返回升级资产对应的可配置稀有度权重，并防止无效配置产生零权重池。
 	int32 GetUpgradeRarityWeight(const UArenaUpgradeDataAsset* Upgrade) const;
-	// 判断候选是否精确匹配玩家当前拥有的火焰或闪电构筑标签。
+	// 判断候选是否精确匹配玩家当前拥有的火焰、闪电或暴击构筑标签。
 	bool IsUpgradeForOwnedBuild(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
 	// 使用同一服务器随机流打乱最终槽位，避免构筑保底固定出现在首位。
 	void ShuffleUpgradeChoices(TArray<UArenaUpgradeDataAsset*>& Choices);
 	// 按唯一 ID、资格标签和堆叠上限重新验证候选当前是否仍可选择。
 	bool IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
-	// 在服务器授予升级 GE/Ability/标签，并把 DataAsset 保存为 AbilitySpec SourceObject。
+	// 在服务器授予升级 GE/Ability/标签，向 GE 注入 NumericValue，并保存 Ability SourceObject。
 	bool ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
 	// 在服务器完成有奖励或无奖励选择后通过 GAS 补满生命和能量，Health 恢复会驱动死亡玩家复活。
 	void RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* ArenaPlayerState) const;

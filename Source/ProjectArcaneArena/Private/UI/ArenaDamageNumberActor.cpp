@@ -27,7 +27,7 @@ void AArenaDamageNumberActor::BeginPlay()
 	Super::BeginPlay();
 
 	SetLifeSpan(LifeSpan);
-	SetDamageAmount(DamageAmount);
+	SetDamagePresentation(DamageAmount, bCriticalHit);
 }
 
 // 每帧驱动伤害数字上浮表现，后续可替换为动画。
@@ -39,15 +39,31 @@ void AArenaDamageNumberActor::Tick(float DeltaSeconds)
 	AddActorWorldOffset(FVector::UpVector * FloatSpeed * DeltaSeconds, false);
 }
 
-// 设置伤害数字数值，并同步到内部 Widget。
+// 保留原有蓝图接口，未指定样式时按普通伤害显示。
 void AArenaDamageNumberActor::SetDamageAmount(float InDamageAmount)
 {
+	SetDamagePresentation(InDamageAmount, false);
+}
+
+// 设置伤害数字与暴击样式，并为暴击扩展绘制区域以避免大字号被裁切。
+void AArenaDamageNumberActor::SetDamagePresentation(float InDamageAmount, bool bInCriticalHit)
+{
 	DamageAmount = FMath::Max(InDamageAmount, 0.0f);
+	bCriticalHit = bInCriticalHit;
 
 	if (!WidgetComponent)
 	{
 		return;
 	}
+
+	if (CachedBaseDrawSize.IsNearlyZero())
+	{
+		CachedBaseDrawSize = WidgetComponent->GetDrawSize();
+	}
+	const FVector2D PresentationDrawSize = bCriticalHit
+		? CachedBaseDrawSize * 1.35
+		: CachedBaseDrawSize;
+	WidgetComponent->SetDrawSize(PresentationDrawSize);
 
 	WidgetComponent->InitWidget();
 
@@ -56,6 +72,6 @@ void AArenaDamageNumberActor::SetDamageAmount(float InDamageAmount)
 		WidgetComponent->GetUserWidgetObject());
 	if (DamageNumberWidget)
 	{
-		DamageNumberWidget->SetDamageAmount(DamageAmount);
+		DamageNumberWidget->SetDamagePresentation(DamageAmount, bCriticalHit);
 	}
 }

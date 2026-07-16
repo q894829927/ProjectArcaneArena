@@ -11,6 +11,7 @@ GENERATOR_MODULE_NAMES = (
     "generate_upgrade_assets",
     "generate_looping_gameplay_cues",
     "generate_burst_gameplay_cues",
+    "generate_damage_number_gameplay_cues",
     "configure_build_asset_links",
 )
 
@@ -41,6 +42,7 @@ def _validate_all(modules):
         upgrade_module,
         looping_cue_module,
         burst_cue_module,
+        damage_number_cue_module,
         link_module,
     ) = modules
     effect_module.validate_configs()
@@ -55,6 +57,7 @@ def _validate_all(modules):
     upgrade_module.validate_configs(generated_dependency_paths)
     looping_cue_module.validate_configs()
     burst_cue_module.validate_configs()
+    damage_number_cue_module.validate_configs()
 
     generated_asset_paths = set(generated_dependency_paths)
     generated_asset_paths.update(
@@ -66,6 +69,9 @@ def _validate_all(modules):
     generated_asset_paths.update(
         _configured_asset_paths(burst_cue_module.BURST_CUE_CONFIGS)
     )
+    generated_asset_paths.update(
+        _configured_asset_paths(damage_number_cue_module.DAMAGE_NUMBER_CUE_CONFIGS)
+    )
     link_module.validate_configs(generated_asset_paths)
 
 
@@ -74,7 +80,7 @@ def main():
     modules = _load_generator_modules()
     _validate_all(modules)
 
-    with unreal.ScopedSlowTask(6, "Generating Project Arcane Arena build assets") as task:
+    with unreal.ScopedSlowTask(7, "Generating Project Arcane Arena build assets") as task:
         task.make_dialog(True)
         for module, progress_text in zip(
             modules,
@@ -84,6 +90,7 @@ def main():
                 "Generating Upgrade DataAssets",
                 "Generating looping GameplayCues",
                 "Generating Burst GameplayCues",
+                "Generating damage number GameplayCues",
                 "Connecting Abilities and UpgradePool",
             ),
         ):

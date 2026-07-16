@@ -20,6 +20,9 @@ public:
 	// 设置显示数值，并同步到内部 Widget。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetDamageAmount(float InDamageAmount);
+	// 同步实际伤害和暴击样式，供本地 GameplayCue 调用。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetDamagePresentation(float InDamageAmount, bool bInCriticalHit);
 
 protected:
 	// BeginPlay 时刷新生命周期和初始显示数值。
@@ -36,4 +39,10 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float DamageAmount = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	bool bCriticalHit = false;
+
+private:
+	FVector2D CachedBaseDrawSize = FVector2D::ZeroVector;
 };

@@ -47,6 +47,8 @@ public:
 	bool IsDeadOrStunned() const;
 	// AI 查询当前攻击窗口，攻击期间只停止寻路，不清空已锁定目标。
 	bool IsAttacking() const;
+	// 由伤害数字 GameplayCue 在本地生成表现，不参与复制或伤害结算。
+	void SpawnDamageNumber(float DamageAmount, bool bCriticalHit);
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Enemy")
 	FArenaEnemyDeathSignature OnEnemyDeath;
@@ -80,7 +82,7 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Enemy")
 	void K2_OnHealthChanged(float OldHealth, float NewHealth, float MaxHealth);
 
-	// 受击表现入口，后续可接闪白、音效或伤害数字。
+	// Health 受损表现入口，后续可接闪白、音效；伤害数字由确认伤害 Cue 独立驱动。
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Enemy")
 	void K2_OnDamaged(float DamageAmount, float NewHealth, float MaxHealth);
 
@@ -102,7 +104,7 @@ private:
 	void HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleMoveSpeedChanged(const FOnAttributeChangeData& Data);
 	void RefreshMovementState();
-	// Health 变化只负责 UI 和受击表现，不直接触发死亡。
+	// Health 变化只负责血条和受击表现；死亡与伤害数字分别由标签和 Cue 驱动。
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	// 执行一次性死亡处理，并为后续 WaveManager 通知留出广播点。
 	void HandleDeath();
@@ -110,9 +112,6 @@ private:
 	void RefreshHealthBar();
 	// 将 GAS 属性值同步到血条 Widget。
 	void SetHealthBarValues(float Health, float MaxHealth);
-	// 本地生成伤害数字 Actor，不参与复制和伤害结算。
-	void SpawnDamageNumber(float DamageAmount);
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAbilitySystemComponent> AbilitySystemComponent;
 

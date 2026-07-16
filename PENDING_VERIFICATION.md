@@ -69,7 +69,7 @@
 
 ### 测试方法
 
-1. 打开 `BP_ArenaGameMode`，记录 UpgradePool 中 `DA_Upgrade_Overload` 与 `DA_Upgrade_EnergyOnKill` 的数量。
+1. 打开 `BP_ArenaGameMode`，记录 UpgradePool 中 `DA_Upgrade_Overload`、`DA_Upgrade_EnergyOnKill`、`DA_Upgrade_CritChance` 与 `DA_Upgrade_EnergyOnCrit` 的数量。
 2. 打开 `DA_Waves_Prototype`，记录 Waves 数量和第四波配置。
 3. 在编辑器控制台再次执行：
 
@@ -78,15 +78,70 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 ```
 
 4. 等待脚本成功完成，关闭并重新打开上述两个资产。
-5. 检查 Content Browser 中是否出现名称带 `_1`、`_2` 的重复 Overload 或 EnergyOnKill 资产。
+5. 检查 Content Browser 中是否出现名称带 `_1`、`_2` 的重复 Overload、EnergyOnKill 或 Crit 资产。
 
 ### 通过标准
 
-- UpgradePool 中只有一份 `DA_Upgrade_Overload` 和一份 `DA_Upgrade_EnergyOnKill`。
+- UpgradePool 中四项记录资产都各只有一份。
 - Waves 仍只有四项，第四波仍为 `BP_ArenaEnemyCharacter × 9`、间隔 `0.5`、非 Boss。
 - `GA_Overload`、`GE_Status_OverloadLockout`、`GCN_Overload_Explosion`、`DA_Upgrade_Overload` 和图标均没有重复资产。
 - `GA_EnergyOnKill`、`GE_Trigger_EnergyOnKill`、`DA_Upgrade_EnergyOnKill` 和图标均没有重复资产。
+- `GE_Upgrade_CritChance`、`GA_EnergyOnCrit`、`GE_Trigger_EnergyOnCrit`、两个 Crit DataAsset、两个图标与两个伤害数字 Cue 均没有重复资产。
 - 第二次执行没有 Python 异常。
+
+## Crit 资产字段与候选资格
+
+### 测试方法
+
+1. 编译 C++ 并重启编辑器后运行 `py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"`。
+2. 打开 `DA_Upgrade_CritChance`，确认 ID 为 `Upgrade.Crit.Chance`，数值为 `0.05`，Common、可叠加、MaxStacks 为 `5`，Tags 包含 `Build.Crit` 与 `Upgrade.Crit.Chance`，Granted GE 为 `GE_Upgrade_CritChance`，Target Ability 为空。
+3. 打开 `DA_Upgrade_EnergyOnCrit`，确认 ID 为 `Upgrade.Trigger.EnergyOnCrit`，数值为 `5`，Rare、可叠加、MaxStacks 为 `3`，Required Tags 包含 `Build.Crit`，Target/Trigger 分别为 `Ability.Passive.EnergyOnCrit` 与 `Trigger.OnCrit`，Granted Ability 为 `GA_EnergyOnCrit`。
+4. 打开 `GA_EnergyOnCrit`，确认 Energy Restore Effect Class 为 `GE_Trigger_EnergyOnCrit`。
+5. 打开 `GCN_DamageNumber` 与 `GCN_DamageCritical`，确认 Cue Tag 分别正确，且只有后者启用 Critical Style。
+6. 使用临时 GameMode 在没有 `Build.Crit` 时多次生成候选，确认 `EnergyOnCrit` 不出现；取得一次 CritChance 后确认它可以出现。
+
+### 通过标准
+
+- 所有字段、Class 和 GameplayTag 均与上述配置一致，没有 None 引用、失效父类或 Tag 警告。
+- CritChance 能作为构筑起点出现，EnergyOnCrit 只在已有 `Build.Crit` 后出现。
+- 达到各自 MaxStacks 后对应升级不再进入候选池，且被动 AbilitySpec 只有一份。
+
+## OnCrit 权威路由与升级数值
+
+### 测试方法
+
+1. 使用临时测试属性把玩家 `CritChance` 设为 `0`，分别攻击有 Health 和只有 Shield 的敌人，观察伤害事件或在 `RouteAuthoritativeDamageEvent` 设断点。
+2. 把 `CritChance` 设为 `1`，重复 BasicAttack、Fireball、LightningStorm 和 Overload Secondary；对多名敌人同时命中时逐目标记录事件次数。
+3. 让一次必定暴击同时击杀敌人，确认同一结算依次派发 OnDamage、OnCrit、OnKill。
+4. 让 Burning Tick 完成多次伤害和击杀，确认它不带 `Damage.Critical` 且不派发 OnCrit。
+5. 从默认 `5%` CritChance 开始依次取得一至五层 `DA_Upgrade_CritChance`，每层记录 AttributeSet 数值。
+6. 消耗足够 Energy 后依次取得一至三层 `DA_Upgrade_EnergyOnCrit`，每层用必定暴击命中一名存活敌人并记录 Energy 变化。
+7. 在 Energy 接近 MaxEnergy 和 MaxEnergy 为 `0` 时重复暴击。
+
+### 通过标准
+
+- CritChance 为 `0` 时永不暴击，为 `1` 时每次实际伤害都暴击，每个目标每次结算最多一个 OnCrit。
+- BasicAttack、Fireball、LightningStorm、Overload Secondary 和纯 Shield 承伤都可触发；Burning 永不触发。
+- 暴击击杀同时且各一次触发 OnCrit/OnKill，死亡后的重复伤害不产生新事件。
+- 五层 CritChance 后属性依次为默认 `10/15/20/25/30%`，且不会超过 AttributeSet 上限。
+- EnergyOnCrit 一至三层分别恢复 `5/10/15 Energy`，不超过 MaxEnergy；MaxEnergy 为 `0` 时保持 `0`。
+
+## 暴击伤害数字与多人归属
+
+### 测试方法
+
+1. 单人以 CritChance `0` 命中敌人，记录每次命中的数字数量、颜色和数值。
+2. 以 CritChance `1` 重复测试，确认数字为金色、约普通字号的 `1.35` 倍且没有裁切。
+3. 给敌人足够 Shield，分别造成未打穿和打穿 Shield 的伤害，对比数字与 Shield/Health 实际总消耗。
+4. 启动 2-player Listen Server，让 Host 与 Client 分别取得 EnergyOnCrit，并交替造成必定暴击。
+5. 两个窗口分别切换顶视角和第三人称，再使用 BasicAttack、Fireball 与 LightningStorm，观察伤害、Projectile、Area Actor 和数字 Cue 数量。
+
+### 通过标准
+
+- 普通与暴击每次都只显示一个数字，数值等于服务器实际消耗的 Shield 加 Health；纯 Shield 伤害不再漏数字。
+- 暴击数字更大且为金色，DrawSize 足够容纳文本；普通数字保持白色常规样式。
+- 只有造成暴击的来源玩家恢复 Energy，另一名玩家不变化；属性由服务器修改并复制到各自 HUD。
+- Host 和 Client 都只看到同一次权威数字 Cue，切换视角不会重复 Ability、Projectile、Area Actor、伤害或数字。
    
 ## OnKill 单人触发、堆叠与防重复
 
@@ -160,34 +215,6 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 ### 通过标准
 
 所有字段与上述配置一致，资产可正常打开、编译和保存，没有失效 Class、None 引用或 GameplayTag 警告。
-
-## Overload 单人完整测试环境
-
-验证状态：**Verified（2026-07-15）**。测试关卡、调试起始升级、三个落地木桩和正式 GAS 升级授予路径均成功用于单人 PIE。
-
-完成 C++ 编译并重启编辑器后，先运行独立测试资产生成器：
-
-```text
-py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_test.py"
-```
-
-生成器使用正式升级授予路径直接配置完整构筑，并创建三个静止高血量木桩；不要修改正式 GameMode、WaveData 或玩家 StartupAbilities。脚本不会创建、复制或切换地图，避免 Python 持有 Inactive World 或未保存的 World Partition External Actor。
-
-### 测试方法
-
-1. 第一次执行脚本后，打开正式 `Lvl_TopDown`，使用 `File > Save Current Level As...` 保存为 `/Game/Tests/Overload/Lvl_OverloadTest`。
-2. 保持新测试关卡已打开，再执行一次相同脚本。
-3. 检查 World Settings 的 GameMode Override 为 `BP_ArenaGameMode_OverloadTest`。
-4. 检查关卡中存在 `OverloadDummy_Primary`、`OverloadDummy_Inside250` 和 `OverloadDummy_Outside350`。
-5. 开始 PIE，使用 `showdebug abilitysystem` 检查玩家的构筑标签和被动 Ability。
-6. 结束 PIE 后仍保留正式关卡和正式 GameMode 资产不变。
-
-### 通过标准
-
-- 玩家进入 PIE 后直接拥有 Fireball Damage、Fireball Burning、LightningStorm Damage 和 Overload。
-- 起始升级仍按 RequiredTags 顺序验证，不能绕过缺失的 `Build.Fire` 或 `Build.Lightning`。
-- 玩家 ASC 最终包含 `Upgrade.Combo.Overload`，并拥有 `Ability.Passive.Overload`。
-- 三个木桩均为 `5000 Health / 0 Shield / 0 Defense / 0 MoveSpeed`，不会获得敌人近战 Ability。
 
 ## Overload 基础触发与范围
 

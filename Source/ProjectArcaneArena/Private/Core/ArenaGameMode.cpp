@@ -265,7 +265,7 @@ int32 AArenaGameMode::GetUpgradeRarityWeight(const UArenaUpgradeDataAsset* Upgra
 	}
 }
 
-// 使用 ASC 当前持有的构筑标签检查候选，火焰和闪电同时存在时共享同一个匹配池。
+// 使用 ASC 当前持有的构筑标签检查候选，让火焰、闪电和暴击分支都能优先延续已有构筑。
 bool AArenaGameMode::IsUpgradeForOwnedBuild(
 	const AArenaPlayerState* ArenaPlayerState,
 	const UArenaUpgradeDataAsset* Upgrade) const
@@ -278,8 +278,10 @@ bool AArenaGameMode::IsUpgradeForOwnedBuild(
 
 	const bool bOwnsFireBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Fire);
 	const bool bOwnsLightningBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Lightning);
+	const bool bOwnsCritBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Crit);
 	return (bOwnsFireBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Fire))
-		|| (bOwnsLightningBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Lightning));
+		|| (bOwnsLightningBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Lightning))
+		|| (bOwnsCritBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Crit));
 }
 
 // 使用升级随机流执行 Fisher-Yates 洗牌，使相同种子和相同输入始终得到相同槽位顺序。
@@ -315,7 +317,7 @@ bool AArenaGameMode::IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState
 	return Upgrade->GrantedGameplayEffect || Upgrade->GrantedAbility || !Upgrade->UpgradeTags.IsEmpty();
 }
 
-// 在服务器应用升级授予、保存 Ability 来源数据并同步 Build Tags，后续层继续累计数值元数据。
+// 在服务器应用升级授予，向 GE 注入 NumericValue，并保存 Ability 来源数据与 Build Tags。
 bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const
 {
 	UArenaAbilitySystemComponent* ASC = ArenaPlayerState ? ArenaPlayerState->GetArenaAbilitySystemComponent() : nullptr;
@@ -334,6 +336,10 @@ bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UAr
 		const FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(Upgrade->GrantedGameplayEffect, 1.0f, EffectContext);
 		if (SpecHandle.IsValid())
 		{
+			// 通用 NumericValue 由 DataAsset 注入；未读取该 SetByCaller 的旧升级 GE 不受影响。
+			SpecHandle.Data->SetSetByCallerMagnitude(
+				ArenaGameplayTags::SetByCaller_Upgrade_NumericValue,
+				Upgrade->NumericValue);
 			ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 			bAppliedAnything = true;
 		}

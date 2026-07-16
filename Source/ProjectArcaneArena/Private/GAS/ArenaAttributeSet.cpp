@@ -20,13 +20,13 @@ namespace
 		EffectSpec.GetAllAssetTags(AssetTags);
 		if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Secondary))
 		{
-			return ArenaGameplayTags::Ability_Passive_Overload.ToString();
+			return ArenaGameplayTags::Ability_Passive_Overload.GetTag().ToString();
 		}
 
 		const FString EffectClassName = GetNameSafe(EffectSpec.Def);
 		if (EffectClassName.Contains(TEXT("Burning")))
 		{
-			return ArenaGameplayTags::Status_Burning.ToString();
+			return ArenaGameplayTags::Status_Burning.GetTag().ToString();
 		}
 
 		for (const FGameplayTag& AssetTag : AssetTags)
@@ -42,27 +42,27 @@ namespace
 		const FString SourceClassName = GetNameSafe(SourceObject ? SourceObject->GetClass() : nullptr);
 		if (SourceClassName.Contains(TEXT("BasicAttack")))
 		{
-			return ArenaGameplayTags::Ability_BasicAttack.ToString();
+			return ArenaGameplayTags::Ability_BasicAttack.GetTag().ToString();
 		}
 		if (SourceClassName.Contains(TEXT("FireballProjectile")))
 		{
-			return ArenaGameplayTags::Ability_Fireball.ToString();
+			return ArenaGameplayTags::Ability_Fireball.GetTag().ToString();
 		}
 		if (SourceClassName.Contains(TEXT("LightningStormArea")))
 		{
-			return ArenaGameplayTags::Ability_LightningStorm.ToString();
+			return ArenaGameplayTags::Ability_LightningStorm.GetTag().ToString();
 		}
 		if (SourceClassName.Contains(TEXT("EnemyMeleeAttack")))
 		{
-			return ArenaGameplayTags::Ability_Enemy_MeleeAttack.ToString();
+			return ArenaGameplayTags::Ability_Enemy_MeleeAttack.GetTag().ToString();
 		}
 		if (SourceClassName.Contains(TEXT("EnemyProjectile")))
 		{
-			return ArenaGameplayTags::Ability_Enemy_RangedAttack.ToString();
+			return ArenaGameplayTags::Ability_Enemy_RangedAttack.GetTag().ToString();
 		}
 		if (SourceClassName.Contains(TEXT("Overload")))
 		{
-			return ArenaGameplayTags::Ability_Passive_Overload.ToString();
+			return ArenaGameplayTags::Ability_Passive_Overload.GetTag().ToString();
 		}
 
 		return !SourceClassName.IsEmpty() ? SourceClassName : EffectClassName;
@@ -153,7 +153,7 @@ void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attrib
 	ClampAttribute(Attribute, NewValue);
 }
 
-// GE 执行后消费 Damage/Healing 元属性，并在权威端记录实际伤害与发送通用伤害事件。
+// GE 执行后消费 Damage/Healing 元属性，并在权威端发送命中 Cue、伤害数字和结果事件。
 void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -194,6 +194,7 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		{
 			LogAuthoritativeDamage(Data.EffectSpec, TargetASC, AppliedDamage);
 			ExecuteDamageGameplayCue(Data, AppliedDamage);
+			ExecuteDamageNumberGameplayCue(Data, AppliedDamage);
 			if (UArenaAbilitySystemComponent* SourceASC = Cast<UArenaAbilitySystemComponent>(
 				Data.EffectSpec.GetEffectContext().GetInstigatorAbilitySystemComponent()))
 			{
@@ -238,6 +239,38 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	{
 		SetEnergy(GetEnergy());
 	}
+}
+
+// 根据 Damage.Critical 结果选择数字 Cue，RawMagnitude 始终使用 Shield 与 Health 的实际总消耗。
+void UArenaAttributeSet::ExecuteDamageNumberGameplayCue(
+	const FGameplayEffectModCallbackData& Data,
+	float AppliedDamage) const
+{
+	UAbilitySystemComponent* TargetASC = GetOwningAbilitySystemComponent();
+	if (!TargetASC || !TargetASC->IsOwnerActorAuthoritative() || AppliedDamage <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	FGameplayTagContainer AssetTags;
+	Data.EffectSpec.GetAllAssetTags(AssetTags);
+	const FGameplayTag CueTag = AssetTags.HasTagExact(ArenaGameplayTags::Damage_Critical)
+		? ArenaGameplayTags::GameplayCue_Damage_Critical
+		: ArenaGameplayTags::GameplayCue_Damage_Number;
+
+	FGameplayCueParameters CueParameters(Data.EffectSpec.GetEffectContext());
+	CueParameters.RawMagnitude = AppliedDamage;
+	CueParameters.EffectContext = Data.EffectSpec.GetEffectContext();
+	if (const FHitResult* HitResult = CueParameters.EffectContext.GetHitResult())
+	{
+		CueParameters.Location = HitResult->ImpactPoint;
+	}
+	else if (const AActor* TargetAvatar = TargetASC->GetAvatarActor())
+	{
+		CueParameters.Location = TargetAvatar->GetActorLocation();
+	}
+
+	TargetASC->ExecuteGameplayCue(CueTag, CueParameters);
 }
 
 // 根据属性类型统一限制数值范围，避免各处重复 clamp 规则。

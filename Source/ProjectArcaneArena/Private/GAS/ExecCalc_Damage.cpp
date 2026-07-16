@@ -84,7 +84,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(DamageStatics().DefenseDef);
 }
 
-// 服务端执行最终伤害计算；Lightning 命中 Shocked 时读取状态 GE 的易伤值，再输出到 Damage 元属性。
+// 服务端执行最终伤害计算，并把唯一一次暴击抽取结果写回当前 Damage Spec。
 void UExecCalc_Damage::Execute_Implementation(
 	const FGameplayEffectCustomExecutionParameters& ExecutionParams,
 	FGameplayEffectCustomExecutionOutput& OutExecutionOutput) const
@@ -146,8 +146,9 @@ void UExecCalc_Damage::Execute_Implementation(
 		? 1.0f + GetShockedLightningDamageBonus(TargetASC)
 		: 1.0f;
 
-	// 暴击随机数只在服务端 ExecCalc 中产生，避免客户端决定最终伤害。
-	const float CritMultiplier = FMath::FRand() <= CritChance ? CritDamage : 1.0f;
+	// 使用严格小于保证 CritChance=0 永不暴击，且客户端不参与结果决定。
+	const bool bCriticalHit = CritChance > 0.0f && FMath::FRand() < CritChance;
+	const float CritMultiplier = bCriticalHit ? CritDamage : 1.0f;
 	const float DefenseReduction = 100.0f / (100.0f + Defense);
 
 	const float FinalDamage = (BaseDamage + AttackPower)
@@ -158,6 +159,15 @@ void UExecCalc_Damage::Execute_Implementation(
 	if (FinalDamage <= 0.0f)
 	{
 		return;
+	}
+
+	if (bCriticalHit)
+	{
+		// 每个目标都使用独立 Spec，结果标签只随本次结算进入 AttributeSet 与事件路由。
+		if (FGameplayEffectSpec* MutableSpec = ExecutionParams.GetOwningSpecForPreExecuteMod())
+		{
+			MutableSpec->AddDynamicAssetTag(ArenaGameplayTags::Damage_Critical);
+		}
 	}
 
 	// 输出到 Damage meta attribute，由 AttributeSet 负责护盾优先承伤和死亡标签。

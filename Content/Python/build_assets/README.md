@@ -1,6 +1,6 @@
 # 构筑资产 Python 生成器
 
-本目录集中管理 Fire/Lightning/Overload 构筑与事件触发升级使用的 Upgrade DataAsset、GameplayEffect/GameplayAbility Blueprint、持续/爆发 GameplayCue，以及 Ability/GameMode/原型波次资产连接。
+本目录集中管理 Fire/Lightning/Crit/Overload 构筑与事件触发升级使用的 Upgrade DataAsset、GameplayEffect/GameplayAbility Blueprint、持续/爆发/伤害数字 GameplayCue，以及 Ability/GameMode/原型波次资产连接。
 
 生成器只负责编辑器资产配置，不修改运行时玩法状态。所有脚本都应在 Unreal Editor 已加载项目 C++ 反射类型后执行。
 
@@ -14,6 +14,7 @@
 | `generate_upgrade_assets.py` | 创建或更新 `ArenaUpgradeDataAsset` | `UPGRADE_CONFIGS` |
 | `generate_looping_gameplay_cues.py` | 复制模板并配置持续型 GameplayCue | `LOOPING_CUE_CONFIGS` |
 | `generate_burst_gameplay_cues.py` | 复制模板并配置一次性爆发 GameplayCue | `BURST_CUE_CONFIGS` |
+| `generate_damage_number_gameplay_cues.py` | 创建普通/暴击伤害数字 GameplayCue | `DAMAGE_NUMBER_CUE_CONFIGS` |
 | `configure_build_asset_links.py` | 设置 Ability 的 GE、更新 UpgradePool，并在远程敌人资产存在时保持四波混合配置 | `ABILITY_BINDINGS`、`UPGRADE_POOL_ASSET_PATHS` |
 | `setup_build_assets.py` | 统一预检并按依赖顺序运行所有分类生成器 | `GENERATOR_MODULE_NAMES` |
 
@@ -34,7 +35,8 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 3. Upgrade DataAsset
 4. Looping GameplayCue
 5. Burst GameplayCue
-6. Ability、GameMode 和原型第四波连接
+6. Damage Number GameplayCue
+7. Ability、GameMode 和原型第四波连接
 
 ## 单独执行
 
@@ -46,6 +48,7 @@ py "../../../../ProjectArcaneArena/Content/Python/build_assets/generate_gameplay
 py "../../../../ProjectArcaneArena/Content/Python/build_assets/generate_upgrade_assets.py"
 py "../../../../ProjectArcaneArena/Content/Python/build_assets/generate_looping_gameplay_cues.py"
 py "../../../../ProjectArcaneArena/Content/Python/build_assets/generate_burst_gameplay_cues.py"
+py "../../../../ProjectArcaneArena/Content/Python/build_assets/generate_damage_number_gameplay_cues.py"
 py "../../../../ProjectArcaneArena/Content/Python/build_assets/configure_build_asset_links.py"
 ```
 
@@ -83,6 +86,7 @@ py "../../../../ProjectArcaneArena/Content/Python/build_assets/configure_build_a
 - 设置 `icon_path = None` 会清空图标。
 - `granted_gameplay_effect_path` 或 `granted_ability_path` 设置为 `None` 会清空对应授予项。
 - 与伤害类型无关的事件升级可以把 `damage_type_tag` 设置为 `None`，例如 `Trigger.OnKill` 驱动的能量恢复。
+- 通用属性升级可以把 `target_ability_tag` 设置为 `None`，例如通过 GE 增加 `CritChance`。
 - GameplayTag 必须已在项目中注册，否则预检会停止且不写入资产。
 - `upgrade_id` 用于服务器选择和堆叠记录，应保持稳定，不要因显示文本变化而修改。
 
@@ -96,6 +100,8 @@ py "../../../../ProjectArcaneArena/Content/Python/build_assets/configure_build_a
 
 新增一次性 Cue 时，在 `BURST_CUE_CONFIGS` 中填写放置参数，并通过 `niagara_paths` 配置一个或多个同点播放的 Niagara；World Location 表现应使用 `DO_NOT_ATTACH` 和 `KEEP_WORLD`。
 
+普通/暴击伤害数字 Cue 由 `generate_damage_number_gameplay_cues.py` 创建原生 Cue Notify 的 Blueprint 子类；配置只区分 Cue Tag 和 `critical_style`，实际伤害值来自服务器确认的 `RawMagnitude`。
+
 最后在 `ABILITY_BINDINGS` 中连接 Ability 属性，并把需要进入随机候选池的升级路径加入 `UPGRADE_POOL_ASSET_PATHS`。
 
 ## 幂等与错误处理
@@ -106,5 +112,6 @@ py "../../../../ProjectArcaneArena/Content/Python/build_assets/configure_build_a
 - `DA_Waves_Prototype` 第四项会被更新为 `BP_ArenaEnemyCharacter × 9`，不会重复追加第五项。
 - Overload 首次生成时会从现有 Shocked 图标复制一个独立的 `T_Upgrade_Overload_Icon` 占位资产；之后替换该纹理不会被脚本覆盖。
 - EnergyOnKill 首次生成时会复制独立的 `T_Upgrade_EnergyOnKill_Icon` 占位资产；之后可替换为正式图标且不会被脚本覆盖。
+- CritChance 与 EnergyOnCrit 首次生成时分别复制独立占位图标；之后替换纹理不会被脚本覆盖。
 - 总入口会先完成所有分类预检，减少执行到中途才发现缺失依赖的情况。
 - 修改配置后可连续运行两次，第二次不应创建重复资产或 UpgradePool 条目。
