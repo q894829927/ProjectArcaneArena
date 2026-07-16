@@ -25,6 +25,11 @@ ABILITY_BLUEPRINT_CONFIGS = [
         "destination_path": "/Game/GAS/GameplayAbility",
         "parent_class_name": "ArenaGameplayAbility_EnergyOnCrit",
     },
+    {
+        "asset_name": "GA_ShieldBreakBlast",
+        "destination_path": "/Game/GAS/GameplayAbility",
+        "parent_class_name": "ArenaGameplayAbility_ShieldBreakBlast",
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (

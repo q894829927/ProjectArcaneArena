@@ -24,4 +24,11 @@ public:
 		UAbilitySystemComponent* TargetAbilitySystemComponent,
 		const FGameplayTagContainer& TargetTagsBeforeDamage,
 		float AppliedDamage);
+
+	// 在服务端向护盾拥有者路由一次伤害驱动的破盾事件，供自身被动 Ability 响应。
+	void RouteAuthoritativeShieldBreakEvent(
+		const FGameplayEffectSpec& DamageSpec,
+		UAbilitySystemComponent* SourceAbilitySystemComponent,
+		const FGameplayTagContainer& TargetTagsBeforeDamage,
+		float AppliedShieldDamage);
 };

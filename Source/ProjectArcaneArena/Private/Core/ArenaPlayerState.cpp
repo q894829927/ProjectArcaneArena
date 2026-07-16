@@ -89,13 +89,13 @@ int32 AArenaPlayerState::GetUpgradeStackCount(FName UpgradeID) const
 	return 0;
 }
 
-// 汇总匹配路由标签的已拥有升级数值，避免 Ability 依赖具体 UpgradeID。
+// 汇总匹配路由标签的已拥有升级数值；无效 Ability 或伤害标签表示该维度不参与筛选。
 float AArenaPlayerState::GetOwnedUpgradeNumericTotal(
 	FGameplayTag TargetAbilityTag,
 	FGameplayTag DamageTypeTag,
 	FGameplayTag UpgradeTag) const
 {
-	if (!TargetAbilityTag.IsValid() || !DamageTypeTag.IsValid() || !UpgradeTag.IsValid())
+	if (!UpgradeTag.IsValid())
 	{
 		return 0.0f;
 	}
@@ -105,8 +105,8 @@ float AArenaPlayerState::GetOwnedUpgradeNumericTotal(
 	{
 		const UArenaUpgradeDataAsset* UpgradeData = OwnedUpgrade.UpgradeData;
 		if (!UpgradeData || OwnedUpgrade.StackCount <= 0
-			|| UpgradeData->TargetAbilityTag != TargetAbilityTag
-			|| UpgradeData->DamageTypeTag != DamageTypeTag
+			|| (TargetAbilityTag.IsValid() && UpgradeData->TargetAbilityTag != TargetAbilityTag)
+			|| (DamageTypeTag.IsValid() && UpgradeData->DamageTypeTag != DamageTypeTag)
 			|| !UpgradeData->UpgradeTags.HasTagExact(UpgradeTag))
 		{
 			continue;

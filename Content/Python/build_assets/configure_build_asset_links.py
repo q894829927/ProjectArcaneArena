@@ -40,6 +40,16 @@ ABILITY_BINDINGS = [
         "property_name": "energy_restore_effect_class",
         "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnCrit",
     },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_Shield",
+        "property_name": "shield_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/GE_Shield_Grant",
+    },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_ShieldBreakBlast",
+        "property_name": "damage_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/GE_Damage",
+    },
 ]
 
 GAME_MODE_PATH = "/Game/GameMode/BP_ArenaGameMode"
@@ -55,6 +65,8 @@ UPGRADE_POOL_ASSET_PATHS = [
     "/Game/Data/Upgrade/DA_Upgrade_EnergyOnKill",
     "/Game/Data/Upgrade/DA_Upgrade_CritChance",
     "/Game/Data/Upgrade/DA_Upgrade_EnergyOnCrit",
+    "/Game/Data/Upgrade/DA_Upgrade_ShieldAmount",
+    "/Game/Data/Upgrade/DA_Upgrade_ShieldBreakBlast",
 ]
 
 

@@ -65,7 +65,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
 	int32 GetUpgradeStackCount(FName UpgradeID) const;
 
-	// 按 Ability、伤害类型和升级标签汇总数据资产数值，供服务器技能读取专属构筑加成。
+	// 按可选 Ability/伤害类型与必填升级标签汇总数值，无效路由标签表示跳过对应筛选。
 	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
 	float GetOwnedUpgradeNumericTotal(
 		FGameplayTag TargetAbilityTag,

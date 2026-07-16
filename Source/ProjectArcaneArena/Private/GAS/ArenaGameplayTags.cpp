@@ -17,6 +17,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_Overload, "Ability.Passive.Overload", "Passive elemental Overload ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnKill, "Ability.Passive.EnergyOnKill", "Passive Energy recovery on enemy kill ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnCrit, "Ability.Passive.EnergyOnCrit", "Passive Energy recovery on critical damage ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_ShieldBreakBlast, "Ability.Passive.ShieldBreakBlast", "Passive physical blast when the owner's Shield is broken.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Physical, "Damage.Physical", "Physical damage type.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Fire, "Damage.Fire", "Fire damage type.");
@@ -38,6 +39,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Fireball_Cast, "GameplayCue.Ability.Fireball.Cast", "Confirmed fireball cast presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Dash_Active, "GameplayCue.Ability.Dash.Active", "Dash active looping presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Shield_Active, "GameplayCue.Ability.Shield.Active", "Shield active looping presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Shield_Break, "GameplayCue.Ability.Shield.Break", "Shield break burst presentation at the owner location.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_LightningStorm_Cast, "GameplayCue.Ability.LightningStorm.Cast", "Confirmed lightning storm cast presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_LightningStorm_Active, "GameplayCue.Ability.LightningStorm.Active", "Lightning storm area looping presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_EnemyMelee_Activate, "GameplayCue.Ability.EnemyMelee.Activate", "Enemy melee activation presentation.");
@@ -66,6 +68,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_EnergyOnKill, "Upgrade.Trigger.EnergyOnKill", "Stackable Energy recovery on kill upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Crit_Chance, "Upgrade.Crit.Chance", "Stackable critical-hit chance upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_EnergyOnCrit, "Upgrade.Trigger.EnergyOnCrit", "Stackable Energy recovery on critical damage upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Shield_Amount, "Upgrade.Shield.Amount", "Stackable Shield grant amount upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_ShieldBreakBlast, "Upgrade.Trigger.ShieldBreakBlast", "Physical blast triggered when Shield is broken by damage.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Burning, "Status.Burning", "Target is taking periodic fire damage.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Shocked, "Status.Shocked", "Target takes increased Lightning damage.");
@@ -81,6 +85,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDamageDealt_Lightning, "Trigger.OnDamageDealt.Lightning", "Authoritative lightning damage dealt event.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnKill, "Trigger.OnKill", "Authoritative living-to-dead damage outcome event.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnCrit, "Trigger.OnCrit", "Authoritative critical damage outcome event.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnShieldBreak, "Trigger.OnShieldBreak", "Authoritative positive-to-zero Shield transition caused by damage.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Base, "SetByCaller.Damage.Base", "Runtime base damage value.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");
@@ -89,4 +94,5 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Health, "SetByCaller.Recovery.Health", "Runtime Health recovery magnitude.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Energy, "SetByCaller.Recovery.Energy", "Runtime Energy recovery magnitude.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Upgrade_NumericValue, "SetByCaller.Upgrade.NumericValue", "Runtime numeric value supplied by an upgrade DataAsset.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Shield_Amount, "SetByCaller.Shield.Amount", "Runtime Shield grant magnitude.");
 }

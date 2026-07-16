@@ -101,3 +101,41 @@ void UArenaAbilitySystemComponent::RouteAuthoritativeDamageEvent(
 		HandleGameplayEvent(ArenaGameplayTags::Trigger_OnKill, &EventPayload);
 	}
 }
+
+// 由权威受害者 ASC 派发破盾事件，事件数值只记录本次实际消耗的 Shield。
+void UArenaAbilitySystemComponent::RouteAuthoritativeShieldBreakEvent(
+	const FGameplayEffectSpec& DamageSpec,
+	UAbilitySystemComponent* SourceAbilitySystemComponent,
+	const FGameplayTagContainer& TargetTagsBeforeDamage,
+	float AppliedShieldDamage)
+{
+	if (!IsOwnerActorAuthoritative()
+		|| AppliedShieldDamage <= KINDA_SMALL_NUMBER
+		|| HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		return;
+	}
+
+	FGameplayTagContainer DamageAssetTags;
+	DamageSpec.GetAllAssetTags(DamageAssetTags);
+
+	FGameplayEventData EventPayload;
+	EventPayload.EventTag = ArenaGameplayTags::Trigger_OnShieldBreak;
+	EventPayload.Instigator = SourceAbilitySystemComponent
+		? SourceAbilitySystemComponent->GetAvatarActor()
+		: DamageSpec.GetEffectContext().GetOriginalInstigator();
+	EventPayload.Target = GetAvatarActor();
+	EventPayload.OptionalObject = DamageSpec.Def.Get();
+	EventPayload.OptionalObject2 = DamageSpec.GetEffectContext().GetSourceObject();
+	EventPayload.ContextHandle = DamageSpec.GetEffectContext();
+	EventPayload.EventMagnitude = AppliedShieldDamage;
+	if (SourceAbilitySystemComponent)
+	{
+		SourceAbilitySystemComponent->GetOwnedGameplayTags(EventPayload.InstigatorTags);
+	}
+	EventPayload.InstigatorTags.AppendTags(DamageAssetTags);
+	EventPayload.TargetTags = TargetTagsBeforeDamage;
+
+	// 事件发送给受害者 ASC，使 Shield Build 被动归属于护盾拥有者而不是伤害来源。
+	HandleGameplayEvent(ArenaGameplayTags::Trigger_OnShieldBreak, &EventPayload);
+}

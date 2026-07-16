@@ -265,7 +265,7 @@ int32 AArenaGameMode::GetUpgradeRarityWeight(const UArenaUpgradeDataAsset* Upgra
 	}
 }
 
-// 使用 ASC 当前持有的构筑标签检查候选，让火焰、闪电和暴击分支都能优先延续已有构筑。
+// 使用 ASC 当前持有的构筑标签检查候选，让火焰、闪电、暴击和护盾分支优先延续已有构筑。
 bool AArenaGameMode::IsUpgradeForOwnedBuild(
 	const AArenaPlayerState* ArenaPlayerState,
 	const UArenaUpgradeDataAsset* Upgrade) const
@@ -279,9 +279,11 @@ bool AArenaGameMode::IsUpgradeForOwnedBuild(
 	const bool bOwnsFireBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Fire);
 	const bool bOwnsLightningBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Lightning);
 	const bool bOwnsCritBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Crit);
+	const bool bOwnsShieldBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Shield);
 	return (bOwnsFireBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Fire))
 		|| (bOwnsLightningBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Lightning))
-		|| (bOwnsCritBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Crit));
+		|| (bOwnsCritBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Crit))
+		|| (bOwnsShieldBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Shield));
 }
 
 // 使用升级随机流执行 Fisher-Yates 洗牌，使相同种子和相同输入始终得到相同槽位顺序。

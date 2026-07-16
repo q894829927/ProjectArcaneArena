@@ -504,3 +504,98 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 - 两个客户端只显示各自 HUD 和复制表现。
 - 不出现重复 Projectile、Storm Area、Overload Damage 或 Cue。
 - 玩家属性、敌人死亡、GameState 阶段和全员升级门槛复制一致。
+
+## Shield Build 编译与资产生成
+
+### 测试方法
+
+1. 关闭 Live Coding 或关闭编辑器，只编译窄目标 `ProjectArcaneArenaEditor Win64 Development`。
+2. 重启编辑器后执行：
+
+```text
+py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
+```
+
+3. 连续执行生成器两次，检查 Output Log、Content Validation 和 UpgradePool。
+4. 检查 `GA_Shield.ShieldEffectClass = GE_Shield_Grant`。
+5. 检查 `GA_ShieldBreakBlast.DamageEffectClass = GE_Damage`。
+6. 检查 `DA_Upgrade_ShieldAmount`、`DA_Upgrade_ShieldBreakBlast`、两个独立图标和 `GCN_ShieldBreak_Burst` 的字段。
+
+### 通过标准
+
+- UHT 和 C++ 编译通过，没有新增 Warning/Error。
+- 第二次运行不重复创建资产，也不重复追加 UpgradePool。
+- `GE_Shield_Grant` 的原生父类为 `ArenaGameplayEffect_ShieldGrant`。
+- 两个 DataAsset 的 ID、Tags、Required Tags、数值、稀有度和 MaxStacks 与功能设计一致。
+- 旧 `GE_Shield` 仍存在，但 `GA_Shield` 不再引用它。
+
+## Shield Amount 升级与预测
+
+### 测试方法
+
+1. 使用 DebugStartingUpgrades 或临时缩减候选池，分别授予 `DA_Upgrade_ShieldAmount` 的 `0 / 1 / 2 / 3` 层。
+2. 每次先清空当前 Shield，再按 `F` 释放一次，记录 Shield 增量、Energy 和 Cooldown。
+3. 当前已有 Shield 时选择一层升级，确认选择瞬间的 Shield 不变；下一次施放再记录增量。
+4. 达到三层后进入后续 Upgrade 阶段，检查候选池。
+5. 在 2-player Listen Server 和约 `150ms RTT` 网络模拟下由 Client 释放 Shield，观察本地预测值和服务器确认值。
+
+### 通过标准
+
+- `0 / 1 / 2 / 3` 层分别增加 `30 / 36 / 42 / 48` Shield。
+- 选择升级不会立即补充当前 Shield，只影响后续施放。
+- 第三层后 `DA_Upgrade_ShieldAmount` 不再出现。
+- Cost、Cooldown 和现有 Shield Active Cue 保持正常。
+- Client 预测值最终与服务器一致，不发生永久回滚错误或重复增加。
+
+## OnShieldBreak 事件边界
+
+### 测试方法
+
+1. 给玩家设置足够 Health，并分别准备 `Shield = 30`、`Shield = 10`、`Shield = 0`。
+2. 分别承受小于 Shield、刚好耗尽 Shield、超过 Shield 但不致死、超过 Shield 且致死的服务器伤害。
+3. 对已经为零的 Shield 继续造成伤害。
+4. 使用非 Damage Meta Attribute 的 Instant GE 或调试手段把 Shield 从正数改为零。
+5. 观察 `Trigger.OnShieldBreak` 次数、EventMagnitude、Target、Instigator、Damage Tags 和命中前 TargetTags。
+
+### 通过标准
+
+- Shield 仍大于零时不触发。
+- 正数 Shield 被实际伤害耗尽且玩家存活时只触发一次。
+- EventMagnitude 等于本次实际 Shield 损失，不包含 Health 损失或溢出伤害。
+- Shield 原本为零、直接属性修改和致死破盾均不触发。
+- 重新施放 Shield 后再次被击破，可以产生新的合法事件。
+
+## ShieldBreakBlast 伤害与表现
+
+### 测试方法
+
+1. 先获得 `Build.Shield`，确认此前 `DA_Upgrade_ShieldBreakBlast` 不会出现，之后可以进入候选。
+2. 获得破盾升级，在玩家周围放置距离约 `250` 和 `350` 的敌人。
+3. 让服务器伤害击破 Shield，同时保证玩家存活。
+4. 固定 AttackPower、CritChance 和敌人 Defense，记录爆发伤害；再分别测试 CritChance `1`、敌人 Shield、Defense 和 `State.Invincible`。
+5. 让爆发击杀一名敌人，观察 `OnCrit`、`OnKill`、伤害数字和破盾 Cue。
+6. 检查爆发 Damage Spec 的 Asset Tags。
+
+### 通过标准
+
+- 只在玩家位置执行一次 `GameplayCue.Ability.Shield.Break`。
+- 300 范围内的存活敌人受伤，范围外、死亡和无敌敌人不受伤，玩家不受影响。
+- 每个敌人只结算一次 `GE_Damage`，伤害包含 `Damage.Physical` 和 `Damage.Secondary`。
+- 爆发继承 AttackPower、Crit、Defense、Shield-first、OnCrit 和 OnKill。
+- 破盾爆发不会递归产生新的 ShieldBreakBlast。
+
+## Shield Build 双视角与多人
+
+### 测试方法
+
+1. 在顶视角和第三人称分别触发一次破盾爆发，观察 Niagara 的中心和尺寸。
+2. 2-player Listen Server 中只给 Client A 授予破盾升级，让敌人分别击破 A 和 B 的 Shield。
+3. 再给两名玩家都授予升级，使两人分别在不同位置被破盾。
+4. Host 和 Client 同时观察 Cue、伤害数字、敌人属性和服务器日志。
+
+### 通过标准
+
+- Burst Cue 始终以护盾拥有者 Avatar 世界位置为中心，不受相机模式影响。
+- 只有拥有升级且实际被破盾的玩家触发自己的被动。
+- 爆发来源 ASC、AttackPower、OnCrit 和 OnKill 归属于护盾拥有者。
+- 每次破盾只在服务器结算一次，所有客户端看到同一次复制 Cue，不出现重复伤害或表现。

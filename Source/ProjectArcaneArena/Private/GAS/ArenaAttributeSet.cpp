@@ -166,6 +166,8 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		UAbilitySystemComponent* TargetASC = GetOwningAbilitySystemComponent();
 		FGameplayTagContainer TargetTagsBeforeDamage;
 		float AppliedDamage = 0.0f;
+		float AppliedShieldDamage = 0.0f;
+		bool bShieldBrokenByDamage = false;
 
 		if (LocalDamage > 0.0f)
 		{
@@ -184,8 +186,12 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 			SetHealth(HealthBeforeDamage - RemainingDamage);
 
 			// 过量伤害不计入事件数值，只有真正消耗的 Shield + Health 才能触发被动。
-			AppliedDamage = FMath::Max(ShieldBeforeDamage - GetShield(), 0.0f)
+			AppliedShieldDamage = FMath::Max(ShieldBeforeDamage - GetShield(), 0.0f);
+			AppliedDamage = AppliedShieldDamage
 				+ FMath::Max(HealthBeforeDamage - GetHealth(), 0.0f);
+			bShieldBrokenByDamage = ShieldBeforeDamage > KINDA_SMALL_NUMBER
+				&& AppliedShieldDamage > KINDA_SMALL_NUMBER
+				&& GetShield() <= KINDA_SMALL_NUMBER;
 		}
 
 		RefreshShieldGameplayCue();
@@ -195,15 +201,28 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 			LogAuthoritativeDamage(Data.EffectSpec, TargetASC, AppliedDamage);
 			ExecuteDamageGameplayCue(Data, AppliedDamage);
 			ExecuteDamageNumberGameplayCue(Data, AppliedDamage);
-			if (UArenaAbilitySystemComponent* SourceASC = Cast<UArenaAbilitySystemComponent>(
-				Data.EffectSpec.GetEffectContext().GetInstigatorAbilitySystemComponent()))
+			UAbilitySystemComponent* SourceASC = Data.EffectSpec.GetEffectContext().GetInstigatorAbilitySystemComponent();
+			if (UArenaAbilitySystemComponent* ArenaSourceASC = Cast<UArenaAbilitySystemComponent>(SourceASC))
 			{
 				// 先更新死亡状态再同步触发被动，同时 TargetTags 快照仍保留命中前 Burning/Shocked。
-				SourceASC->RouteAuthoritativeDamageEvent(
+				ArenaSourceASC->RouteAuthoritativeDamageEvent(
 					Data.EffectSpec,
 					TargetASC,
 					TargetTagsBeforeDamage,
 					AppliedDamage);
+			}
+
+			if (bShieldBrokenByDamage)
+			{
+				if (UArenaAbilitySystemComponent* ArenaTargetASC = Cast<UArenaAbilitySystemComponent>(TargetASC))
+				{
+					// 来源事件完成后再通知护盾拥有者；致死伤害由目标 ASC 的死亡检查直接拒绝。
+					ArenaTargetASC->RouteAuthoritativeShieldBreakEvent(
+						Data.EffectSpec,
+						SourceASC,
+						TargetTagsBeforeDamage,
+						AppliedShieldDamage);
+				}
 			}
 		}
 	}

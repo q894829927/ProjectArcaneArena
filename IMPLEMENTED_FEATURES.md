@@ -97,8 +97,15 @@ Status meanings:
 
 ### Shield — Implemented
 
-* `F` commits configured cost/cooldown and applies Shield through a GameplayEffect.
+* `F` commits configured cost/cooldown and applies a runtime Shield amount through the SetByCaller-driven `UArenaGameplayEffect_ShieldGrant`.
 * Incoming damage consumes Shield before Health through the shared AttributeSet damage pipeline.
+
+### Shield Build — Partial
+
+* `DA_Upgrade_ShieldAmount` grants `Build.Shield` and adds `20%` to future Shield casts per stack, capped at three stacks. `UArenaGameplayAbility_Shield` reads permanent PlayerState upgrade data on the predicted client and authority, floors the final `30 × (1 + bonus)` value, and does not retroactively change current Shield.
+* When authority-side Damage changes Shield from positive to zero and the owner survives, `UArenaAttributeSet` routes one `Trigger.OnShieldBreak` event to the victim ASC. Direct Shield attribute edits, hits against an already empty Shield, and lethal hits do not produce the event.
+* `UArenaGameplayAbility_ShieldBreakBlast` is a ServerOnly passive granted by `DA_Upgrade_ShieldBreakBlast`. It uses the upgrade DataAsset as its AbilitySpec SourceObject and applies `Damage.Physical + Damage.Secondary` through `GE_Damage` to living, non-invincible enemies within 300 units, preserving AttackPower, Crit, Defense, Shield-first, OnCrit, and OnKill behavior.
+* Generator configs create the Shield grant GE, passive Ability, two upgrade DataAssets, independent placeholder icons, and `GCN_ShieldBreak_Burst`; they connect `GA_Shield` and append both upgrades to UpgradePool idempotently. C++ compilation, editor generation, PIE, multiplayer, prediction reconciliation, and Cue presentation remain pending.
 
 ### LightningStorm — Implemented
 
@@ -286,4 +293,5 @@ Status meanings:
 * Deferred verification: complete the Fire Build single-player/two-player checks for upgrade eligibility, direct-damage stacks, Burning stack/refresh timing, Shield-first periodic damage, death cleanup, and replicated Burning GameplayCue removal.
 * Deferred verification: complete the Lightning Build single-player/two-player checks for upgrade eligibility, damage scaling, first-hit Shocked ordering, global refresh behavior, death cleanup, shared Lightning vulnerability, and replicated Shocked GameplayCue removal.
 * Deferred verification: complete Overload Burning retention, one-second per-source/per-target lockout, killing-blow explosions, Secondary recursion prevention, Shocked amplification, burst Cue replication, two-player source independence, and the generated four-wave Victory flow. The single-player Fireball-to-Burning trigger, visible burst, and 250/350-unit radius boundary are verified.
+* Deferred verification: compile and generate the Shield Build assets, then verify `30/36/42/48` Shield scaling, damage-only `Trigger.OnShieldBreak`, nonlethal break blasts, standard physical damage inheritance, prediction reconciliation, dual-view Cue placement, and two-player authority/ownership behavior.
 * A feature must explicitly say `Verified` before this log should be treated as proof of completed PIE, multiplayer, or packaged-build testing.

@@ -29,6 +29,23 @@ BURST_CUE_CONFIGS = [
         "scale": (3.0, 3.0, 3.0),
         "cast_shadow": False,
     },
+    {
+        "asset_name": "GCN_ShieldBreak_Burst",
+        "destination_path": "/Game/GAS/GameplayCues/InstaneCue",
+        "template_path": "/Game/GAS/GameplayCues/InstaneCue/GCN_Hit_Physical",
+        "cue_tag": "GameplayCue.Ability.Shield.Break",
+        "niagara_paths": (
+            "/Game/SlashTrail_SoftTofu/Niagara/Mystic/NS_Hit_Mystic_Once",
+        ),
+        "socket_name": "None",
+        "attach_policy": "DO_NOT_ATTACH",
+        "attachment_rule": "KEEP_WORLD",
+        "override_rotation": False,
+        "rotation": (0.0, 0.0, 0.0),
+        "override_scale": True,
+        "scale": (3.0, 3.0, 3.0),
+        "cast_shadow": False,
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (
