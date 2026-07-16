@@ -50,6 +50,20 @@ ABILITY_BINDINGS = [
         "property_name": "damage_effect_class",
         "effect_blueprint_path": "/Game/GAS/GameplayEffect/GE_Damage",
     },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_DashLightningTrail",
+        "property_name": "damage_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/GE_Damage",
+    },
+]
+
+ABILITY_CLASS_BINDINGS = [
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_DashLightningTrail",
+        "property_name": "trail_area_class",
+        "class_blueprint_path": "/Game/GAS/Area/BP_ArenaDashTrailArea",
+        "parent_class_name": "ArenaDashTrailArea",
+    },
 ]
 
 GAME_MODE_PATH = "/Game/GameMode/BP_ArenaGameMode"
@@ -67,6 +81,8 @@ UPGRADE_POOL_ASSET_PATHS = [
     "/Game/Data/Upgrade/DA_Upgrade_EnergyOnCrit",
     "/Game/Data/Upgrade/DA_Upgrade_ShieldAmount",
     "/Game/Data/Upgrade/DA_Upgrade_ShieldBreakBlast",
+    "/Game/Data/Upgrade/DA_Upgrade_DashCooldown",
+    "/Game/Data/Upgrade/DA_Upgrade_DashLightningTrail",
 ]
 
 
@@ -112,6 +128,40 @@ def _validate_ability_binding(binding, index, generated_asset_paths):
         )
 
 
+def _validate_ability_class_binding(binding, index, generated_asset_paths):
+    """验证 Ability 的通用 Class 属性和目标 Blueprint 父类。"""
+    required_keys = (
+        "ability_path",
+        "property_name",
+        "class_blueprint_path",
+        "parent_class_name",
+    )
+    missing_keys = [key for key in required_keys if key not in binding]
+    if missing_keys:
+        raise RuntimeError(
+            f"ABILITY_CLASS_BINDINGS[{index}] is missing keys: "
+            f"{', '.join(missing_keys)}"
+        )
+
+    if _require_or_allow_generated(binding["ability_path"], generated_asset_paths):
+        _, ability_class = tools.require_blueprint(
+            binding["ability_path"],
+            unreal.GameplayAbility,
+        )
+        ability_defaults = unreal.get_default_object(ability_class)
+        try:
+            ability_defaults.get_editor_property(binding["property_name"])
+        except Exception as error:
+            raise RuntimeError(
+                f"Ability {binding['ability_path']} does not expose "
+                f"'{binding['property_name']}': {error}"
+            )
+
+    parent_class = tools.require_unreal_type(binding["parent_class_name"])
+    if _require_or_allow_generated(binding["class_blueprint_path"], generated_asset_paths):
+        tools.require_blueprint(binding["class_blueprint_path"], parent_class)
+
+
 def validate_configs(generated_asset_paths=None):
     """验证 Ability、升级池以及近战/远程原型波次所需引用。"""
     generated_asset_paths = set(generated_asset_paths or ())
@@ -122,6 +172,13 @@ def validate_configs(generated_asset_paths=None):
             raise RuntimeError(f"Duplicate Ability binding: {binding_key}")
         seen_binding_properties.add(binding_key)
         _validate_ability_binding(binding, index, generated_asset_paths)
+
+    for index, binding in enumerate(ABILITY_CLASS_BINDINGS):
+        binding_key = (binding.get("ability_path"), binding.get("property_name"))
+        if binding_key in seen_binding_properties:
+            raise RuntimeError(f"Duplicate Ability binding: {binding_key}")
+        seen_binding_properties.add(binding_key)
+        _validate_ability_class_binding(binding, index, generated_asset_paths)
 
     upgrade_data_class = tools.require_unreal_type("ArenaUpgradeDataAsset")
     seen_upgrade_paths = set()
@@ -184,6 +241,28 @@ def _configure_ability_binding(binding):
     tools.save_asset(binding["ability_path"])
     unreal.log(
         f"Configured Ability binding: {binding['ability_path']}."
+        f"{binding['property_name']}"
+    )
+    return ability_blueprint
+
+
+def _configure_ability_class_binding(binding):
+    """把生成的 Actor Blueprint Class 写入 Ability 的 Class 属性。"""
+    ability_blueprint, ability_class = tools.require_blueprint(
+        binding["ability_path"],
+        unreal.GameplayAbility,
+    )
+    parent_class = tools.require_unreal_type(binding["parent_class_name"])
+    _, target_class = tools.require_blueprint(
+        binding["class_blueprint_path"],
+        parent_class,
+    )
+    ability_defaults = unreal.get_default_object(ability_class)
+    ability_defaults.modify()
+    ability_defaults.set_editor_property(binding["property_name"], target_class)
+    tools.save_asset(binding["ability_path"])
+    unreal.log(
+        f"Configured Ability class binding: {binding['ability_path']}."
         f"{binding['property_name']}"
     )
     return ability_blueprint
@@ -276,6 +355,8 @@ def run():
     validate_configs()
     for binding in ABILITY_BINDINGS:
         _configure_ability_binding(binding)
+    for binding in ABILITY_CLASS_BINDINGS:
+        _configure_ability_class_binding(binding)
     _configure_upgrade_pool()
     _configure_prototype_enemy_mixes()
 

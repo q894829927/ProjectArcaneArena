@@ -66,7 +66,7 @@ private:
 	int32 DrawWeightedUpgradeIndex(const TArray<UArenaUpgradeDataAsset*>& Candidates);
 	// 返回升级资产对应的可配置稀有度权重，并防止无效配置产生零权重池。
 	int32 GetUpgradeRarityWeight(const UArenaUpgradeDataAsset* Upgrade) const;
-	// 判断候选是否精确匹配玩家当前拥有的火焰、闪电或暴击构筑标签。
+	// 判断候选是否精确匹配玩家当前拥有的火焰、闪电、暴击、护盾或冲刺构筑标签。
 	bool IsUpgradeForOwnedBuild(const AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const;
 	// 使用同一服务器随机流打乱最终槽位，避免构筑保底固定出现在首位。
 	void ShuffleUpgradeChoices(TArray<UArenaUpgradeDataAsset*>& Choices);

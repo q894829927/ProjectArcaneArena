@@ -18,6 +18,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnKill, "Ability.Passive.EnergyOnKill", "Passive Energy recovery on enemy kill ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnCrit, "Ability.Passive.EnergyOnCrit", "Passive Energy recovery on critical damage ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_ShieldBreakBlast, "Ability.Passive.ShieldBreakBlast", "Passive physical blast when the owner's Shield is broken.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_DashLightningTrail, "Ability.Passive.DashLightningTrail", "Passive lightning trail spawned after a completed Dash.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Physical, "Damage.Physical", "Physical damage type.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Damage_Fire, "Damage.Fire", "Fire damage type.");
@@ -38,6 +39,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_BasicAttack_Activate, "GameplayCue.Ability.BasicAttack.Activate", "Basic attack activation presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Fireball_Cast, "GameplayCue.Ability.Fireball.Cast", "Confirmed fireball cast presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Dash_Active, "GameplayCue.Ability.Dash.Active", "Dash active looping presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Dash_Trail, "GameplayCue.Ability.Dash.Trail", "Persistent lightning trail presentation at the completed Dash path.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Shield_Active, "GameplayCue.Ability.Shield.Active", "Shield active looping presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Shield_Break, "GameplayCue.Ability.Shield.Break", "Shield break burst presentation at the owner location.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_LightningStorm_Cast, "GameplayCue.Ability.LightningStorm.Cast", "Confirmed lightning storm cast presentation.");
@@ -70,6 +72,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_EnergyOnCrit, "Upgrade.Trigger.EnergyOnCrit", "Stackable Energy recovery on critical damage upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Shield_Amount, "Upgrade.Shield.Amount", "Stackable Shield grant amount upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_ShieldBreakBlast, "Upgrade.Trigger.ShieldBreakBlast", "Physical blast triggered when Shield is broken by damage.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Dash_Cooldown, "Upgrade.Dash.Cooldown", "Stackable Dash cooldown reduction upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Dash_LightningTrail, "Upgrade.Dash.LightningTrail", "Completed Dash leaves a damaging lightning trail.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Burning, "Status.Burning", "Target is taking periodic fire damage.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Status_Shocked, "Status.Shocked", "Target takes increased Lightning damage.");
@@ -86,6 +90,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnKill, "Trigger.OnKill", "Authoritative living-to-dead damage outcome event.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnCrit, "Trigger.OnCrit", "Authoritative critical damage outcome event.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnShieldBreak, "Trigger.OnShieldBreak", "Authoritative positive-to-zero Shield transition caused by damage.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDashEnd, "Trigger.OnDashEnd", "Authoritative event emitted after a Dash completes without cancellation.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Base, "SetByCaller.Damage.Base", "Runtime base damage value.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");

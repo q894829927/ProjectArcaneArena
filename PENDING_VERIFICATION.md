@@ -74,7 +74,7 @@
 3. 在编辑器控制台再次执行：
 
 ```text
-py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.py"
 ```
 
 4. 等待脚本成功完成，关闭并重新打开上述两个资产。
@@ -93,7 +93,7 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 
 ### 测试方法
 
-1. 编译 C++ 并重启编辑器后运行 `py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"`。
+1. 编译 C++ 并重启编辑器后运行 `py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.py"`。
 2. 打开 `DA_Upgrade_CritChance`，确认 ID 为 `Upgrade.Crit.Chance`，数值为 `0.05`，Common、可叠加、MaxStacks 为 `5`，Tags 包含 `Build.Crit` 与 `Upgrade.Crit.Chance`，Granted GE 为 `GE_Upgrade_CritChance`，Target Ability 为空。
 3. 打开 `DA_Upgrade_EnergyOnCrit`，确认 ID 为 `Upgrade.Trigger.EnergyOnCrit`，数值为 `5`，Rare、可叠加、MaxStacks 为 `3`，Required Tags 包含 `Build.Crit`，Target/Trigger 分别为 `Ability.Passive.EnergyOnCrit` 与 `Trigger.OnCrit`，Granted Ability 为 `GA_EnergyOnCrit`。
 4. 打开 `GA_EnergyOnCrit`，确认 Energy Restore Effect Class 为 `GE_Trigger_EnergyOnCrit`。
@@ -353,18 +353,21 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 ### 测试方法
 
 1. 编译并重启编辑器后运行 `Content/Python/ranged_enemy/setup_ranged_enemy.py` 两次，确认资产创建与重复执行都成功。
-2. 单人 PIE 观察远程敌人在约 `950` 距离停步、转向、播放 Montage，并在约 `0.45s` 后生成一个 Projectile；确认冷却约 `1.6s`。
-3. 在前摇中离开射程、躲到墙后、击杀或眩晕敌人，确认攻击打空且没有迟到 Projectile。
-4. 发射后横向移动躲避，并让 Projectile 分别命中墙、Shield 玩家和 Dash 无敌玩家。
-5. 2-player Listen Server 让未被锁定的玩家走入弹道，观察双方 Montage、Projectile、属性和伤害数字。
-6. 分别用顶视角与第三人称检查弹道高度、可读性和躲避空间。
+2. 单人 PIE 观察远程敌人在约 `950` 距离且实际发射路径畅通时停步、转向、播放加速 Montage，并在 Montage 进入 BlendOut 的动作结束点立即生成一个 Projectile；确认冷却约 `1.6s`。
+3. 激活前用墙挡住实际发射点到角色瞄准点，确认敌人继续沿 NavMesh 绕行；攻击已 Commit 后离开原射程或移动到遮挡后，仍应在动画结束点发射，后续是否命中交给 Projectile 飞行碰撞。
+4. 在前摇中击杀目标、击杀敌人或眩晕敌人，确认取消攻击且没有迟到 Projectile。
+5. 发射后横向移动躲避，并让 Projectile 分别命中墙、Shield 玩家和 Dash 无敌玩家。
+6. 2-player Listen Server 让未被锁定的玩家走入弹道，观察双方 Montage、Projectile、属性和伤害数字。
+7. 分别用顶视角与第三人称检查弹道高度、可读性和躲避空间。
 
 ### 通过标准
 
 - 每次有效释放只由服务器生成一个复制 Projectile，Host 与 Client 看到同一个 Actor 和销毁结果。
 - Projectile 不追踪、不穿墙、不伤害敌人；任意存活玩家可挡弹，一次最多结算一次物理伤害。
 - Shield 优先承伤；Dash 无敌玩家不掉血但 Projectile 仍被消耗。
-- 前摇失效不会生成 Projectile，发射后的 Projectile 不因原目标移动而改向。
+- 实际发射路径被挡时 AI 不会把攻击射程当作寻路完成半径；存在导航通道时会绕到可发射位置。
+- 已 Commit 的前摇不会因目标随后离开射程或出现遮挡而取消发射，Projectile 发射后也不因原目标移动而改向。
+- 目标死亡、敌人死亡或 Stun 会取消前摇并阻止迟到 Projectile。
 - 目标死亡后 AI 取消前摇并重新选择最近的存活玩家。
 
 ## 四波正式流程
@@ -513,7 +516,7 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 2. 重启编辑器后执行：
 
 ```text
-py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.py"
 ```
 
 3. 连续执行生成器两次，检查 Output Log、Content Validation 和 UpgradePool。
@@ -599,3 +602,90 @@ py "../../../../ProjectArcaneArena/Content/Python/setup_build_assets.py"
 - 只有拥有升级且实际被破盾的玩家触发自己的被动。
 - 爆发来源 ASC、AttackPower、OnCrit 和 OnKill 归属于护盾拥有者。
 - 每次破盾只在服务器结算一次，所有客户端看到同一次复制 Cue，不出现重复伤害或表现。
+
+## Dash Build 编译与资产生成
+
+> 当前状态：2026-07-16 已完成最新 Editor DLL 编译和首次资产生成，七个 Dash 资产均存在且 Content Validation 无错误。以下步骤保留用于后续幂等重跑和字段人工复核。
+
+### 测试方法
+
+1. 关闭 Live Coding 或关闭编辑器，只编译窄目标 `ProjectArcaneArenaEditor Win64 Development`。
+2. 重启编辑器后执行：
+
+```text
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.py"
+```
+
+3. 连续执行生成器两次，检查 Output Log、Content Validation 和 UpgradePool。
+4. 检查 `GA_DashLightningTrail.DamageEffectClass = GE_Damage`。
+5. 检查 `GA_DashLightningTrail.TrailAreaClass = BP_ArenaDashTrailArea`。
+6. 检查 `DA_Upgrade_DashCooldown`、`DA_Upgrade_DashLightningTrail`、两个独立图标和 `GCN_DashLightningTrail_Active` 的字段。
+
+### 通过标准
+
+- UHT 和 C++ 编译通过，没有新增 Warning/Error。
+- 第二次运行不重复创建资产，也不重复追加 UpgradePool。
+- 两个 DataAsset 的 ID、Build/Upgrade Tags、RequiredTags、数值、稀有度和 MaxStacks 与设计一致。
+- Trail Cue 使用 `GameplayCue.Ability.Dash.Trail`、`DO_NOT_ATTACH`、`KEEP_WORLD` 和循环闪电 Niagara。
+- Cue 由每个复制 Trail Area 在各端本地成对启动/移除，不依赖玩家 ASC 上同 Tag 的批量移除。
+- `BP_ArenaDashTrailArea` 的原生父类是 `ArenaDashTrailArea`，且 Ability 使用该 Blueprint Class。
+
+## Dash Cooldown 与 OnDashEnd 边界
+
+### 测试方法
+
+1. 分别授予 `DA_Upgrade_DashCooldown` 的 `0 / 1 / 2 / 3` 层，记录 HUD 和 ActiveGE 中的 Dash Cooldown 总持续时间。
+2. 正常完成 Dash，使用 Gameplay Debugger 或临时日志确认只发送一次 `Trigger.OnDashEnd`，并检查事件中的服务器实际起终点。
+3. 分别在 TargetData 取消、`arena.Net.RejectNextAbility 3`、Dash 中途死亡和 Dash 中途 Stun 时观察事件与 Trail Actor。
+4. Dash 撞墙提前停止，再检查事件终点是否为服务器最终位置而不是固定 `DashDistance` 目标点。
+5. 在 `150ms RTT / 2% Loss` 和 `5% Loss` 下重复正常与拒绝路径。
+6. 在高延迟下记录客户端预测 Dash 计时结束和服务器 `Trigger.OnDashEnd` 的先后关系。
+
+### 通过标准
+
+- 如果基础 Cooldown 为 `C`，`0 / 1 / 2 / 3` 层分别得到 `C / 0.85C / 0.70C / 0.55C`，且不低于 `0.25s`。
+- 预测端和服务器最终 Cooldown 一致，HUD 读取实际 ActiveGE Duration，不残留错误冷却。
+- 只有正常完成的服务器 Dash 产生一次 `Trigger.OnDashEnd`。
+- 客户端预测实例先结束时不会通过 `ServerEndAbility` 提前结束权威实例，服务器仍会正常发送一次完成事件。
+- 取消、拒绝、死亡和 Stun 不产生事件、Trail Actor 或 Trail Cue。
+- 撞墙路径使用实际服务器起终点，Trail 不穿过玩家没有到达的墙后区域。
+
+## Dash Lightning Trail 伤害与表现
+
+### 测试方法
+
+1. 先获得 `Build.Dash`，确认此前 `DA_Upgrade_DashLightningTrail` 不会出现，之后可以进入候选。
+2. 获得 Trail 升级，沿直线穿过多个高血量敌人，观察 World Outliner、Cue 和伤害日志。
+3. 把敌人分别放在线段中心附近、端点附近、距离路径约 `100` 和 `140` 的位置。
+4. 固定 AttackPower、CritChance 和敌人 Defense，记录 `2s / 0.5s` 的伤害次数；再测试敌人 Shield、CritChance `1`、Shocked 和 `State.Invincible`。
+5. 让 Trail 击杀敌人，并在拥有 Overload 时让 Trail 命中 Burning 敌人，观察 OnCrit、OnKill 和 Lightning 事件联动。
+6. 在 Trail 存续期间连续 Dash，观察多个 Area/Cue 生命周期是否各自正确结束。
+
+### 通过标准
+
+- 每次正常 Dash 只由服务器生成一个复制 `AArenaDashTrailArea`。
+- 路径半径为 `120`：严格二维点到线段距离内的敌人受伤，范围外敌人不受伤。
+- 默认共结算四次伤害：生成时一次，随后每 `0.5s` 一次，单目标单 Tick 不重复。
+- 每次使用 `GE_Damage + Damage.Lightning`，继承 AttackPower、Crit、Defense、Shield-first、Shocked、Hit Cue、OnCrit 和 OnKill。
+- 死亡或无敌敌人不受伤；Trail 不伤害玩家或其他非敌人 Pawn。
+- Burning 目标可以按现有 Lockout 规则触发 Overload，Overload 的 Secondary 伤害不会递归生成新 Overload。
+- Trail Cue 位于实际路径中点，方向沿起点到终点，并在 Area 销毁时可靠移除。
+- 多条 Trail 重叠时，每个 Area 的 Cue 独立结束，早销毁的路径不会清掉后生成路径的特效。
+
+## Dash Build 双视角与多人
+
+### 测试方法
+
+1. 在顶视角和第三人称分别向四个方向 Dash，检查路径中点、方向和 Niagara 可读性。
+2. 2-player Listen Server 只给 Client A 授予 Trail，分别由 A 和 B Dash。
+3. 再让两名玩家都获得 Trail，在不同位置同时 Dash，观察 Host/Client 的 Area、Cue 和敌人属性。
+4. Dedicated Server 双客户端重复一次，并打开 `arena.Net.AbilityAudit 1` 检查权威生成数量。
+5. 在一个客户端切换视角、另一个客户端保持原视角时重复，确认本地相机状态不影响路径玩法数据。
+
+### 通过标准
+
+- Dash 方向继续来自各视角共用的规范化移动方向 TargetData，Trail 使用服务器实际移动路径。
+- 只有拥有升级的玩家正常完成 Dash 时生成自己的 Trail。
+- Host、Owner Client 和 Simulated Client 看到同一个复制 Area 和同一次持续 Cue。
+- 每个 Area 的伤害来源、AttackPower、OnCrit、OnKill 和 Overload 归属于对应玩家 ASC。
+- 视角切换不会复制相机状态，也不会增加事件、Area、Cue 或伤害次数。

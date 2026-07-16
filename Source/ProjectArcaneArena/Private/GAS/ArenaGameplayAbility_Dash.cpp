@@ -3,8 +3,10 @@
 #include "Abilities/Tasks/AbilityTask_ApplyRootMotionConstantForce.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
+#include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Components/SceneComponent.h"
+#include "Core/ArenaPlayerState.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GAS/Targeting/ArenaTargetActor_DashDirection.h"
@@ -12,11 +14,15 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/RootMotionSource.h"
+#include "GameplayEffect.h"
 #include "TimerManager.h"
 
+// 配置本地预测冲刺、方向 TargetData 和仅服务器可结束的权威生命周期。
 UArenaGameplayAbility_Dash::UArenaGameplayAbility_Dash()
 {
 	NetExecutionPolicy = EGameplayAbilityNetExecutionPolicy::LocalPredicted;
+	// 预测端可在本地停止位移与表现，但不得抢先结束服务器实例并吞掉 OnDashEnd。
+	NetSecurityPolicy = EGameplayAbilityNetSecurityPolicy::ServerOnlyTermination;
 	NetworkAbilityId = EArenaNetworkAbilityId::Dash;
 	InputTag = ArenaGameplayTags::Ability_Dash;
 	DashDirectionTargetActorClass = AArenaTargetActor_DashDirection::StaticClass();
@@ -28,6 +34,7 @@ UArenaGameplayAbility_Dash::UArenaGameplayAbility_Dash()
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Dash);
 }
 
+// 启动方向 TargetActor；客户端提交规范化方向，服务器等待并复用相同 TargetData。
 void UArenaGameplayAbility_Dash::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -70,6 +77,7 @@ void UArenaGameplayAbility_Dash::ActivateAbility(
 	}
 }
 
+// 消费一次方向数据并在两端 Commit 相同 Cost/Cooldown 后启动冲刺。
 void UArenaGameplayAbility_Dash::OnDashTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
@@ -96,12 +104,14 @@ void UArenaGameplayAbility_Dash::OnDashTargetDataReady(const FGameplayAbilityTar
 	StartDashWithDirection(DashDirection);
 }
 
+// 取消目标采集时沿 GAS 正常取消路径结束，不触发 OnDashEnd。
 void UArenaGameplayAbility_Dash::OnDashTargetDataCancelled(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 }
 
+// 使用校验后的方向创建 RootMotion；服务器额外记录实际起点供完成事件使用。
 void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirection)
 {
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
@@ -115,6 +125,11 @@ void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirec
 
 	ActiveDashCharacter = Character;
 	ActiveDashASC = ActorInfo->AbilitySystemComponent.Get();
+	bSentDashEndEvent = false;
+	if (ActorInfo->IsNetAuthority())
+	{
+		AuthorityDashStartLocation = Character->GetActorLocation();
+	}
 	ApplyDashStateTags(ActiveDashASC.Get());
 	PlayDashMontage();
 
@@ -150,6 +165,7 @@ void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirec
 	World->GetTimerManager().SetTimer(DashTimerHandle, this, &UArenaGameplayAbility_Dash::FinishDash, DashDuration, false);
 }
 
+// 清理计时器、RootMotion、状态与 Cue；取消路径不会补发 Dash 完成事件。
 void UArenaGameplayAbility_Dash::EndAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -170,9 +186,54 @@ void UArenaGameplayAbility_Dash::EndAbility(
 	RemoveDashStateTags();
 	ActiveTargetDataTask = nullptr;
 	bConsumedTargetData = false;
+	AuthorityDashStartLocation = FVector::ZeroVector;
+	bSentDashEndEvent = false;
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
 
+// 在预测端和服务器从同一 Upgrade DataAsset 层数计算 Cooldown Spec 的最终持续时间。
+void UArenaGameplayAbility_Dash::ApplyCooldown(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	UGameplayEffect* CooldownEffect = GetCooldownGameplayEffect();
+	if (!CooldownEffect)
+	{
+		return;
+	}
+
+	const float CooldownReduction = GetDashCooldownReduction(ActorInfo);
+	if (CooldownReduction <= KINDA_SMALL_NUMBER)
+	{
+		Super::ApplyCooldown(Handle, ActorInfo, ActivationInfo);
+		return;
+	}
+
+	FGameplayEffectSpecHandle CooldownSpecHandle = MakeOutgoingGameplayEffectSpec(
+		Handle,
+		ActorInfo,
+		ActivationInfo,
+		CooldownEffect->GetClass(),
+		GetAbilityLevel(Handle, ActorInfo));
+	if (!CooldownSpecHandle.IsValid())
+	{
+		return;
+	}
+
+	FGameplayEffectSpec* CooldownSpec = CooldownSpecHandle.Data.Get();
+	const float BaseDuration = CooldownSpec->GetDuration();
+	if (BaseDuration > 0.0f)
+	{
+		const float CooldownFloor = FMath::Min(MinimumCooldownDuration, BaseDuration);
+		CooldownSpec->SetDuration(
+			FMath::Max(BaseDuration * (1.0f - CooldownReduction), CooldownFloor),
+			true);
+	}
+	ApplyGameplayEffectSpecToOwner(Handle, ActorInfo, ActivationInfo, CooldownSpecHandle);
+}
+
+// 对客户端方向数据执行数量、类型、有限值和水平分量校验。
 bool UArenaGameplayAbility_Dash::ExtractAndValidateDashDirection(
 	const FGameplayAbilityTargetDataHandle& TargetData,
 	FVector& OutDirection) const
@@ -201,6 +262,7 @@ bool UArenaGameplayAbility_Dash::ExtractAndValidateDashDirection(
 	return !OutDirection.IsNearlyZero();
 }
 
+// Montage 只负责两端表现，Dash 完成时机由服务器与预测端的位移计时器管理。
 void UArenaGameplayAbility_Dash::PlayDashMontage()
 {
 	if (!DashMontage)
@@ -222,6 +284,7 @@ void UArenaGameplayAbility_Dash::PlayDashMontage()
 	}
 }
 
+// 添加本地预测标签，并由服务器复制权威标签与 Dash Active Cue。
 void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC)
 {
 	if (!ASC || bAppliedDashStateTags)
@@ -253,6 +316,7 @@ void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC
 	bAppliedDashStateTags = true;
 }
 
+// 移除当前 Ability 实例添加的标签和持续 Cue，保持预测拒绝与取消可回滚。
 void UArenaGameplayAbility_Dash::RemoveDashStateTags()
 {
 	UAbilitySystemComponent* ASC = ActiveDashASC.Get();
@@ -283,16 +347,64 @@ void UArenaGameplayAbility_Dash::RemoveDashStateTags()
 	ActiveDashCharacter.Reset();
 }
 
+// 正常结束先记录实际终点并发送服务器事件，再清理位移和 Ability 状态。
 void UArenaGameplayAbility_Dash::FinishDash()
 {
 	if (ActiveDashCharacter.IsValid())
 	{
 		StopDashMovement(ActiveDashCharacter.Get());
 	}
+	SendDashEndEvent();
 
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, false);
 }
 
+// 服务器把实际冲刺起终点封装为 Location TargetData，使事件被动无需读取预测状态。
+void UArenaGameplayAbility_Dash::SendDashEndEvent()
+{
+	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
+	ACharacter* Character = ActiveDashCharacter.Get();
+	if (bSentDashEndEvent || !ActorInfo || !ActorInfo->IsNetAuthority() || !Character)
+	{
+		return;
+	}
+	bSentDashEndEvent = true;
+
+	const FVector DashEndLocation = Character->GetActorLocation();
+	FGameplayAbilityTargetData_LocationInfo* LocationData = new FGameplayAbilityTargetData_LocationInfo();
+	LocationData->SourceLocation.LocationType = EGameplayAbilityTargetingLocationType::LiteralTransform;
+	LocationData->SourceLocation.LiteralTransform = FTransform(AuthorityDashStartLocation);
+	LocationData->TargetLocation.LocationType = EGameplayAbilityTargetingLocationType::LiteralTransform;
+	LocationData->TargetLocation.LiteralTransform = FTransform(DashEndLocation);
+
+	FGameplayEventData EventData;
+	EventData.EventTag = ArenaGameplayTags::Trigger_OnDashEnd;
+	EventData.Instigator = Character;
+	EventData.Target = Character;
+	EventData.EventMagnitude = FVector::Dist2D(AuthorityDashStartLocation, DashEndLocation);
+	EventData.TargetData.Add(LocationData);
+	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
+		Character,
+		ArenaGameplayTags::Trigger_OnDashEnd,
+		EventData);
+}
+
+// 读取 Owner PlayerState 的数据驱动升级总值，并限制在不会把 Cooldown 降到零的范围。
+float UArenaGameplayAbility_Dash::GetDashCooldownReduction(const FGameplayAbilityActorInfo* ActorInfo) const
+{
+	const AArenaPlayerState* ArenaPlayerState = ActorInfo
+		? Cast<AArenaPlayerState>(ActorInfo->OwnerActor.Get())
+		: nullptr;
+	const float Reduction = ArenaPlayerState
+		? ArenaPlayerState->GetOwnedUpgradeNumericTotal(
+			ArenaGameplayTags::Ability_Dash,
+			FGameplayTag(),
+			ArenaGameplayTags::Upgrade_Dash_Cooldown)
+		: 0.0f;
+	return FMath::Clamp(Reduction, 0.0f, 0.8f);
+}
+
+// 清除 RootMotion 结束后的剩余速度，保持服务端与预测端停止行为一致。
 void UArenaGameplayAbility_Dash::StopDashMovement(ACharacter* Character) const
 {
 	if (Character && Character->GetCharacterMovement())

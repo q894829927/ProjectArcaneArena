@@ -8,6 +8,7 @@ import unreal
 GENERATOR_MODULE_NAMES = (
     "generate_gameplay_effect_blueprints",
     "generate_gameplay_ability_blueprints",
+    "generate_actor_blueprints",
     "generate_upgrade_assets",
     "generate_looping_gameplay_cues",
     "generate_burst_gameplay_cues",
@@ -39,6 +40,7 @@ def _validate_all(modules):
     (
         effect_module,
         ability_module,
+        actor_module,
         upgrade_module,
         looping_cue_module,
         burst_cue_module,
@@ -47,12 +49,16 @@ def _validate_all(modules):
     ) = modules
     effect_module.validate_configs()
     ability_module.validate_configs()
+    actor_module.validate_configs()
 
     generated_dependency_paths = _configured_asset_paths(
         effect_module.EFFECT_BLUEPRINT_CONFIGS
     )
     generated_dependency_paths.update(
         _configured_asset_paths(ability_module.ABILITY_BLUEPRINT_CONFIGS)
+    )
+    generated_dependency_paths.update(
+        _configured_asset_paths(actor_module.ACTOR_BLUEPRINT_CONFIGS)
     )
     upgrade_module.validate_configs(generated_dependency_paths)
     looping_cue_module.validate_configs()
@@ -80,13 +86,14 @@ def main():
     modules = _load_generator_modules()
     _validate_all(modules)
 
-    with unreal.ScopedSlowTask(7, "Generating Project Arcane Arena build assets") as task:
+    with unreal.ScopedSlowTask(8, "Generating Project Arcane Arena build assets") as task:
         task.make_dialog(True)
         for module, progress_text in zip(
             modules,
             (
                 "Generating GameplayEffect Blueprints",
                 "Generating GameplayAbility Blueprints",
+                "Generating Actor Blueprints",
                 "Generating Upgrade DataAssets",
                 "Generating looping GameplayCues",
                 "Generating Burst GameplayCues",
