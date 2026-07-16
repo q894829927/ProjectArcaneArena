@@ -9,6 +9,97 @@
 #include "GameplayEffectTypes.h"
 #include "Net/UnrealNetwork.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogArenaDamage, Log, All);
+
+namespace
+{
+	// 从伤害 Spec 的标签、效果类和来源对象解析便于排查的技能名称。
+	FString ResolveDamageSkillLabel(const FGameplayEffectSpec& EffectSpec)
+	{
+		FGameplayTagContainer AssetTags;
+		EffectSpec.GetAllAssetTags(AssetTags);
+		if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Secondary))
+		{
+			return ArenaGameplayTags::Ability_Passive_Overload.ToString();
+		}
+
+		const FString EffectClassName = GetNameSafe(EffectSpec.Def);
+		if (EffectClassName.Contains(TEXT("Burning")))
+		{
+			return ArenaGameplayTags::Status_Burning.ToString();
+		}
+
+		for (const FGameplayTag& AssetTag : AssetTags)
+		{
+			const FString TagString = AssetTag.ToString();
+			if (TagString.StartsWith(TEXT("Ability.")) || TagString.StartsWith(TEXT("Status.")))
+			{
+				return TagString;
+			}
+		}
+
+		const UObject* SourceObject = EffectSpec.GetEffectContext().GetSourceObject();
+		const FString SourceClassName = GetNameSafe(SourceObject ? SourceObject->GetClass() : nullptr);
+		if (SourceClassName.Contains(TEXT("BasicAttack")))
+		{
+			return ArenaGameplayTags::Ability_BasicAttack.ToString();
+		}
+		if (SourceClassName.Contains(TEXT("FireballProjectile")))
+		{
+			return ArenaGameplayTags::Ability_Fireball.ToString();
+		}
+		if (SourceClassName.Contains(TEXT("LightningStormArea")))
+		{
+			return ArenaGameplayTags::Ability_LightningStorm.ToString();
+		}
+		if (SourceClassName.Contains(TEXT("EnemyMeleeAttack")))
+		{
+			return ArenaGameplayTags::Ability_Enemy_MeleeAttack.ToString();
+		}
+		if (SourceClassName.Contains(TEXT("EnemyProjectile")))
+		{
+			return ArenaGameplayTags::Ability_Enemy_RangedAttack.ToString();
+		}
+		if (SourceClassName.Contains(TEXT("Overload")))
+		{
+			return ArenaGameplayTags::Ability_Passive_Overload.ToString();
+		}
+
+		return !SourceClassName.IsEmpty() ? SourceClassName : EffectClassName;
+	}
+
+	// 仅在权威端记录实际消耗的 Shield 与 Health，避免客户端预测或过量伤害产生误导日志。
+	void LogAuthoritativeDamage(
+		const FGameplayEffectSpec& EffectSpec,
+		const UAbilitySystemComponent* TargetASC,
+		float AppliedDamage)
+	{
+		if (!TargetASC || !TargetASC->IsOwnerActorAuthoritative() || AppliedDamage <= KINDA_SMALL_NUMBER)
+		{
+			return;
+		}
+
+		const FGameplayEffectContextHandle EffectContext = EffectSpec.GetEffectContext();
+		const UAbilitySystemComponent* SourceASC = EffectContext.GetInstigatorAbilitySystemComponent();
+		const AActor* SourceActor = SourceASC ? SourceASC->GetAvatarActor() : EffectContext.GetOriginalInstigator();
+		const AActor* TargetActor = TargetASC->GetAvatarActor();
+		if (!SourceActor && SourceASC)
+		{
+			SourceActor = SourceASC->GetOwnerActor();
+		}
+		if (!TargetActor)
+		{
+			TargetActor = TargetASC->GetOwnerActor();
+		}
+
+		UE_LOG(LogArenaDamage, Log, TEXT("%s 使用 %s 对 %s 造成 %.2f 点伤害"),
+			*GetNameSafe(SourceActor),
+			*ResolveDamageSkillLabel(EffectSpec),
+			*GetNameSafe(TargetActor),
+			AppliedDamage);
+	}
+}
+
 // 构造属性集，设置玩家和敌人可共用的基础默认值。
 UArenaAttributeSet::UArenaAttributeSet()
 {
@@ -62,7 +153,7 @@ void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attrib
 	ClampAttribute(Attribute, NewValue);
 }
 
-// GE 执行后消费 Damage/Healing 元属性，并在权威端按实际资源损失发送通用伤害事件。
+// GE 执行后消费 Damage/Healing 元属性，并在权威端记录实际伤害与发送通用伤害事件。
 void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -101,6 +192,7 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		UpdateDeadTag();
 		if (AppliedDamage > KINDA_SMALL_NUMBER)
 		{
+			LogAuthoritativeDamage(Data.EffectSpec, TargetASC, AppliedDamage);
 			ExecuteDamageGameplayCue(Data, AppliedDamage);
 			if (UArenaAbilitySystemComponent* SourceASC = Cast<UArenaAbilitySystemComponent>(
 				Data.EffectSpec.GetEffectContext().GetInstigatorAbilitySystemComponent()))
