@@ -45,6 +45,7 @@ Status meanings:
 * Shield absorbs incoming damage before Health; reaching zero Health applies replicated `State.Dead`.
 * After Shield/Health are actually consumed, `UArenaAttributeSet` asks the source `UArenaAbilitySystemComponent` to route one authoritative `Trigger.OnDamageDealt.*` GameplayEvent. The payload contains actual absorbed damage, the Damage Spec context/objects, source plus damage tags, and a pre-hit target-tag snapshot so status synergies and killing blows use one shared event layer.
 * The same authority route emits `Trigger.OnKill` after the typed damage event when the target changes from alive before the hit to `State.Dead` after settlement. The outcome is captured before synchronous passives run, preventing nested, periodic, area, and repeated dead-target damage from duplicating the original kill event.
+* Each authority damage settlement emits one `LogArenaDamage` entry containing the source Avatar, target Avatar, resolved skill/status label, and actual Shield plus Health loss after clamping. Burning and Overload are labeled explicitly; unknown sources fall back to their source/effect class name.
 
 ### Ability Input and Cooldowns — Implemented
 
