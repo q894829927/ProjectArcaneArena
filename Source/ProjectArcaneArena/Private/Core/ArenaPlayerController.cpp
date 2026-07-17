@@ -343,14 +343,16 @@ void AArenaPlayerController::BindGameStateHUD()
 		ArenaGameState->OnCurrentWaveIndexChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleWaveIndexChanged);
 		ArenaGameState->OnRemainingEnemyCountChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleRemainingEnemyCountChanged);
 		ArenaGameState->OnUpgradeRandomSeedChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleUpgradeRandomSeedChanged);
+		ArenaGameState->OnActiveBossChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleActiveBossChanged);
 	}
 
 	PlayerHUDWidget->SetGamePhase(ArenaGameState->GetGamePhase());
 	PlayerHUDWidget->SetWaveState(ArenaGameState->GetCurrentWaveIndex(), ArenaGameState->GetRemainingEnemyCount());
 	PlayerHUDWidget->SetUpgradeRandomSeed(ArenaGameState->GetUpgradeRandomSeed());
+	PlayerHUDWidget->BindToBoss(ArenaGameState->GetActiveBoss());
 }
 
-// 解除 GameState 阶段、波次和随机种子委托，防止世界切换后引用旧状态对象。
+// 解除 GameState 阶段、波次、随机种子和 Boss 委托，防止世界切换后引用旧状态对象。
 void AArenaPlayerController::UnbindGameStateHUD()
 {
 	if (AArenaGameState* ArenaGameState = BoundArenaGameState.Get())
@@ -359,6 +361,11 @@ void AArenaPlayerController::UnbindGameStateHUD()
 		ArenaGameState->OnCurrentWaveIndexChanged.RemoveDynamic(this, &AArenaPlayerController::HandleWaveIndexChanged);
 		ArenaGameState->OnRemainingEnemyCountChanged.RemoveDynamic(this, &AArenaPlayerController::HandleRemainingEnemyCountChanged);
 		ArenaGameState->OnUpgradeRandomSeedChanged.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeRandomSeedChanged);
+		ArenaGameState->OnActiveBossChanged.RemoveDynamic(this, &AArenaPlayerController::HandleActiveBossChanged);
+	}
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->BindToBoss(nullptr);
 	}
 	BoundArenaGameState.Reset();
 }
@@ -399,6 +406,15 @@ void AArenaPlayerController::HandleUpgradeRandomSeedChanged(int32 OldValue, int3
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->SetUpgradeRandomSeed(NewValue);
+	}
+}
+
+// 每个本地 Controller 只把复制 Boss 绑定到自己的 HUD，服务器不复制 Widget 状态。
+void AArenaPlayerController::HandleActiveBossChanged(AArenaBossCharacter* OldBoss, AArenaBossCharacter* NewBoss)
+{
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->BindToBoss(NewBoss);
 	}
 }
 

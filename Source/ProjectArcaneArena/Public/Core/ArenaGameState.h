@@ -4,6 +4,8 @@
 #include "GameFramework/GameStateBase.h"
 #include "ArenaGameState.generated.h"
 
+class AArenaBossCharacter;
+
 UENUM(BlueprintType)
 enum class EArenaGamePhase : uint8
 {
@@ -16,6 +18,7 @@ enum class EArenaGamePhase : uint8
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaGamePhaseChangedSignature, EArenaGamePhase, OldPhase, EArenaGamePhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaIntegerStateChangedSignature, int32, OldValue, int32, NewValue);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaActiveBossChangedSignature, AArenaBossCharacter*, OldBoss, AArenaBossCharacter*, NewBoss);
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaGameState : public AGameStateBase
@@ -39,6 +42,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	int32 GetUpgradeRandomSeed() const { return UpgradeRandomSeed; }
 
+	// 返回服务器复制的当前 Boss，空值表示当前没有 Boss 战。
+	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
+	AArenaBossCharacter* GetActiveBoss() const { return ActiveBoss; }
+
 	// 仅由服务器规则层更新阶段，并通过复制委托驱动客户端表现。
 	void SetGamePhase(EArenaGamePhase NewPhase);
 	// 仅由服务器波次管理器写入当前波次，索引从 1 开始，0 表示尚未开始。
@@ -47,6 +54,8 @@ public:
 	void SetRemainingEnemyCount(int32 NewRemainingEnemyCount);
 	// 仅由服务器写入本局升级随机种子，客户端不使用该值生成候选。
 	void SetUpgradeRandomSeed(int32 NewUpgradeRandomSeed);
+	// 仅由服务器波次管理器设置当前 Boss，HUD 通过复制委托观察生命周期。
+	void SetActiveBoss(AArenaBossCharacter* NewActiveBoss);
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaGamePhaseChangedSignature OnGamePhaseChanged;
@@ -59,6 +68,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaIntegerStateChangedSignature OnUpgradeRandomSeedChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
+	FArenaActiveBossChangedSignature OnActiveBossChanged;
 
 protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GamePhase, Category = "Arena|Game State")
@@ -73,6 +85,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_UpgradeRandomSeed, Category = "Arena|Game State")
 	int32 UpgradeRandomSeed = 0;
 
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ActiveBoss, Category = "Arena|Game State")
+	TObjectPtr<AArenaBossCharacter> ActiveBoss;
+
 	UFUNCTION()
 	void OnRep_GamePhase(EArenaGamePhase OldPhase);
 
@@ -84,4 +99,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_UpgradeRandomSeed(int32 OldUpgradeRandomSeed);
+
+	UFUNCTION()
+	void OnRep_ActiveBoss(AArenaBossCharacter* OldActiveBoss);
 };

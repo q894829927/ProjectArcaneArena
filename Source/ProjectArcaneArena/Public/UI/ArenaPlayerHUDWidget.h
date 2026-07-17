@@ -10,8 +10,10 @@
 
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
+class AArenaBossCharacter;
 class UProgressBar;
 class UTextBlock;
+class UWidget;
 
 UCLASS()
 class PROJECTARCANEARENA_API UArenaPlayerHUDWidget : public UUserWidget
@@ -38,6 +40,14 @@ public:
 	// 绑定玩家 PlayerState 上的 GAS 数据源，HUD 只监听变化，不拥有玩法状态。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void BindToAbilitySystem(UArenaAbilitySystemComponent* InAbilitySystemComponent, UArenaAttributeSet* InAttributeSet);
+
+	// 绑定 GameState 复制的 Boss ASC；传入空值时解绑并隐藏 Boss HUD。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void BindToBoss(AArenaBossCharacter* InBoss);
+
+	// 刷新 Boss 名称与生命显示，所有数值只来自 Boss GAS 属性。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetBossHealthValues(const FText& InBossName, float InHealth, float InMaxHealth);
 
 	// 刷新生命显示，数值来自 GAS Attribute delegate。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
@@ -133,6 +143,18 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> DefeatText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UWidget> BossPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> BossNameText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UProgressBar> BossHealthProgressBar;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> BossHealthText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> BasicAttackCooldownProgressBar;
@@ -233,6 +255,10 @@ protected:
 private:
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
+	// 解绑当前 Boss 属性和死亡标签委托，避免换 Boss 或切图后残留回调。
+	void UnbindFromBoss();
+	// 同步设置 Boss 面板及可选独立控件可见性。
+	void SetBossPanelVisible(bool bVisible);
 
 	// 初次绑定后立即用当前 AttributeSet 值刷新 UI，避免等下一次属性变化。
 	void RefreshAttributeValues();
@@ -301,9 +327,18 @@ private:
 	void HandleDashCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleShieldCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleLightningStormCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// Boss Health 变化只刷新本地 HUD，不参与死亡判断。
+	void HandleBossHealthChanged(const FOnAttributeChangeData& Data);
+	// Boss MaxHealth 变化时使用最新 Health 重算比例。
+	void HandleBossMaxHealthChanged(const FOnAttributeChangeData& Data);
+	// 死亡标签先隐藏 HUD，ActiveBoss 清空后再完成正式解绑。
+	void HandleBossDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
 	TWeakObjectPtr<UArenaAttributeSet> BoundAttributeSet;
+	TWeakObjectPtr<AArenaBossCharacter> BoundBoss;
+	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundBossAbilitySystemComponent;
+	TWeakObjectPtr<UArenaAttributeSet> BoundBossAttributeSet;
 
 	FDelegateHandle HealthChangedDelegateHandle;
 	FDelegateHandle MaxHealthChangedDelegateHandle;
@@ -315,6 +350,9 @@ private:
 	FDelegateHandle DashCooldownTagDelegateHandle;
 	FDelegateHandle ShieldCooldownTagDelegateHandle;
 	FDelegateHandle LightningStormCooldownTagDelegateHandle;
+	FDelegateHandle BossHealthChangedDelegateHandle;
+	FDelegateHandle BossMaxHealthChangedDelegateHandle;
+	FDelegateHandle BossDeadTagDelegateHandle;
 
 	FTimerHandle BasicAttackCooldownTimerHandle;
 	FTimerHandle FireballCooldownTimerHandle;

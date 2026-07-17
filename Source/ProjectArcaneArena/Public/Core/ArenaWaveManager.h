@@ -6,6 +6,7 @@
 #include "ArenaWaveManager.generated.h"
 
 class AArenaEnemyCharacter;
+class AArenaBossCharacter;
 class AArenaPickupActor;
 class ATargetPoint;
 class UArenaPickupDropTableDataAsset;
@@ -44,6 +45,8 @@ protected:
 
 private:
 	void CollectSpawnPoints();
+	// 验证普通波基础数据及 Boss 波唯一 Boss 约束，错误配置不会进入 Combat。
+	bool ValidateWaveConfiguration(int32 WaveArrayIndex) const;
 	bool BuildPendingSpawnList(int32 WaveArrayIndex);
 	void SpawnNextEnemy();
 	// 为当前死亡敌人执行一次服务器掉落抽取，失败不会影响波次推进。
@@ -88,4 +91,5 @@ private:
 	FRandomStream PickupRandomStream;
 	bool bSpawnFailureInCurrentWave = false;
 	bool bUpgradeSystemEnabled = false;
+	bool bCurrentWaveIsBossWave = false;
 };

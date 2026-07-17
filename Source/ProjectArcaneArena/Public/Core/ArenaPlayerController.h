@@ -8,6 +8,7 @@
 
 class UArenaPlayerHUDWidget;
 class UArenaUpgradeSelectionWidget;
+class AArenaBossCharacter;
 class AArenaGameState;
 class AArenaPlayerState;
 
@@ -58,6 +59,9 @@ private:
 	void HandleRemainingEnemyCountChanged(int32 OldValue, int32 NewValue);
 	UFUNCTION()
 	void HandleUpgradeRandomSeedChanged(int32 OldValue, int32 NewValue);
+	// ActiveBoss 复制变化时只重绑本地 HUD，不影响 Boss 玩法生命周期。
+	UFUNCTION()
+	void HandleActiveBossChanged(AArenaBossCharacter* OldBoss, AArenaBossCharacter* NewBoss);
 
 	UFUNCTION()
 	void HandleUpgradeStateChanged();

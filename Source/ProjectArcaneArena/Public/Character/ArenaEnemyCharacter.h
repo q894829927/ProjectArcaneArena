@@ -28,6 +28,10 @@ public:
 
 	// 敌人 ASC 直接挂在敌人身上，便于 AI 和伤害系统访问。
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	// 返回项目 ASC 具体类型，供 Boss HUD 等只读观察层注册委托。
+	UArenaAbilitySystemComponent* GetArenaAbilitySystemComponent() const { return AbilitySystemComponent; }
+	// 返回敌人 AttributeSet，调用方只应读取或注册 GAS 属性委托。
+	UArenaAttributeSet* GetArenaAttributeSet() const { return AttributeSet; }
 
 	// 服务器 AI 写入当前战斗目标，Ability 激活后仍会重新校验该目标。
 	void SetCombatTarget(AActor* NewCombatTarget);
@@ -73,6 +77,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Feedback")
 	FVector DamageNumberSpawnOffset = FVector(0.0f, 0.0f, 130.0f);
+
+	// 控制敌人头顶血条是否显示，Boss 可关闭后改由玩家 HUD 统一展示。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Feedback")
+	bool bShowWorldHealthBar = true;
 
 	// 蓝图死亡表现入口，后续可接死亡动画、Niagara 和音效。
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Enemy")

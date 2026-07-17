@@ -11,6 +11,77 @@
 5. 一个功能完成完整验收后，同步更新 `IMPLEMENTED_FEATURES.md` 中的 `Partial` / `Verified` 状态。
 6. 临时测试 GameMode、WaveData、UpgradePool、属性和网络参数不要覆盖正式资产。
 
+## Boss Foundation 编译与资产生成
+
+### 测试方法
+
+1. 按 `AGENTS.md` 检查 `ProjectArcaneArena.uproject` 的 EngineAssociation、Live Coding 和现有构建进程。
+2. 关闭 Live Coding 后，只编译 `ProjectArcaneArenaEditor Win64 Development` 窄目标并重启编辑器。
+3. 执行 `Content/Python/boss/setup_boss_foundation.py`，等待脚本完整成功。
+4. 关闭并重新打开 `DA_Waves_Prototype`，确认原有普通波保持原配置，最后一波为 `BP_ArenaBossCharacter × 1`、SpawnInterval `0.5`、BossWave 为 true、RewardCount 为 `0`，且重复执行不会追加第二个 Boss 波。
+5. 再次执行同一脚本，检查 `/Game/Boss` 下没有 `_1`、`_2` 资产，最终 Boss 波没有重复追加。
+6. 打开 `BP_ArenaBossCharacter`、`GA_BossGroundSlam`、两个 GE 和两个 GameplayCue，确认 Class 与引用均有效。
+
+### 通过标准
+
+- UHT 和 C++ 编译无错误，不触发 Engine 或 ShaderCompileWorker 全量重建。
+- Boss 直接引用的 SkeletalMesh、AnimBP、Slam Animation 和 Niagara 位于 `/Game/Boss`，内部依赖可以继续指向已有 Skeleton、材质和贴图。
+- `GA_BossGroundSlam` 正确连接 `GE_Damage`、Boss 冷却 GE 和 `AM_BossGroundSlam`。
+- 重复执行脚本不会重复创建资产、波次或引用，也不会修改全部原有普通波配置。
+
+## Boss 最终波、HUD 与 Victory 闭环
+
+### 测试方法
+
+1. 单人从正式 `BP_ArenaGameMode` 开始 PIE，依次清理全部普通波并完成升级选择。
+2. 进入最终 Boss 波时观察 World Outliner、顶部 Boss HUD、GameState 的 `ActiveBoss` 和 `RemainingEnemyCount`。
+3. 攻击 Boss，比较 Boss AttributeSet 的 Health/MaxHealth 与 HUD 文本和进度。
+4. 击杀 Boss，观察死亡广播、HUD 隐藏、`ActiveBoss` 清空、普通 Pickup 数量和最终 GamePhase。
+5. 临时把最终 Boss 波改成两个 Boss 条目、Count `2` 或普通敌人 Class，重新尝试开始该波；测试后恢复正式资产。
+
+### 通过标准
+
+- 最终 Boss 波只生成一个权威 Boss，`ActiveBoss` 指向该实例，Boss HUD 显示“悟空战将”和复制 Health。
+- Boss 头顶普通敌人血条不显示；HUD 不通过 Tick 或本地变量修改 Boss 属性。
+- Boss 死亡只扣减一次敌人数，不生成普通 Health/Energy Pickup，并进入 Victory。
+- 无效 Boss 波在进入 Combat 前记录明确错误，不生成敌人，也不误判 Victory。
+
+## GroundSlam 权威范围、预警与取消
+
+### 测试方法
+
+1. 单人靠近 Boss 到攻击距离，使用 `slomo 0.25` 观察 GroundSlam Montage、固定预警和 Impact 时机。
+2. 前摇开始后让 Boss 或玩家改变位置，确认预警圆心保持在施法开始时的 Boss 脚下；分别停留圈内和走出圈外。
+3. 临时在圈内放置两名玩家或使用 2-player PIE，比较每名玩家的 Shield/Health 实际损失和伤害事件数量。
+4. 在前摇期间分别给 Boss 添加 `State.Stunned`、击杀 Boss，以及让锁定玩家死亡，观察 Ability/Cue 清理。
+5. 在冷却期间持续靠近 Boss，确认不会重复激活；冷却结束后确认可以再次攻击。
+
+### 通过标准
+
+- 预警持续约 `1.2s`，中心不追踪玩家，视觉范围与 `300` 实际命中范围可清楚对应。
+- 圈内合法玩家各承受一次服务器 `Damage.Physical`，走出圈外、死亡或 `State.Invincible` 玩家不受伤。
+- GroundSlam 使用现有 Shield-first、Defense、Crit 和死亡管线，不直接修改 Health。
+- Boss 死亡、眩晕、目标死亡或 Montage 中断后没有迟到伤害、残留预警或永久 `State.Attacking`。
+
+## Boss 双视角与 2-player Listen Server
+
+### 测试方法
+
+1. PIE 设置为 `2 Players`、`Play As Listen Server` 和独立窗口，推进到最终 Boss 波。
+2. 在 Host 与 Client 窗口分别查看 Boss 数量、`ActiveBoss`、HUD Health、预警 Cue、Impact Cue 和 Boss 移动。
+3. 让两名玩家处于不同距离，确认 Boss 追击最近的存活玩家；击杀当前目标后确认能重新选择另一名玩家。
+4. 让两名玩家同时站入一次 GroundSlam，再只让一名玩家留在范围内，比较服务器伤害次数和两端属性复制。
+5. 两个窗口分别在顶视角和第三人称观察预警范围，并在 Boss 前摇中切换视角。
+6. 击杀 Boss，确认两端同时隐藏 HUD、清空 `ActiveBoss` 并进入同一个 Victory。
+
+### 通过标准
+
+- 世界中只有一个服务器生成并复制的 Boss，客户端不生成第二个 Boss、Ability、Cue 或伤害。
+- 两端 Boss Health 和 HUD 最终一致，客户端 HUD 只观察复制数据。
+- 每名圈内玩家每次 GroundSlam 最多承受一次伤害，Host/Client 不出现双倍扣血。
+- 顶视角和第三人称都能判断预警中心、半径和兑现时机，切换视角不会复制攻击。
+- Boss 死亡和 Victory 在所有端只处理一次，没有残留 Cue、HUD 或 Actor 引用。
+
 ## 测试记录格式
 
 每次执行测试时，在需要保留的失败条目下追加以下信息：

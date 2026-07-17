@@ -227,7 +227,17 @@ Status meanings:
 * `GA_EnemyMeleeAttack` is configured with `AM_EnemyMeleeAttack`, Montage Play Rate `1.0`, and Hit Delay `0.35`.
 * PIE smoke verification: three melee enemies spawned, chased, attacked through the server damage path, and all three emitted server death notifications. In two-player PIE, enemies abandoned a dead player and continued attacking the remaining living player.
 * Q/Fireball, E/Dash, replicated attack presentation, and the remote-client Dash Montage have been observed in multiplayer PIE.
-* Ranged C++ gameplay and generated editor assets are implemented. Single/two-player PIE behavior remains unverified; Elite and boss archetypes are still missing.
+* Ranged C++ gameplay and generated editor assets are implemented. Single/two-player PIE behavior remains unverified; the Elite archetype is still missing.
+
+### Boss Foundation — Partial
+
+* `AArenaBossCharacter` reuses the replicated enemy ASC, AttributeSet, server AI, movement, damage feedback and tag-driven death lifecycle while exposing a configurable Boss display name and disabling the duplicate world-space health bar by default.
+* `UArenaGameplayEffect_BossAttributes` supplies the first-stage GAS baseline of `1200 Health`, `10 AttackPower`, `5 Defense`, `300 MoveSpeed`, zero Shield/Energy and zero CritChance. `UArenaGameplayEffect_BossGroundSlamCooldown` supplies a five-second Duration and `Cooldown.Enemy.Boss.GroundSlam`.
+* `UArenaGameplayAbility_BossGroundSlam` extends the shared enemy attack lifecycle. It commits on authority, locks a fixed ground location, owns a replicated warning Cue, and applies one independent `Damage.Physical` `GE_Damage` Spec to each eligible player still inside the `300` radius at the `1.2s` release time.
+* GroundSlam continues to use `State.Attacking`, server Montage timing and the existing death/stun/target-loss cancellation path. Its warning Cue is removed on impact, cancellation or Ability end so delayed damage and presentation do not survive an interrupted attack.
+* `AArenaGameState` now replicates `ActiveBoss`; each local `AArenaPlayerController` binds the player HUD to the Boss ASC. The HUD observes Health/MaxHealth delegates and `State.Dead`, supports optional Blueprint controls, and creates a top-center fallback Boss bar when those controls are absent.
+* Boss waves now validate exactly one `AArenaBossCharacter` entry with count one before entering Combat. WaveManager sets/clears `ActiveBoss`, skips the ordinary Health/Energy Pickup DropTable for Boss deaths, and retains the existing final-wave Victory owner.
+* `Content/Python/boss/setup_boss_foundation.py` is an idempotent post-build setup flow for copied Manny/Wukong/Niagara direct assets, Boss GA/GE/Cue/Character Blueprints and one final Boss wave after all existing normal waves. It preserves an expanded normal-wave flow, appends the Boss when absent, and updates an existing unique final Boss wave in place. Editor asset generation, idempotency, single-player, dual-view and Listen Server behavior remain pending verification.
 
 ### Gameplay State Control — Partial
 
@@ -247,8 +257,8 @@ Status meanings:
 * WaveManager retains a configurable three-second prototype fallback, but GameMode now disables it when the formal upgrade-selection system binds to the Upgrade entry.
 * Missing configuration never counts as wave completion; failed spawns keep Combat active and emit `LogArenaWaves` errors.
 * `DA_Waves_Prototype`, its `BP_ArenaGameMode` reference, three tagged EnemySpawn TargetPoints, and a covering NavMeshBoundsVolume are configured in project assets.
-* Missing: boss content.
-* Verification: the previously saved three-wave asset completed the formal single-player `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow. The ranged-enemy setup and build-asset link scripts now preserve existing per-wave metadata while replacing the first four `Enemies` arrays with `3M / 3M+2R / 4M+3R / 5M+4R`; editor execution and full mixed-wave PIE verification remain pending.
+* Boss-wave validation and replicated `ActiveBoss` ownership are implemented in C++; the generated final-wave asset and runtime flow remain pending verification.
+* Verification: the previously saved three-wave asset completed the formal single-player `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow. The ranged-enemy setup and build-asset link scripts preserve existing per-wave metadata while replacing the first four `Enemies` arrays with `3M / 3M+2R / 4M+3R / 5M+4R`; editor execution and the expanded normal-wave flow followed by the final Boss remain pending.
 
 ### Server-Authoritative Pickup Drops — Partial
 

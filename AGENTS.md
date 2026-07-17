@@ -176,9 +176,11 @@ Rules:
 * 规划或实现 Boss 功能前必须阅读 `BOSS_DEVELOPMENT_PLAN.md`，确认当前阶段、职责边界和完成标准。
 * 默认按照文档定义的阶段顺序开发，当前阶段达到完成标准后再进入下一阶段。
 * 用户明确要求调整范围或跨阶段开发时可以变更顺序，但必须在同一变更中同步更新文档边界。
-* 阶段顺序、职责归属、核心接口或验收标准发生变化时，必须同步更新 `BOSS_DEVELOPMENT_PLAN.md`。
-* 不得在 Boss 规划文档中把计划功能描述为已实现，也不使用该文档承担进度日志职责。
-* 实际实现状态继续记录到 `IMPLEMENTED_FEATURES.md`，尚未完成的测试继续记录到 `PENDING_VERIFICATION.md`。
+* 阶段顺序、职责归属、核心接口、验收标准或实际实现进度发生变化时，必须同步更新 `BOSS_DEVELOPMENT_PLAN.md`。
+* 每次实现、移除或实质修改 Boss 功能时，都要同步更新对应阶段的“当前实现进度”，明确区分已完成实现、尚未完成内容和待验证内容。
+* 只有已经存在于代码或已保存项目资产中的内容可以记录为已完成，不得把方案、未成功执行的生成步骤或待验证推测描述为已实现。
+* `IMPLEMENTED_FEATURES.md` 继续作为全项目实现状态的规范记录；`BOSS_DEVELOPMENT_PLAN.md` 维护 Boss 阶段范围内的进度摘要；尚未完成的测试继续记录到 `PENDING_VERIFICATION.md`。
+* Boss 阶段状态统一使用 `Planned`、`Partial`、`Implemented`、`Verified`，不使用勾选框维护完成状态。
 * Boss 规划文档及其新增维护说明使用简体中文，类名、函数名、资产名和 GameplayTag 保留英文原文。
 
 ---

@@ -1,10 +1,14 @@
 #include "UI/ArenaPlayerHUDWidget.h"
 
 #include "Blueprint/WidgetTree.h"
+#include "Character/ArenaBossCharacter.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/ProgressBar.h"
+#include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
+#include "Components/VerticalBox.h"
+#include "Components/VerticalBoxSlot.h"
 #include "Core/ArenaGameState.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
@@ -215,10 +219,64 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 		}
 	}
 
+	if (WidgetTree && RootCanvas && !BossPanel && !BossNameText && !BossHealthProgressBar && !BossHealthText)
+	{
+		// 蓝图尚未补 Boss 控件时创建可直接验收的数据面板，不把布局状态写回玩法系统。
+		UVerticalBox* RuntimeBossPanel = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(),
+			TEXT("BossPanel_Runtime"));
+		BossPanel = RuntimeBossPanel;
+		if (UCanvasPanelSlot* BossPanelSlot = RootCanvas->AddChildToCanvas(RuntimeBossPanel))
+		{
+			BossPanelSlot->SetAnchors(FAnchors(0.5f, 0.0f));
+			BossPanelSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+			BossPanelSlot->SetPosition(FVector2D(0.0f, 108.0f));
+			BossPanelSlot->SetSize(FVector2D(520.0f, 72.0f));
+		}
+
+		BossNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BossNameText_Runtime"));
+		BossNameText->SetJustification(ETextJustify::Center);
+		BossNameText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.45f, 1.0f)));
+		FSlateFontInfo BossNameFont = BossNameText->GetFont();
+		BossNameFont.Size = 22;
+		BossNameFont.OutlineSettings.OutlineSize = 1;
+		BossNameText->SetFont(BossNameFont);
+		if (UVerticalBoxSlot* NameSlot = RuntimeBossPanel->AddChildToVerticalBox(BossNameText))
+		{
+			NameSlot->SetHorizontalAlignment(HAlign_Fill);
+			NameSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		}
+
+		USizeBox* BossBarSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("BossHealthSizeBox_Runtime"));
+		BossBarSizeBox->SetWidthOverride(520.0f);
+		BossBarSizeBox->SetHeightOverride(18.0f);
+		BossHealthProgressBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("BossHealthProgressBar_Runtime"));
+		BossHealthProgressBar->SetFillColorAndOpacity(FLinearColor(0.75f, 0.08f, 0.04f, 1.0f));
+		BossBarSizeBox->AddChild(BossHealthProgressBar);
+		if (UVerticalBoxSlot* BarSlot = RuntimeBossPanel->AddChildToVerticalBox(BossBarSizeBox))
+		{
+			BarSlot->SetHorizontalAlignment(HAlign_Center);
+		}
+
+		BossHealthText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BossHealthText_Runtime"));
+		BossHealthText->SetJustification(ETextJustify::Center);
+		BossHealthText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		FSlateFontInfo BossHealthFont = BossHealthText->GetFont();
+		BossHealthFont.Size = 16;
+		BossHealthFont.OutlineSettings.OutlineSize = 1;
+		BossHealthText->SetFont(BossHealthFont);
+		if (UVerticalBoxSlot* HealthTextSlot = RuntimeBossPanel->AddChildToVerticalBox(BossHealthText))
+		{
+			HealthTextSlot->SetHorizontalAlignment(HAlign_Fill);
+			HealthTextSlot->SetPadding(FMargin(0.0f, 3.0f, 0.0f, 0.0f));
+		}
+	}
+
 	SetThirdPersonReticleVisible(false);
 	SetGamePhase(EArenaGamePhase::Waiting);
 	SetWaveState(0, 0);
 	SetUpgradeRandomSeed(0);
+	SetBossPanelVisible(false);
 }
 
 // 切换准星显示；HitTestInvisible 保证它不会拦截任何战斗输入。
@@ -347,6 +405,59 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 		EGameplayTagEventType::NewOrRemoved);
 
 	RefreshAttributeValues();
+}
+
+// 绑定当前 Boss 的 ASC/AttributeSet，切换 Boss 时先对称解除旧委托。
+void UArenaPlayerHUDWidget::BindToBoss(AArenaBossCharacter* InBoss)
+{
+	UnbindFromBoss();
+	if (!InBoss)
+	{
+		return;
+	}
+
+	UArenaAbilitySystemComponent* BossASC = InBoss->GetArenaAbilitySystemComponent();
+	UArenaAttributeSet* BossAttributeSet = InBoss->GetArenaAttributeSet();
+	if (!BossASC || !BossAttributeSet)
+	{
+		return;
+	}
+
+	BoundBoss = InBoss;
+	BoundBossAbilitySystemComponent = BossASC;
+	BoundBossAttributeSet = BossAttributeSet;
+	BossHealthChangedDelegateHandle = BossASC->GetGameplayAttributeValueChangeDelegate(
+		UArenaAttributeSet::GetHealthAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleBossHealthChanged);
+	BossMaxHealthChangedDelegateHandle = BossASC->GetGameplayAttributeValueChangeDelegate(
+		UArenaAttributeSet::GetMaxHealthAttribute()).AddUObject(this, &UArenaPlayerHUDWidget::HandleBossMaxHealthChanged);
+	SetBossHealthValues(InBoss->GetBossDisplayName(), BossAttributeSet->GetHealth(), BossAttributeSet->GetMaxHealth());
+	BossDeadTagDelegateHandle = BossASC->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::State_Dead,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBossDeadTagChanged),
+		EGameplayTagEventType::NewOrRemoved);
+}
+
+// Boss 生命显示严格保留零最大值语义，避免用 1 伪造除零保护后的文本。
+void UArenaPlayerHUDWidget::SetBossHealthValues(const FText& InBossName, float InHealth, float InMaxHealth)
+{
+	const float DisplayHealth = FMath::Max(InHealth, 0.0f);
+	const float DisplayMaxHealth = FMath::Max(InMaxHealth, 0.0f);
+	if (BossNameText)
+	{
+		BossNameText->SetText(InBossName);
+	}
+	if (BossHealthProgressBar)
+	{
+		BossHealthProgressBar->SetPercent(CalculatePercent(DisplayHealth, DisplayMaxHealth));
+	}
+	if (BossHealthText)
+	{
+		BossHealthText->SetText(FText::Format(
+			NSLOCTEXT("ArenaPlayerHUDWidget", "BossHealthFormat", "{0} / {1}"),
+			FText::AsNumber(FMath::RoundToInt(DisplayHealth)),
+			FText::AsNumber(FMath::RoundToInt(DisplayMaxHealth))));
+	}
+	SetBossPanelVisible(BoundBoss.IsValid());
 }
 
 // 设置生命条和生命文本显示，UI 不直接修改 Health 属性。
@@ -524,9 +635,67 @@ void UArenaPlayerHUDWidget::SetLightningStormCooldownValues(bool bInCooldownActi
 // Widget 销毁时解绑 GAS 委托，避免 ASC 回调悬挂对象。
 void UArenaPlayerHUDWidget::NativeDestruct()
 {
+	UnbindFromBoss();
 	UnbindFromAbilitySystem();
 
 	Super::NativeDestruct();
+}
+
+// 对称解除 Boss 属性与标签委托，并清空本地弱引用和面板状态。
+void UArenaPlayerHUDWidget::UnbindFromBoss()
+{
+	if (UArenaAbilitySystemComponent* BossASC = BoundBossAbilitySystemComponent.Get())
+	{
+		if (BossHealthChangedDelegateHandle.IsValid())
+		{
+			BossASC->GetGameplayAttributeValueChangeDelegate(
+				UArenaAttributeSet::GetHealthAttribute()).Remove(BossHealthChangedDelegateHandle);
+		}
+		if (BossMaxHealthChangedDelegateHandle.IsValid())
+		{
+			BossASC->GetGameplayAttributeValueChangeDelegate(
+				UArenaAttributeSet::GetMaxHealthAttribute()).Remove(BossMaxHealthChangedDelegateHandle);
+		}
+		if (BossDeadTagDelegateHandle.IsValid())
+		{
+			BossASC->UnregisterGameplayTagEvent(
+				BossDeadTagDelegateHandle,
+				ArenaGameplayTags::State_Dead,
+				EGameplayTagEventType::NewOrRemoved);
+		}
+	}
+
+	BossHealthChangedDelegateHandle.Reset();
+	BossMaxHealthChangedDelegateHandle.Reset();
+	BossDeadTagDelegateHandle.Reset();
+	BoundBoss.Reset();
+	BoundBossAbilitySystemComponent.Reset();
+	BoundBossAttributeSet.Reset();
+	SetBossPanelVisible(false);
+}
+
+// Blueprint 可以只提供独立控件而不提供父面板，因此两种布局都需要正确显隐。
+void UArenaPlayerHUDWidget::SetBossPanelVisible(bool bVisible)
+{
+	const ESlateVisibility BossVisibility = bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed;
+	if (BossPanel)
+	{
+		BossPanel->SetVisibility(BossVisibility);
+		return;
+	}
+
+	if (BossNameText)
+	{
+		BossNameText->SetVisibility(BossVisibility);
+	}
+	if (BossHealthProgressBar)
+	{
+		BossHealthProgressBar->SetVisibility(BossVisibility);
+	}
+	if (BossHealthText)
+	{
+		BossHealthText->SetVisibility(BossVisibility);
+	}
 }
 
 // 解绑所有属性/标签委托并停止冷却刷新定时器。
@@ -1081,4 +1250,48 @@ void UArenaPlayerHUDWidget::HandleLightningStormCooldownChanged(const FGameplayT
 	}
 
 	RefreshLightningStormCooldownFromAbilitySystem();
+}
+
+// Boss Health 变化时读取同一 AttributeSet 的 MaxHealth，避免 UI 保存第二份玩法状态。
+void UArenaPlayerHUDWidget::HandleBossHealthChanged(const FOnAttributeChangeData& Data)
+{
+	const AArenaBossCharacter* Boss = BoundBoss.Get();
+	const UArenaAttributeSet* BossAttributeSet = BoundBossAttributeSet.Get();
+	if (Boss && BossAttributeSet)
+	{
+		SetBossHealthValues(Boss->GetBossDisplayName(), Data.NewValue, BossAttributeSet->GetMaxHealth());
+	}
+}
+
+// Boss MaxHealth 变化时读取最新 Health，支持后续阶段或多人缩放继续沿用同一 HUD。
+void UArenaPlayerHUDWidget::HandleBossMaxHealthChanged(const FOnAttributeChangeData& Data)
+{
+	const AArenaBossCharacter* Boss = BoundBoss.Get();
+	const UArenaAttributeSet* BossAttributeSet = BoundBossAttributeSet.Get();
+	if (Boss && BossAttributeSet)
+	{
+		SetBossHealthValues(Boss->GetBossDisplayName(), BossAttributeSet->GetHealth(), Data.NewValue);
+	}
+}
+
+// Boss 死亡标签出现时立即隐藏面板，服务器随后清空 ActiveBoss 并触发正式解绑。
+void UArenaPlayerHUDWidget::HandleBossDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	if (CallbackTag != ArenaGameplayTags::State_Dead)
+	{
+		return;
+	}
+
+	if (NewCount > 0)
+	{
+		SetBossPanelVisible(false);
+	}
+	else if (const AArenaBossCharacter* Boss = BoundBoss.Get())
+	{
+		const UArenaAttributeSet* BossAttributeSet = BoundBossAttributeSet.Get();
+		SetBossHealthValues(
+			Boss->GetBossDisplayName(),
+			BossAttributeSet ? BossAttributeSet->GetHealth() : 0.0f,
+			BossAttributeSet ? BossAttributeSet->GetMaxHealth() : 0.0f);
+	}
 }

@@ -1,5 +1,6 @@
 #include "Core/ArenaWaveManager.h"
 
+#include "Character/ArenaBossCharacter.h"
 #include "Character/ArenaEnemyCharacter.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/ArenaGameState.h"
@@ -92,15 +93,17 @@ void AArenaWaveManager::StartNextWave()
 		return;
 	}
 
-	if (!BuildPendingSpawnList(NextWaveArrayIndex))
+	if (!ValidateWaveConfiguration(NextWaveArrayIndex) || !BuildPendingSpawnList(NextWaveArrayIndex))
 	{
-		UE_LOG(LogArenaWaves, Error, TEXT("Wave %d contains no valid enemy entries; phase remains unchanged."), NextWaveArrayIndex + 1);
+		UE_LOG(LogArenaWaves, Error, TEXT("Wave %d has invalid enemy or Boss configuration; phase remains unchanged."), NextWaveArrayIndex + 1);
 		return;
 	}
 
 	CurrentWaveArrayIndex = NextWaveArrayIndex;
 	NextPendingSpawnIndex = 0;
 	bSpawnFailureInCurrentWave = false;
+	bCurrentWaveIsBossWave = WaveData->Waves[CurrentWaveArrayIndex].bBossWave;
+	ArenaGameState->SetActiveBoss(nullptr);
 	ArenaGameState->SetCurrentWaveIndex(CurrentWaveArrayIndex + 1);
 	ArenaGameState->SetRemainingEnemyCount(0);
 	ArenaGameState->SetGamePhase(EArenaGamePhase::Combat);
@@ -125,6 +128,10 @@ void AArenaWaveManager::StopForDefeat()
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
 	PendingEnemyClasses.Reset();
 	NextPendingSpawnIndex = 0;
+	if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
+	{
+		ArenaGameState->SetActiveBoss(nullptr);
+	}
 }
 
 // 标记正式升级系统是否接管阶段推进，启用后禁用三秒原型回退。
@@ -149,6 +156,13 @@ void AArenaWaveManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			Enemy->OnEnemyDeath.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
 		}
 	}
+	if (HasAuthority())
+	{
+		if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
+		{
+			ArenaGameState->SetActiveBoss(nullptr);
+		}
+	}
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -163,6 +177,37 @@ void AArenaWaveManager::CollectSpawnPoints()
 			SpawnPoints.Add(*It);
 		}
 	}
+}
+
+// Boss 波要求唯一条目、唯一数量且 Class 继承 ArenaBossCharacter，避免错误资产进入 Boss 生命周期。
+bool AArenaWaveManager::ValidateWaveConfiguration(int32 WaveArrayIndex) const
+{
+	if (!WaveData || !WaveData->Waves.IsValidIndex(WaveArrayIndex))
+	{
+		return false;
+	}
+
+	const FArenaWaveConfig& WaveConfig = WaveData->Waves[WaveArrayIndex];
+	if (!WaveConfig.bBossWave)
+	{
+		return true;
+	}
+
+	if (WaveConfig.Enemies.Num() != 1)
+	{
+		UE_LOG(LogArenaWaves, Error, TEXT("Boss wave %d must contain exactly one enemy entry."), WaveArrayIndex + 1);
+		return false;
+	}
+
+	const FArenaWaveEnemyEntry& BossEntry = WaveConfig.Enemies[0];
+	const bool bValidBossEntry = BossEntry.EnemyClass
+		&& BossEntry.EnemyClass->IsChildOf(AArenaBossCharacter::StaticClass())
+		&& BossEntry.Count == 1;
+	if (!bValidBossEntry)
+	{
+		UE_LOG(LogArenaWaves, Error, TEXT("Boss wave %d must spawn exactly one ArenaBossCharacter subclass."), WaveArrayIndex + 1);
+	}
+	return bValidBossEntry;
 }
 
 // 将波次条目展开为待生成类列表，过滤空类和非法数量。
@@ -213,6 +258,14 @@ void AArenaWaveManager::SpawnNextEnemy()
 	{
 		AliveEnemies.Add(Enemy);
 		Enemy->OnEnemyDeath.AddUniqueDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
+		if (bCurrentWaveIsBossWave)
+		{
+			AArenaBossCharacter* Boss = Cast<AArenaBossCharacter>(Enemy);
+			if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
+			{
+				ArenaGameState->SetActiveBoss(Boss);
+			}
+		}
 		UpdateReplicatedEnemyCount();
 	}
 	else
@@ -237,7 +290,18 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 	}
 
 	Enemy->OnEnemyDeath.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
-	TrySpawnPickupDrop(Enemy);
+	if (Cast<AArenaBossCharacter>(Enemy))
+	{
+		if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
+		{
+			ArenaGameState->SetActiveBoss(nullptr);
+		}
+	}
+	else
+	{
+		// Boss Foundation 明确跳过普通恢复掉落，普通敌人保持既有全局掉落表。
+		TrySpawnPickupDrop(Enemy);
+	}
 	UpdateReplicatedEnemyCount();
 	CheckWaveCompletion();
 }

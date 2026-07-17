@@ -425,6 +425,16 @@ void AArenaEnemyCharacter::HandleDeath()
 // 使用当前 AttributeSet 数值刷新敌人血条初始显示。
 void AArenaEnemyCharacter::RefreshHealthBar()
 {
+	if (!bShowWorldHealthBar)
+	{
+		if (HealthBarWidgetComponent)
+		{
+			HealthBarWidgetComponent->SetHiddenInGame(true);
+			HealthBarWidgetComponent->SetVisibility(false);
+		}
+		return;
+	}
+
 	if (!AttributeSet)
 	{
 		return;
@@ -436,7 +446,7 @@ void AArenaEnemyCharacter::RefreshHealthBar()
 // 将 Health/MaxHealth 写入头顶血条 Widget。
 void AArenaEnemyCharacter::SetHealthBarValues(float Health, float MaxHealth)
 {
-	if (!HealthBarWidgetComponent)
+	if (!bShowWorldHealthBar || !HealthBarWidgetComponent)
 	{
 		return;
 	}

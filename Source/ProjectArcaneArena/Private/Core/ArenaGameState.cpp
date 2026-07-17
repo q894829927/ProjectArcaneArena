@@ -16,6 +16,7 @@ void AArenaGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(AArenaGameState, CurrentWaveIndex);
 	DOREPLIFETIME(AArenaGameState, RemainingEnemyCount);
 	DOREPLIFETIME(AArenaGameState, UpgradeRandomSeed);
+	DOREPLIFETIME(AArenaGameState, ActiveBoss);
 }
 
 // 服务器更新游戏阶段，并让监听服务器本地 UI 与远端 OnRep 获得一致通知。
@@ -76,6 +77,20 @@ void AArenaGameState::SetUpgradeRandomSeed(int32 NewUpgradeRandomSeed)
 	ForceNetUpdate();
 }
 
+// 服务器切换当前 Boss 引用，并让 Listen Server 本地 HUD 与客户端 OnRep 使用同一通知路径。
+void AArenaGameState::SetActiveBoss(AArenaBossCharacter* NewActiveBoss)
+{
+	if (!HasAuthority() || ActiveBoss == NewActiveBoss)
+	{
+		return;
+	}
+
+	AArenaBossCharacter* OldActiveBoss = ActiveBoss;
+	ActiveBoss = NewActiveBoss;
+	OnActiveBossChanged.Broadcast(OldActiveBoss, ActiveBoss);
+	ForceNetUpdate();
+}
+
 void AArenaGameState::OnRep_GamePhase(EArenaGamePhase OldPhase)
 {
 	OnGamePhaseChanged.Broadcast(OldPhase, GamePhase);
@@ -95,4 +110,10 @@ void AArenaGameState::OnRep_RemainingEnemyCount(int32 OldRemainingEnemyCount)
 void AArenaGameState::OnRep_UpgradeRandomSeed(int32 OldUpgradeRandomSeed)
 {
 	OnUpgradeRandomSeedChanged.Broadcast(OldUpgradeRandomSeed, UpgradeRandomSeed);
+}
+
+// 客户端在 Boss Actor 引用解析后刷新本地 HUD 绑定。
+void AArenaGameState::OnRep_ActiveBoss(AArenaBossCharacter* OldActiveBoss)
+{
+	OnActiveBossChanged.Broadcast(OldActiveBoss, ActiveBoss);
 }

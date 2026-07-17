@@ -2,15 +2,16 @@
 
 ## 文档职责
 
-本文档是 Boss 功能的阶段开发规范，用于约束开发顺序、职责边界和阶段验收门槛，不承担实际进度记录职责。
+本文档同时承担 Boss 阶段开发规范与阶段进度摘要，用于约束开发顺序、职责边界、验收门槛，并记录每个阶段已经实际完成的部分。
 
-- 已经存在于代码或项目资产中的行为记录到 `IMPLEMENTED_FEATURES.md`。
+- `IMPLEMENTED_FEATURES.md` 仍是全项目功能实现状态的规范记录；本文档只维护 Boss 各阶段的范围内进度和进入下一阶段的条件。
 - 尚未完成的运行时、多人或表现验证记录到 `PENDING_VERIFICATION.md`。
-- Boss 阶段顺序、系统职责、核心接口或验收标准发生变化时，应同步更新本文档。
-- 不使用本文档把计划中的功能描述为已实现，也不使用勾选框维护完成状态。
+- Boss 功能发生实现、移除、职责迁移或验证状态变化时，应在同一变更中同步更新本文档对应阶段的“当前实现进度”。
+- 只有已经存在于代码或已保存项目资产中的内容才能列为已完成；仅有方案、未成功执行的生成步骤或待验证推测不得描述为已完成。
+- 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前默认下一开发阶段为“阶段一：Boss Foundation”。
+当前阶段为“阶段一：Boss Foundation”，状态为 `Partial`。在资产生成和运行时验收完成前，不进入阶段二。
 
 ---
 
@@ -56,6 +57,30 @@
 - 实现 `GA_Boss_GroundSlam`，继续使用服务器权威的 `GE_Damage`，提供固定位置的范围预警和范围伤害。
 - GroundSlam 使用 `State.Attacking` 阻止并行攻击，并在死亡、眩晕或取消时清除尚未兑现的伤害与表现。
 - 最终 Boss 死亡后复用 WaveManager 的完成检测进入 Victory，不建立第二套胜利规则。
+
+### 当前实现进度
+
+状态：`Partial`，最后更新：2026-07-17。
+
+已完成实现：
+
+- 已新增 `AArenaBossCharacter`，复用敌人 ASC、AttributeSet、服务器 AI、复制移动、伤害反馈和标签驱动死亡流程，并默认关闭头顶普通敌人血条。
+- 已新增 `UArenaGameplayEffect_BossAttributes` 与 `UArenaGameplayEffect_BossGroundSlamCooldown`，提供第一阶段 Boss 属性和 GroundSlam 冷却配置。
+- 已新增 `Ability.Enemy.Boss.GroundSlam`、`Cooldown.Enemy.Boss.GroundSlam` 以及 Telegraph、Impact GameplayCue 标签。
+- 已实现 `UArenaGameplayAbility_BossGroundSlam`：服务器锁定固定圆心、显示持续预警、按范围过滤存活玩家，并通过独立 `GE_Damage` Spec 结算 `Damage.Physical`。
+- 已让 WaveManager 验证 Boss 波必须只有一个 `AArenaBossCharacter`，设置和清理 `ActiveBoss`，跳过普通 Pickup DropTable，并继续复用最终波 Victory 流程。
+- 已在 `AArenaGameState` 复制 `ActiveBoss`，由本地 `AArenaPlayerController` 将玩家 HUD 绑定到 Boss ASC。
+- 已扩展 `UArenaPlayerHUDWidget`，通过 Health/MaxHealth Attribute Delegate 和 `State.Dead` 显示或隐藏 Boss HUD，并在蓝图缺少控件时创建顶部备用血条。
+- 已新增 `Content/Python/boss/setup_boss_foundation.py` 及说明文档，支持保留现有普通波、幂等追加或更新唯一最终 Boss 波。
+- 已将 `/Game/Boss` 加入 GameplayCue 扫描路径，并完成 Boss 原生类型的 UHT/编辑器加载链路。
+
+尚未完成或尚未验证：
+
+- 修复 `BossDisplayName` 继承 CDO 的只读本地化写入后，仍需重新完整执行 Boss 资产脚本并确认所有 Blueprint、GE、Cue、动画和最终 Boss 波均已保存。
+- 尚未完成脚本连续执行两次的幂等验证。
+- 尚未完成单人完整波次、Boss HUD、GroundSlam 躲避、死亡和 Victory 闭环验证。
+- 尚未完成顶视角、第三人称和 2-player Listen Server 验证。
+- `PENDING_VERIFICATION.md` 中的 Boss 条目完成前，本阶段不得标记为 `Verified`。
 
 ### 阶段边界
 
