@@ -167,6 +167,22 @@ Rules:
 
 ---
 
+## Boss Development Plan Rule
+
+项目根目录的 `BOSS_DEVELOPMENT_PLAN.md` 是 Boss 功能的中文阶段开发规范。
+
+规则：
+
+* 规划或实现 Boss 功能前必须阅读 `BOSS_DEVELOPMENT_PLAN.md`，确认当前阶段、职责边界和完成标准。
+* 默认按照文档定义的阶段顺序开发，当前阶段达到完成标准后再进入下一阶段。
+* 用户明确要求调整范围或跨阶段开发时可以变更顺序，但必须在同一变更中同步更新文档边界。
+* 阶段顺序、职责归属、核心接口或验收标准发生变化时，必须同步更新 `BOSS_DEVELOPMENT_PLAN.md`。
+* 不得在 Boss 规划文档中把计划功能描述为已实现，也不使用该文档承担进度日志职责。
+* 实际实现状态继续记录到 `IMPLEMENTED_FEATURES.md`，尚未完成的测试继续记录到 `PENDING_VERIFICATION.md`。
+* Boss 规划文档及其新增维护说明使用简体中文，类名、函数名、资产名和 GameplayTag 保留英文原文。
+
+---
+
 ## Recommended Class Architecture
 
 Use this architecture unless there is a strong reason to change it.
@@ -890,6 +906,8 @@ Follow this order:
 6. Verify that each build path has a visible combat identity.
 
 ### Phase 6: Boss and Polish
+
+Boss 的详细阶段顺序、系统边界和验收门槛以 `BOSS_DEVELOPMENT_PLAN.md` 为准。
 
 1. Add boss enemy.
 2. Add boss abilities.
