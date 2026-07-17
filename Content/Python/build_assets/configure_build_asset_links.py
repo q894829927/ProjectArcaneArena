@@ -41,6 +41,11 @@ ABILITY_BINDINGS = [
         "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnCrit",
     },
     {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnAbilityCast",
+        "property_name": "energy_restore_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnAbilityCast",
+    },
+    {
         "ability_path": "/Game/GAS/GameplayAbility/GA_Shield",
         "property_name": "shield_effect_class",
         "effect_blueprint_path": "/Game/GAS/GameplayEffect/GE_Shield_Grant",
@@ -79,6 +84,7 @@ UPGRADE_POOL_ASSET_PATHS = [
     "/Game/Data/Upgrade/DA_Upgrade_EnergyOnKill",
     "/Game/Data/Upgrade/DA_Upgrade_CritChance",
     "/Game/Data/Upgrade/DA_Upgrade_EnergyOnCrit",
+    "/Game/Data/Upgrade/DA_Upgrade_EnergyOnAbilityCast",
     "/Game/Data/Upgrade/DA_Upgrade_ShieldAmount",
     "/Game/Data/Upgrade/DA_Upgrade_ShieldBreakBlast",
     "/Game/Data/Upgrade/DA_Upgrade_DashCooldown",

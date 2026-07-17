@@ -20,8 +20,10 @@ UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 	DamageTypeTag = ArenaGameplayTags::Damage_Physical;
 	TargetActorClass = AArenaTargetActor_MouseGround::StaticClass();
 
-	// Ability Tag 和阻断标签都交给 GAS CanActivate/Commit 路径统一判断。
-	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_BasicAttack));
+	// 主动技能分类由 ASC 的 Commit 钩子统一路由 OnAbilityCast，普攻不属于 EnergySkill。
+	FGameplayTagContainer AbilityAssetTags(ArenaGameplayTags::Ability_BasicAttack);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	SetAssetTags(AbilityAssetTags);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_BasicAttack);

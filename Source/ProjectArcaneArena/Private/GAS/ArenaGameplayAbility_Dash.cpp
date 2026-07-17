@@ -27,7 +27,10 @@ UArenaGameplayAbility_Dash::UArenaGameplayAbility_Dash()
 	InputTag = ArenaGameplayTags::Ability_Dash;
 	DashDirectionTargetActorClass = AArenaTargetActor_DashDirection::StaticClass();
 
-	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Dash));
+	// Dash 会产生通用玩家施放事件，但当前没有 Energy Cost，因此不标记为 EnergySkill。
+	FGameplayTagContainer AbilityAssetTags(ArenaGameplayTags::Ability_Dash);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	SetAssetTags(AbilityAssetTags);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dashing);

@@ -14,9 +14,12 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Dash, "Ability.Dash", "Dash ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Shield, "Ability.Shield", "Shield ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_LightningStorm, "Ability.LightningStorm", "Lightning storm area ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_PlayerActive, "Ability.Type.PlayerActive", "Player active ability that emits an authoritative cast event after commit.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_EnergySkill, "Ability.Type.EnergySkill", "Player active ability whose configured cost consumes Energy.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_Overload, "Ability.Passive.Overload", "Passive elemental Overload ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnKill, "Ability.Passive.EnergyOnKill", "Passive Energy recovery on enemy kill ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnCrit, "Ability.Passive.EnergyOnCrit", "Passive Energy recovery on critical damage ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnAbilityCast, "Ability.Passive.EnergyOnAbilityCast", "Passive Energy recovery after a committed Energy skill.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_ShieldBreakBlast, "Ability.Passive.ShieldBreakBlast", "Passive physical blast when the owner's Shield is broken.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_DashLightningTrail, "Ability.Passive.DashLightningTrail", "Passive lightning trail spawned after a completed Dash.");
 
@@ -70,6 +73,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_EnergyOnKill, "Upgrade.Trigger.EnergyOnKill", "Stackable Energy recovery on kill upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Crit_Chance, "Upgrade.Crit.Chance", "Stackable critical-hit chance upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_EnergyOnCrit, "Upgrade.Trigger.EnergyOnCrit", "Stackable Energy recovery on critical damage upgrade.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_EnergyOnAbilityCast, "Upgrade.Trigger.EnergyOnAbilityCast", "Stackable Energy recovery after a committed Energy skill.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Shield_Amount, "Upgrade.Shield.Amount", "Stackable Shield grant amount upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Trigger_ShieldBreakBlast, "Upgrade.Trigger.ShieldBreakBlast", "Physical blast triggered when Shield is broken by damage.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Dash_Cooldown, "Upgrade.Dash.Cooldown", "Stackable Dash cooldown reduction upgrade.");
@@ -91,6 +95,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnCrit, "Trigger.OnCrit", "Authoritative critical damage outcome event.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnShieldBreak, "Trigger.OnShieldBreak", "Authoritative positive-to-zero Shield transition caused by damage.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnDashEnd, "Trigger.OnDashEnd", "Authoritative event emitted after a Dash completes without cancellation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Trigger_OnAbilityCast, "Trigger.OnAbilityCast", "Authoritative player active ability event emitted after a successful GAS commit.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_Base, "SetByCaller.Damage.Base", "Runtime base damage value.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Damage_SkillMultiplier, "SetByCaller.Damage.SkillMultiplier", "Runtime skill damage multiplier.");

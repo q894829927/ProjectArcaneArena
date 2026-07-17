@@ -1,6 +1,9 @@
 #include "GAS/ArenaAbilitySystemComponent.h"
 
+#include "Abilities/GameplayAbility.h"
 #include "Abilities/GameplayAbilityTypes.h"
+#include "Character/ArenaPlayerCharacter.h"
+#include "Core/ArenaPlayerState.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
 
@@ -9,6 +12,43 @@ DEFINE_LOG_CATEGORY_STATIC(LogArenaDamageEvents, Log, All);
 // 构造项目自定义 ASC，后续集中扩展输入、标签和项目辅助函数。
 UArenaAbilitySystemComponent::UArenaAbilitySystemComponent()
 {
+}
+
+// 只在服务器确认完整 Commit 后派发事件，避免客户端预测、被动技能或敌人技能重复触发奖励。
+void UArenaAbilitySystemComponent::NotifyAbilityCommit(UGameplayAbility* Ability)
+{
+	Super::NotifyAbilityCommit(Ability);
+
+	const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(GetOwnerActor());
+	AArenaPlayerCharacter* PlayerAvatar = Cast<AArenaPlayerCharacter>(GetAvatarActor());
+	if (!IsOwnerActorAuthoritative()
+		|| !Ability
+		|| !ArenaPlayerState
+		|| !PlayerAvatar
+		|| HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		return;
+	}
+
+	const FGameplayTagContainer& AbilityAssetTags = Ability->GetAssetTags();
+	if (!AbilityAssetTags.HasTagExact(ArenaGameplayTags::Ability_Type_PlayerActive))
+	{
+		return;
+	}
+
+	FGameplayEventData EventPayload;
+	EventPayload.EventTag = ArenaGameplayTags::Trigger_OnAbilityCast;
+	EventPayload.Instigator = PlayerAvatar;
+	EventPayload.Target = PlayerAvatar;
+	EventPayload.OptionalObject = Ability;
+	EventPayload.OptionalObject2 = Ability->GetCurrentSourceObject();
+	EventPayload.EventMagnitude = 1.0f;
+	GetOwnedGameplayTags(EventPayload.InstigatorTags);
+	EventPayload.InstigatorTags.AppendTags(AbilityAssetTags);
+	GetOwnedGameplayTags(EventPayload.TargetTags);
+
+	// 事件发送给同一 PlayerState ASC，升级授予的服务器被动按技能分类标签自行筛选。
+	HandleGameplayEvent(ArenaGameplayTags::Trigger_OnAbilityCast, &EventPayload);
 }
 
 // 根据输入 GameplayTag 查找匹配 AbilitySpec，并尝试激活对应技能。

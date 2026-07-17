@@ -6,6 +6,7 @@
 #include "ArenaAbilitySystemComponent.generated.h"
 
 struct FGameplayEffectSpec;
+class UGameplayAbility;
 
 UCLASS()
 class PROJECTARCANEARENA_API UArenaAbilitySystemComponent : public UAbilitySystemComponent
@@ -14,6 +15,9 @@ class PROJECTARCANEARENA_API UArenaAbilitySystemComponent : public UAbilitySyste
 
 public:
 	UArenaAbilitySystemComponent();
+
+	// 在 GAS 成功提交 Cost/Cooldown 后，由服务器统一路由玩家主动技能施放事件。
+	virtual void NotifyAbilityCommit(UGameplayAbility* Ability) override;
 
 	// 根据输入标签查找对应 AbilitySpec，并交给 GAS 标准激活流程处理。
 	void AbilityInputTagPressed(const FGameplayTag& InputTag);

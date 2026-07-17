@@ -715,3 +715,40 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 缺少 RequiredTags、命中 BlockedTags 或达到 MaxStacks 时拒绝授予，道具不消失；补齐条件后可再次拾取。
 - 道具对不同玩家独立生效，不因第一名玩家拾取而销毁，也不会让客户端直接修改升级状态。
 - 三个木桩保持 `5000 Health`、无 AI、无移动，并继续支持中心、250、350 距离边界测试。
+
+## OnAbilityCast 权威事件与奥术回流数值
+
+### 测试方法
+
+1. 使用临时测试 GameMode 或升级拾取物，分别授予 `DA_Upgrade_EnergyOnAbilityCast` 的一至三层，并先消耗足够 Energy。
+2. 分别成功施放 BasicAttack、Dash、Fireball、Shield 和 LightningStorm，记录 Commit 前后 Energy，并在 `UArenaAbilitySystemComponent::NotifyAbilityCommit` 和被动激活处设置断点。
+3. 检查每个成功主动技能的 Payload：具体 Ability Tag、`Ability.Type.PlayerActive`、可选的 `Ability.Type.EnergySkill`、Instigator/Target、OptionalObject 和 EventMagnitude。
+4. 将 Energy 调整到接近 MaxEnergy 后施放 EnergySkill，再把 MaxEnergy 临时设为 `0` 重复。
+5. 分别在 Energy Cost 不足、Cooldown 存在、TargetData 取消和 `arena.Net.RejectNextAbility` 服务器拒绝时尝试施放。
+6. 观察奥术回流被动激活期间是否再次产生 `Trigger.OnAbilityCast`，并让敌人成功 Commit 一次攻击。
+
+### 通过标准
+
+- 五个玩家主动技能成功 Commit 时各产生一次服务器 `Trigger.OnAbilityCast`；BasicAttack 和 Dash 不恢复 Energy。
+- Fireball、Shield、LightningStorm 在一至三层时分别于 Cost 扣除后恢复 `5/10/15 Energy`，且恢复通过 `GE_Trigger_EnergyOnAbilityCast` 应用。
+- Energy 不超过 MaxEnergy；MaxEnergy 为 `0` 时保持 `0`。
+- Commit 失败、Cooldown/Cost 阻断、TargetData 取消和服务器预测拒绝均不恢复 Energy。
+- 被动 Ability 和敌人 Ability 不产生玩家奖励，奥术回流自身不 Commit、不递归触发。
+- Payload 的具体 Ability Tag 与两个 Ability Type Tag 精确反映当前技能分类。
+
+## OnAbilityCast 两人网络归属与预测
+
+### 测试方法
+
+1. PIE 设置为 `2 Players`、`Play As Listen Server` 和独立窗口，分别给 Host 与 Client 授予不同层数的奥术回流。
+2. 两名玩家交替施放 Fireball、Shield 和 LightningStorm，记录各自服务器 Energy 变化和客户端 HUD 更新。
+3. 开启约 `150ms RTT / 2% Loss`，快速输入并在冷却边界重复施法。
+4. 对 Client 使用 `arena.Net.RejectNextAbility` 依次拒绝 Fireball、Shield、LightningStorm，观察预测 Cost/Cooldown 回滚和 Energy。
+5. 在一个窗口切换顶视角、另一个保持第三人称，重复一次目标技能施放。
+
+### 通过标准
+
+- 每名玩家只响应自己 PlayerState ASC 的 Commit 和永久升级层数，另一名玩家的 Energy 不变。
+- 客户端预测不会产生第二次恢复；每次服务器确认施放只有一次权威恢复 GE。
+- 服务器拒绝后不保留回能、Cost、Cooldown、Projectile 或 Area Actor，最终属性与服务器一致。
+- 本地视角切换不复制相机状态，也不增加 OnAbilityCast 事件、Projectile、Area Actor 或恢复次数。

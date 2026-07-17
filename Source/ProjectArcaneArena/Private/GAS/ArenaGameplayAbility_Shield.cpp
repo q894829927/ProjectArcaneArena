@@ -13,7 +13,11 @@ UArenaGameplayAbility_Shield::UArenaGameplayAbility_Shield()
 	NetworkAbilityId = EArenaNetworkAbilityId::Shield;
 	InputTag = ArenaGameplayTags::Ability_Shield;
 
-	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Shield));
+	// Shield 属于消耗 Energy 的玩家主动技能，成功 Commit 后可触发奥术回流。
+	FGameplayTagContainer AbilityAssetTags(ArenaGameplayTags::Ability_Shield);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_EnergySkill);
+	SetAssetTags(AbilityAssetTags);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Shield);

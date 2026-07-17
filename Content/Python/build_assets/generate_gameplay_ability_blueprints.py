@@ -26,6 +26,11 @@ ABILITY_BLUEPRINT_CONFIGS = [
         "parent_class_name": "ArenaGameplayAbility_EnergyOnCrit",
     },
     {
+        "asset_name": "GA_EnergyOnAbilityCast",
+        "destination_path": "/Game/GAS/GameplayAbility",
+        "parent_class_name": "ArenaGameplayAbility_EnergyOnAbilityCast",
+    },
+    {
         "asset_name": "GA_ShieldBreakBlast",
         "destination_path": "/Game/GAS/GameplayAbility",
         "parent_class_name": "ArenaGameplayAbility_ShieldBreakBlast",

@@ -53,6 +53,13 @@ Status meanings:
 * BasicAttack, Fireball, Dash, Shield, and LightningStorm use GAS cooldown/cost configuration where applicable.
 * The HUD observes ASC tags and Active GameplayEffects to display granted/locked state and cooldown time.
 
+### OnAbilityCast Trigger and Arcane Flow — Partial
+
+* `UArenaAbilitySystemComponent::NotifyAbilityCommit` now emits one authority-only `Trigger.OnAbilityCast` after GAS successfully commits Cost/Cooldown for a player-owned active Ability. Client prediction, failed commits, passive Abilities, and enemy ASCs do not create the authoritative event.
+* BasicAttack, Fireball, Dash, Shield, and LightningStorm carry `Ability.Type.PlayerActive`; only Fireball, Shield, and LightningStorm additionally carry `Ability.Type.EnergySkill`. The event payload includes the committed Ability plus ASC and Ability asset tags so passives can filter without per-skill event code.
+* `UArenaGameplayAbility_EnergyOnAbilityCast` is a ServerOnly event passive for the stackable Rare `DA_Upgrade_EnergyOnAbilityCast`. It reads its Upgrade DataAsset from AbilitySpec `SourceObject`, restores `5/10/15 Energy` after an EnergySkill commit through the existing SetByCaller Energy restore GE, and never commits itself, preventing event recursion.
+* Build-asset automation creates `GA_EnergyOnAbilityCast`, `GE_Trigger_EnergyOnAbilityCast`, the Upgrade DataAsset and an independent placeholder icon, connects the restore effect, and appends the upgrade to GameMode UpgradePool idempotently. The narrow Editor target is up to date, two consecutive commandlet generation passes completed with zero errors/warnings, and direct asset inspection confirmed the native parents, GE binding, core DataAsset fields, single UpgradePool entry, absence of duplicate assets, and all five active Ability Blueprint CDO tag classifications. Commit-boundary behavior, prediction rejection, and two-player ownership remain pending PIE verification.
+
 ### Predicted Ability Networking - Partial
 
 * BasicAttack, Fireball, Dash, Shield, and LightningStorm use `LocalPredicted` activation and run `CommitAbility` on the owning client and server so configured Cost/Cooldown effects can be predicted and reconciled by GAS.

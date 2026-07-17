@@ -41,6 +41,11 @@ EFFECT_BLUEPRINT_CONFIGS = [
         "parent_class_name": "ArenaGameplayEffect_EnergyRestore",
     },
     {
+        "asset_name": "GE_Trigger_EnergyOnAbilityCast",
+        "destination_path": "/Game/GAS/GameplayEffect/Trigger",
+        "parent_class_name": "ArenaGameplayEffect_EnergyRestore",
+    },
+    {
         "asset_name": "GE_Shield_Grant",
         "destination_path": "/Game/GAS/GameplayEffect",
         "parent_class_name": "ArenaGameplayEffect_ShieldGrant",
