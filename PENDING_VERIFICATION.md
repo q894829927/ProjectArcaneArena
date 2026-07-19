@@ -823,3 +823,19 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 客户端预测不会产生第二次恢复；每次服务器确认施放只有一次权威恢复 GE。
 - 服务器拒绝后不保留回能、Cost、Cooldown、Projectile 或 Area Actor，最终属性与服务器一致。
 - 本地视角切换不复制相机状态，也不增加 OnAbilityCast 事件、Projectile、Area Actor 或恢复次数。
+
+## 同帧伤害 GameplayCue RPC 合并
+
+### 测试方法
+
+1. 开启 `AbilitySystem.GameplayCueCheckForTooManyRPCs 1`，让 Boss 同时受到 Fireball 直接伤害、Burning 周期伤害、LightningStorm 和 Overload 中至少两种同帧结算。
+2. 在单人 PIE 观察每次伤害对应的元素命中特效与普通/暴击数字，并检查 Output Log。
+3. 使用 `2 Players` Listen Server 重复测试，分别从 Host 和 Client 对 Boss 造成重叠伤害。
+4. 开启 `arena.Net.AbilityAudit 1`，对比服务器实际伤害结算次数、批量 Cue 标签和两端可见表现次数。
+- 测试已完成，但是会出现数字重叠
+### 通过标准
+
+- 同一目标在一个 Tick 内的所有权威伤害结算只发送一个项目级批量 Multicast；每段结算仍分别携带一个命中标签、一个数字标签和独立参数。
+- Output Log 不再出现并发命中与数字耗尽 `net.MaxRPCPerNetUpdate=2` 的警告，三段以上同帧伤害也不会丢失后续表现。
+- Host 与 Client 均看到对应元素命中特效和一个伤害数字；暴击仍显示金色 Critical 样式。
+- 合并只改变表现 RPC 数量，不改变 Health、Shield、Crit、OnDamage、OnCrit、OnKill 或 Overload 的权威结算次数。

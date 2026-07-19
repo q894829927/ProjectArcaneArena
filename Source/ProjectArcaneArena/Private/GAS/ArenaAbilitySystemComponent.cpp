@@ -4,8 +4,10 @@
 #include "Abilities/GameplayAbilityTypes.h"
 #include "Character/ArenaPlayerCharacter.h"
 #include "Core/ArenaPlayerState.h"
+#include "Engine/World.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
+#include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogArenaDamageEvents, Log, All);
 
@@ -68,6 +70,65 @@ void UArenaAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 		}
 
 		TryActivateAbility(AbilitySpec.Handle);
+	}
+}
+
+// 将同一目标本 Tick 的伤害反馈排入一个网络批次，避免并发状态伤害继续触发第三个 Multicast。
+void UArenaAbilitySystemComponent::QueueAuthoritativeGameplayCues(
+	const FGameplayTagContainer& GameplayCueTags,
+	const FGameplayCueParameters& GameplayCueParameters)
+{
+	if (!IsOwnerActorAuthoritative() || GameplayCueTags.IsEmpty())
+	{
+		return;
+	}
+
+	FArenaGameplayCueBatchItem& BatchItem = PendingGameplayCueBatch.Emplace_GetRef();
+	BatchItem.GameplayCueTags = GameplayCueTags;
+	BatchItem.CueParameters = GameplayCueParameters;
+
+	if (GameplayCueBatchTimerHandle.IsValid())
+	{
+		return;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		GameplayCueBatchTimerHandle = World->GetTimerManager().SetTimerForNextTick(
+			FTimerDelegate::CreateUObject(this, &UArenaAbilitySystemComponent::FlushPendingGameplayCueBatch));
+	}
+	else
+	{
+		FlushPendingGameplayCueBatch();
+	}
+}
+
+// 复制前移动当前队列，保证 Multicast 本地执行期间新增的反馈会进入下一批而不是修改正在遍历的数据。
+void UArenaAbilitySystemComponent::FlushPendingGameplayCueBatch()
+{
+	GameplayCueBatchTimerHandle.Invalidate();
+	if (!IsOwnerActorAuthoritative() || PendingGameplayCueBatch.IsEmpty())
+	{
+		PendingGameplayCueBatch.Reset();
+		return;
+	}
+
+	TArray<FArenaGameplayCueBatchItem> GameplayCueBatch = MoveTemp(PendingGameplayCueBatch);
+	PendingGameplayCueBatch.Reset();
+	ForceReplication();
+	MulticastExecuteGameplayCueBatch(GameplayCueBatch);
+}
+
+// 每个客户端在本地执行标准 Cue 路由；批量 RPC 只替换传输层，不改变 Notify 标签或参数。
+void UArenaAbilitySystemComponent::MulticastExecuteGameplayCueBatch_Implementation(
+	const TArray<FArenaGameplayCueBatchItem>& GameplayCueBatch)
+{
+	for (const FArenaGameplayCueBatchItem& BatchItem : GameplayCueBatch)
+	{
+		for (const FGameplayTag& GameplayCueTag : BatchItem.GameplayCueTags)
+		{
+			InvokeGameplayCueEvent(GameplayCueTag, EGameplayCueEvent::Executed, BatchItem.CueParameters);
+		}
 	}
 }
 

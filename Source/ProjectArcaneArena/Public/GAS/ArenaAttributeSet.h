@@ -117,10 +117,8 @@ private:
 	void UpdateDeadTag() const;
 	// 根据权威 Shield 数值添加或移除持续 Cue，重复补盾不会重复 Add。
 	void RefreshShieldGameplayCue();
-	// 每次成功 Damage meta 结算仅触发一次按伤害类型分类的命中 Cue。
-	void ExecuteDamageGameplayCue(const FGameplayEffectModCallbackData& Data, float AppliedDamage) const;
-	// 发送服务器确认的实际伤害数字 Cue，暴击和普通伤害使用不同标签。
-	void ExecuteDamageNumberGameplayCue(const FGameplayEffectModCallbackData& Data, float AppliedDamage) const;
+	// 将同次伤害的元素命中与普通/暴击数字 Cue 合并成一个权威 Multicast。
+	void ExecuteDamageFeedbackGameplayCues(const FGameplayEffectModCallbackData& Data, float AppliedDamage) const;
 
 	bool bShieldGameplayCueActive = false;
 };

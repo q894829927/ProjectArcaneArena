@@ -199,8 +199,7 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		if (AppliedDamage > KINDA_SMALL_NUMBER)
 		{
 			LogAuthoritativeDamage(Data.EffectSpec, TargetASC, AppliedDamage);
-			ExecuteDamageGameplayCue(Data, AppliedDamage);
-			ExecuteDamageNumberGameplayCue(Data, AppliedDamage);
+			ExecuteDamageFeedbackGameplayCues(Data, AppliedDamage);
 			UAbilitySystemComponent* SourceASC = Data.EffectSpec.GetEffectContext().GetInstigatorAbilitySystemComponent();
 			if (UArenaAbilitySystemComponent* ArenaSourceASC = Cast<UArenaAbilitySystemComponent>(SourceASC))
 			{
@@ -258,38 +257,6 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 	{
 		SetEnergy(GetEnergy());
 	}
-}
-
-// 根据 Damage.Critical 结果选择数字 Cue，RawMagnitude 始终使用 Shield 与 Health 的实际总消耗。
-void UArenaAttributeSet::ExecuteDamageNumberGameplayCue(
-	const FGameplayEffectModCallbackData& Data,
-	float AppliedDamage) const
-{
-	UAbilitySystemComponent* TargetASC = GetOwningAbilitySystemComponent();
-	if (!TargetASC || !TargetASC->IsOwnerActorAuthoritative() || AppliedDamage <= KINDA_SMALL_NUMBER)
-	{
-		return;
-	}
-
-	FGameplayTagContainer AssetTags;
-	Data.EffectSpec.GetAllAssetTags(AssetTags);
-	const FGameplayTag CueTag = AssetTags.HasTagExact(ArenaGameplayTags::Damage_Critical)
-		? ArenaGameplayTags::GameplayCue_Damage_Critical
-		: ArenaGameplayTags::GameplayCue_Damage_Number;
-
-	FGameplayCueParameters CueParameters(Data.EffectSpec.GetEffectContext());
-	CueParameters.RawMagnitude = AppliedDamage;
-	CueParameters.EffectContext = Data.EffectSpec.GetEffectContext();
-	if (const FHitResult* HitResult = CueParameters.EffectContext.GetHitResult())
-	{
-		CueParameters.Location = HitResult->ImpactPoint;
-	}
-	else if (const AActor* TargetAvatar = TargetASC->GetAvatarActor())
-	{
-		CueParameters.Location = TargetAvatar->GetActorLocation();
-	}
-
-	TargetASC->ExecuteGameplayCue(CueTag, CueParameters);
 }
 
 // 根据属性类型统一限制数值范围，避免各处重复 clamp 规则。
@@ -408,11 +375,12 @@ void UArenaAttributeSet::RefreshShieldGameplayCue()
 	}
 }
 
-void UArenaAttributeSet::ExecuteDamageGameplayCue(
+// 同次伤害共享一份位置、数值与上下文，并用标签容器同时路由命中特效和伤害数字。
+void UArenaAttributeSet::ExecuteDamageFeedbackGameplayCues(
 	const FGameplayEffectModCallbackData& Data,
 	float AppliedDamage) const
 {
-	UAbilitySystemComponent* TargetASC = GetOwningAbilitySystemComponent();
+	UArenaAbilitySystemComponent* TargetASC = Cast<UArenaAbilitySystemComponent>(GetOwningAbilitySystemComponent());
 	if (!TargetASC || !TargetASC->IsOwnerActorAuthoritative() || AppliedDamage <= 0.0f)
 	{
 		return;
@@ -420,19 +388,23 @@ void UArenaAttributeSet::ExecuteDamageGameplayCue(
 
 	FGameplayTagContainer AssetTags;
 	Data.EffectSpec.GetAllAssetTags(AssetTags);
-	FGameplayTag CueTag = ArenaGameplayTags::GameplayCue_Hit_Physical;
+	FGameplayTag HitCueTag = ArenaGameplayTags::GameplayCue_Hit_Physical;
 	if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Fire))
 	{
-		CueTag = ArenaGameplayTags::GameplayCue_Hit_Fire;
+		HitCueTag = ArenaGameplayTags::GameplayCue_Hit_Fire;
 	}
 	else if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Lightning))
 	{
-		CueTag = ArenaGameplayTags::GameplayCue_Hit_Lightning;
+		HitCueTag = ArenaGameplayTags::GameplayCue_Hit_Lightning;
 	}
+	const FGameplayTag DamageNumberCueTag = AssetTags.HasTagExact(ArenaGameplayTags::Damage_Critical)
+		? ArenaGameplayTags::GameplayCue_Damage_Critical
+		: ArenaGameplayTags::GameplayCue_Damage_Number;
 
 	FGameplayCueParameters CueParameters(Data.EffectSpec.GetEffectContext());
 	CueParameters.RawMagnitude = AppliedDamage;
 	CueParameters.EffectContext = Data.EffectSpec.GetEffectContext();
+	CueParameters.AggregatedSourceTags.AppendTags(AssetTags);
 	if (const FHitResult* HitResult = CueParameters.EffectContext.GetHitResult())
 	{
 		CueParameters.Location = HitResult->ImpactPoint;
@@ -444,14 +416,18 @@ void UArenaAttributeSet::ExecuteDamageGameplayCue(
 		CueParameters.Normal = FVector::UpVector;
 	}
 
-	TargetASC->ExecuteGameplayCue(CueTag, CueParameters);
+	FGameplayTagContainer DamageFeedbackCueTags;
+	DamageFeedbackCueTags.AddTag(HitCueTag);
+	DamageFeedbackCueTags.AddTag(DamageNumberCueTag);
+	TargetASC->QueueAuthoritativeGameplayCues(DamageFeedbackCueTags, CueParameters);
 	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
 	{
-		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] Damage Target=%s Amount=%.2f Type=%s"),
+		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] Damage Target=%s Amount=%.2f Cues=%s,%s"),
 			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
 			*GetNameSafe(TargetASC->GetAvatarActor()),
 			AppliedDamage,
-			*CueTag.ToString());
+			*HitCueTag.ToString(),
+			*DamageNumberCueTag.ToString());
 	}
 }
 
