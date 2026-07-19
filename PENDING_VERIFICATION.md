@@ -63,6 +63,41 @@
 - GroundSlam 使用现有 Shield-first、Defense、Crit 和死亡管线，不直接修改 Health。
 - Boss 死亡、眩晕、目标死亡或 Montage 中断后没有迟到伤害、残留预警或永久 `State.Attacking`。
 
+## Boss Behavior Tree 阶段二 A
+
+### 资产配置
+
+原生编译、编辑器重启和三个 `/Game/Boss/AI` 资产外壳生成已经完成。当前待验证步骤：
+
+1. 在 `BB_ArenaBoss` 手工添加 `TargetActor` Object Key，并将 Base Class 设为 `Actor`、关闭 `Instance Synced`。
+2. 在 `BT_ArenaBoss` 手工选择 `BB_ArenaBoss` 作为 Blackboard Asset。
+3. 按 `Content/Python/boss/README.md` 手工连接固定的 `GroundSlam / Chase / Wait` 树，并保存四个相关 Blueprint/BT/BB 资产。
+4. 再次执行脚本，确认没有 `_1`、`_2` 资产，已连接的 Behavior Tree 图没有被覆盖。
+
+### 单人 PIE
+
+2026-07-20 首次运行结果：失败。Output Log 显示运行时生成 `ArenaBossAIController_0`，其 `BehaviorTreeAsset` 为空，说明 `BP_ArenaBossCharacter` 的蓝图 Controller 覆盖未在运行时生效；需重新设置并 Compile 两个相关 Blueprint 后复测。
+
+1. 确认 Boss 获取玩家、追击，并在合法路径和攻击距离内停止移动后释放一次 GroundSlam。
+2. 冷却期间确认 Boss 执行 Chase；冷却完成且条件满足后，GroundSlam Decorator 中断低优先级 MoveTo。
+3. 在 Boss 与玩家间加入墙体，确认攻击路径失败时继续寻路；重新取得合法路径后恢复攻击。
+4. GroundSlam 前摇期间分别施加 `State.Stunned`、击杀 Boss、切换到 Victory/Defeat，并中断 Montage。
+5. 让当前玩家死亡，确认最多一个 `0.2s` Service 周期内清除或切换目标。
+
+### 双人 Listen Server
+
+1. 两名玩家距离 Boss 的差值小于 `150` 时交替靠近，确认 Boss 保持当前目标。
+2. 让另一名玩家比当前目标至少近 `150`，确认 Blackboard 与 `CombatTarget` 同时切换。
+3. 击杀当前目标，确认 Boss 选择仍存活玩家；Host/Client 只看到一棵服务器行为树、一次 GroundSlam 和一次权威伤害结算。
+4. 回归普通近战和远程敌人，确认它们仍使用原 Tick AI，追击、攻击与弹道行为不变。
+
+### 通过标准
+
+- Boss 不在 `State.Attacking`、`State.Casting`、`State.Stunned` 或 `State.Dead` 中移动或重复激活攻击。
+- Ability Task 正常结束后继续决策；Abort、终局或死亡时没有迟到 GroundSlam、残留 Delegate、Focus 或 CombatTarget。
+- 墙体遮挡时不会原地反复空转，恢复攻击路径后能及时从 Chase 切回 GroundSlam。
+- 两人目标切换符合 `150` 单位滞回，当前目标死亡后可靠追击存活玩家。
+
 ## 测试记录格式
 
 每次执行测试时，在需要保留的失败条目下追加以下信息：

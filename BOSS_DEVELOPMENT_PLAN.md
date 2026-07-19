@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前阶段为“阶段一：Boss Foundation”，状态为 `Partial`。在资产生成和运行时验收完成前，不进入阶段二。
+当前开发阶段为“阶段二 A：Boss Behavior Tree 决策骨架”，状态为 `Partial`。阶段一已完成关键双人闭环验收；阶段二 A 的原生节点已经实现，仍需生成并手工连接行为树资产后完成运行时验收。
 
 ---
 
@@ -123,6 +123,28 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - FireZone 的客户端只显示范围与 VFX，服务器负责目标过滤、周期伤害和生命周期。
 - 使用 `State.Attacking`、`State.Casting` 和 Ability 冷却防止技能重叠，并统一处理取消与恢复寻路。
 - EQS 只用于得到合法的 Charge 方向、FireZone 位置或后续召唤点，不替代 Behavior Tree 的目标选择与 Ability 激活。
+
+### 当前实现进度
+
+状态：`Partial`，最后更新：2026-07-19。
+
+已完成实现：
+
+- 已新增服务器专用 `AArenaBossAIController`，Boss 原生默认 Controller 不再使用普通敌人的低频 Tick 决策；普通近战与远程敌人保持现有 `AArenaEnemyAIController`。
+- Controller 仅在 `Combat` 阶段且 Boss 未死亡、未眩晕时启动配置的 Behavior Tree；死亡、眩晕、终局、`UnPossess` 和 `EndPlay` 会停止 Brain/寻路、清除 Focus、Blackboard `TargetActor`、`CombatTarget` 并取消当前主攻击。
+- 已新增 `UBTService_ArenaBossUpdateTarget`，每 `0.2s` 从 `GameState.PlayerArray` 选择最近存活玩家，并以 `150` 单位距离优势作为切换滞回；攻击期间锁定仍存活的当前目标，目标失效时先取消旧攻击，再同步 Blackboard 与 Boss `CombatTarget`。
+- 已新增 `UBTDecorator_ArenaBossCanActivateAbility`，按精确 AssetTag 查找唯一 AbilitySpec，检查 Combat 阶段、目标、Boss 状态、攻击距离、攻击路径以及 GAS `CanActivateAbility()`；条件变化时支持中断低优先级 Chase。
+- 已新增实例化 `UBTTask_ArenaBossActivateAbility`，按精确 Spec Handle 激活 Ability 并等待对应 `OnAbilityEnded`；Abort 时先解绑再取消 Spec，并处理 Ability 在激活调用内同步结束的边界。
+- 已新增 `Content/Python/boss/setup_boss_decision.py`，用于幂等创建 `BP_ArenaBossAIController`、`BB_ArenaBoss`、`BT_ArenaBoss` 资产外壳，连接 Python 反射层可访问的 Controller/Boss/BehaviorTree 引用，且不覆盖手工 Behavior Tree 图；UE Python 未导出 Blackboard Key 类型或 `BehaviorTree.BlackboardAsset` 时会保留对应手动配置入口，不再中止整个脚本。
+- 已在 `Content/Python/boss/README.md` 记录阶段二 A 固定树结构、Decorator Abort 配置、MoveTo 参数与手工连接步骤。
+- 已成功执行 `setup_boss_decision.py` 并保存 `BP_ArenaBossAIController`、`BB_ArenaBoss`、`BT_ArenaBoss` 与更新后的 `BP_ArenaBossCharacter`；当前 UE Python 未导出 Blackboard Key 和 BehaviorTree Blackboard 引用，因此这两项按文档手工配置。
+
+尚未完成或尚未验证：
+
+- 用户已完成编译并重启编辑器，Python 能读取 `ArenaBossAIController` 等新增原生类型；运行时行为仍需通过行为树资产与 PIE 验证。
+- `BT_ArenaBoss` 图仍需按固定结构手工连接；GroundSlam、Chase 与 Wait 的运行时切换尚未验证。
+- 单人目标选择、墙体寻路、冷却重评估、Stun/死亡/终局清理，以及双人 `150` 单位滞回与单次权威 GroundSlam 均待 PIE 验收。
+- 阶段二后续 Charge、FireZone 与 EQS 尚未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
 
 ### 阶段边界
 
