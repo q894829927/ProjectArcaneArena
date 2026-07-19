@@ -237,7 +237,8 @@ Status meanings:
 * GroundSlam continues to use `State.Attacking`, server Montage timing and the existing death/stun/target-loss cancellation path. Its warning Cue is removed on impact, cancellation or Ability end so delayed damage and presentation do not survive an interrupted attack.
 * `AArenaGameState` now replicates `ActiveBoss`; each local `AArenaPlayerController` binds the player HUD to the Boss ASC. The HUD observes Health/MaxHealth delegates and `State.Dead`, supports optional Blueprint controls, and creates a top-center fallback Boss bar when those controls are absent.
 * Boss waves now validate exactly one `AArenaBossCharacter` entry with count one before entering Combat. WaveManager sets/clears `ActiveBoss`, skips the ordinary Health/Energy Pickup DropTable for Boss deaths, and retains the existing final-wave Victory owner.
-* `Content/Python/boss/setup_boss_foundation.py` is an idempotent post-build setup flow for copied Manny/Wukong/Niagara direct assets, Boss GA/GE/Cue/Character Blueprints and one final Boss wave after all existing normal waves. It preserves an expanded normal-wave flow, appends the Boss when absent, and updates an existing unique final Boss wave in place. Editor asset generation, idempotency, single-player, dual-view and Listen Server behavior remain pending verification.
+* `Content/Python/boss/setup_boss_foundation.py` is an idempotent post-build setup flow for copied Manny/Wukong/Niagara direct assets, Boss GA/GE/Cue/Character Blueprints and one final Boss wave after all existing normal waves. It preserves an expanded normal-wave flow, appends the Boss when absent, and updates an existing unique final Boss wave in place. Editor asset generation and consecutive-run idempotency remain pending verification.
+* Two-player Listen Server verification confirmed one authoritative Boss, independent per-player GroundSlam range results, retargeting after the current player target dies, and matching Boss Health, Cue, death and Victory state on Host/Client. GroundSlam remained readable in both top-down and third-person views. Single-player full-flow, invalid Boss-wave configuration and interrupted-windup cleanup checks remain pending.
 
 ### Gameplay State Control — Partial
 
@@ -257,7 +258,7 @@ Status meanings:
 * WaveManager retains a configurable three-second prototype fallback, but GameMode now disables it when the formal upgrade-selection system binds to the Upgrade entry.
 * Missing configuration never counts as wave completion; failed spawns keep Combat active and emit `LogArenaWaves` errors.
 * `DA_Waves_Prototype`, its `BP_ArenaGameMode` reference, three tagged EnemySpawn TargetPoints, and a covering NavMeshBoundsVolume are configured in project assets.
-* Boss-wave validation and replicated `ActiveBoss` ownership are implemented in C++; the generated final-wave asset and runtime flow remain pending verification.
+* Boss-wave validation and replicated `ActiveBoss` ownership are implemented in C++; the final Boss runtime flow has passed two-player Listen Server verification, while invalid configuration and setup-script idempotency checks remain pending.
 * Verification: the previously saved three-wave asset completed the formal single-player `Wave 1 -> choice -> Wave 2 -> choice -> Wave 3 -> Victory` flow. The ranged-enemy setup and build-asset link scripts preserve existing per-wave metadata while replacing the first four `Enemies` arrays with `3M / 3M+2R / 4M+3R / 5M+4R`; editor execution and the expanded normal-wave flow followed by the final Boss remain pending.
 
 ### Server-Authoritative Pickup Drops — Partial

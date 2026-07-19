@@ -63,25 +63,6 @@
 - GroundSlam 使用现有 Shield-first、Defense、Crit 和死亡管线，不直接修改 Health。
 - Boss 死亡、眩晕、目标死亡或 Montage 中断后没有迟到伤害、残留预警或永久 `State.Attacking`。
 
-## Boss 双视角与 2-player Listen Server
-
-### 测试方法
-
-1. PIE 设置为 `2 Players`、`Play As Listen Server` 和独立窗口，推进到最终 Boss 波。
-2. 在 Host 与 Client 窗口分别查看 Boss 数量、`ActiveBoss`、HUD Health、预警 Cue、Impact Cue 和 Boss 移动。
-3. 让两名玩家处于不同距离，确认 Boss 追击最近的存活玩家；击杀当前目标后确认能重新选择另一名玩家。
-4. 让两名玩家同时站入一次 GroundSlam，再只让一名玩家留在范围内，比较服务器伤害次数和两端属性复制。
-5. 两个窗口分别在顶视角和第三人称观察预警范围，并在 Boss 前摇中切换视角。
-6. 击杀 Boss，确认两端同时隐藏 HUD、清空 `ActiveBoss` 并进入同一个 Victory。
-
-### 通过标准
-
-- 世界中只有一个服务器生成并复制的 Boss，客户端不生成第二个 Boss、Ability、Cue 或伤害。
-- 两端 Boss Health 和 HUD 最终一致，客户端 HUD 只观察复制数据。
-- 每名圈内玩家每次 GroundSlam 最多承受一次伤害，Host/Client 不出现双倍扣血。
-- 顶视角和第三人称都能判断预警中心、半径和兑现时机，切换视角不会复制攻击。
-- Boss 死亡和 Victory 在所有端只处理一次，没有残留 Cue、HUD 或 Actor 引用。
-
 ## 测试记录格式
 
 每次执行测试时，在需要保留的失败条目下追加以下信息：

@@ -60,7 +60,7 @@
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-17。
+状态：`Partial`，最后更新：2026-07-19。
 
 已完成实现：
 
@@ -73,13 +73,15 @@
 - 已扩展 `UArenaPlayerHUDWidget`，通过 Health/MaxHealth Attribute Delegate 和 `State.Dead` 显示或隐藏 Boss HUD，并在蓝图缺少控件时创建顶部备用血条。
 - 已新增 `Content/Python/boss/setup_boss_foundation.py` 及说明文档，支持保留现有普通波、幂等追加或更新唯一最终 Boss 波。
 - 已将 `/Game/Boss` 加入 GameplayCue 扫描路径，并完成 Boss 原生类型的 UHT/编辑器加载链路。
+- 已完成 2-player Listen Server 运行时验收：Host/Client 只观察到一个权威 Boss，两名玩家的 GroundSlam 范围分别正确结算，当前目标死亡后 Boss 能重新追击存活玩家，两端 Boss Health、Cue、死亡和 Victory 状态一致。
+- 已完成双视角可读性验收：顶视角和第三人称均能清楚判断 GroundSlam 的预警范围与兑现时机。
 
 尚未完成或尚未验证：
 
 - 修复 `BossDisplayName` 继承 CDO 的只读本地化写入后，仍需重新完整执行 Boss 资产脚本并确认所有 Blueprint、GE、Cue、动画和最终 Boss 波均已保存。
 - 尚未完成脚本连续执行两次的幂等验证。
-- 尚未完成单人完整波次、Boss HUD、GroundSlam 躲避、死亡和 Victory 闭环验证。
-- 尚未完成顶视角、第三人称和 2-player Listen Server 验证。
+- 尚未完成单人完整波次和无效 Boss 波配置防线验证。
+- 尚未完成 GroundSlam 在 Boss 眩晕、前摇中死亡、Montage 中断或目标死亡时的取消清理验证。
 - `PENDING_VERIFICATION.md` 中的 Boss 条目完成前，本阶段不得标记为 `Verified`。
 
 ### 阶段边界
