@@ -87,7 +87,7 @@ bool AArenaEnemyCharacter::HasPrimaryAttackPath(AActor* TargetActor)
 	return PrimaryAttackCDO && PrimaryAttackCDO->HasAttackPathForAI(this, TargetActor);
 }
 
-// 只取消配置的主攻击 Spec，不影响敌人未来可能拥有的被动或其他辅助 Ability。
+// 取消所有正在运行的 EnemyAttackBase Spec，确保多技能 Boss 在死亡、眩晕或目标失效时完整收尾。
 void AArenaEnemyCharacter::CancelPrimaryAttack()
 {
 	if (!HasAuthority() || !AbilitySystemComponent)
@@ -95,13 +95,21 @@ void AArenaEnemyCharacter::CancelPrimaryAttack()
 		return;
 	}
 
-	const TSubclassOf<UGameplayAbility> PrimaryAttackClass = FindPrimaryAttackAbilityClass();
-	FGameplayAbilitySpec* PrimaryAttackSpec = PrimaryAttackClass
-		? AbilitySystemComponent->FindAbilitySpecFromClass(PrimaryAttackClass)
-		: nullptr;
-	if (PrimaryAttackSpec && PrimaryAttackSpec->IsActive())
+	TArray<FGameplayAbilitySpecHandle> ActiveAttackHandles;
+	for (const FGameplayAbilitySpec& AbilitySpec : AbilitySystemComponent->GetActivatableAbilities())
 	{
-		AbilitySystemComponent->CancelAbilityHandle(PrimaryAttackSpec->Handle);
+		const UGameplayAbility* AbilityCDO = AbilitySpec.Ability.Get();
+		if (AbilitySpec.IsActive()
+			&& AbilityCDO
+			&& AbilityCDO->GetClass()->IsChildOf(UArenaGameplayAbility_EnemyAttackBase::StaticClass()))
+		{
+			ActiveAttackHandles.Add(AbilitySpec.Handle);
+		}
+	}
+
+	for (const FGameplayAbilitySpecHandle& AttackHandle : ActiveAttackHandles)
+	{
+		AbilitySystemComponent->CancelAbilityHandle(AttackHandle);
 	}
 }
 

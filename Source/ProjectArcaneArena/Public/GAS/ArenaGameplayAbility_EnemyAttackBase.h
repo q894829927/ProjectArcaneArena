@@ -20,10 +20,22 @@ public:
 	// 返回 AI 决策和激活校验使用的主攻击距离，派生类决定释放时是否再次复验。
 	virtual float GetAttackRange() const { return 0.0f; }
 
+	// 返回攻击分支允许进入的最小二维距离，默认零以保持现有攻击行为。
+	virtual float GetMinimumAttackRange() const { return 0.0f; }
+
 	// 让 AI 与 Ability 共用同一套攻击路径检查，避免视线判断和实际释放条件分叉。
 	bool HasAttackPathForAI(AArenaEnemyCharacter* SourceEnemy, AActor* TargetActor) const;
 
 protected:
+	// 复用服务器校验、Commit、目标缓存和 State.Attacking 初始化，供自定义攻击生命周期使用。
+	bool BeginServerAttack(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo,
+		AArenaEnemyCharacter*& OutSourceEnemy,
+		AActor*& OutTargetActor,
+		UAbilitySystemComponent*& OutSourceASC);
+
 	// 锁定当前 CombatTarget，提交冷却，并启动复制 Montage 与固定时间或动作结束同步的服务器释放。
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
@@ -66,8 +78,11 @@ protected:
 	// 返回可选的一次性激活 Cue；无效 Tag 表示只使用 Montage 或 Projectile 表现。
 	virtual FGameplayTag GetAttackActivationCueTag() const { return FGameplayTag(); }
 
+	// 仅在 Ability 仍活跃时结束当前攻击，供自定义任务、碰撞和计时器共享。
+	void FinishCurrentAttack(bool bWasCancelled);
+
 private:
-	// 复用服务器目标校验，并按攻击类型决定是否在释放阶段再次检查距离和视线。
+	// 复用服务器目标校验，并按派生类最小/最大距离决定是否在释放阶段再次检查空间条件。
 	bool IsAttackTargetValid(
 		AArenaEnemyCharacter* SourceEnemy,
 		AActor* TargetActor,
@@ -77,9 +92,6 @@ private:
 	void ApplyAttackStateTag();
 	// 移除本次 Ability 添加的本地及复制 loose Tag。
 	void RemoveAttackStateTag();
-	// 仅在 Ability 仍活跃时结束当前攻击，避免任务回调重复结束。
-	void FinishCurrentAttack(bool bWasCancelled);
-
 	// 服务器释放窗口只消费一次，并按攻击类型完成存活及可选空间复验。
 	UFUNCTION()
 	void HandleReleaseDelayFinished();

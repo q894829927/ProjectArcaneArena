@@ -21,6 +21,9 @@ public class ProjectArcaneArena : ModuleRules
 			"MassEntity"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] {});
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Niagara"
+		});
 	}
 }

@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前开发阶段为“阶段二 A：Boss Behavior Tree 决策骨架”，状态为 `Partial`。阶段一已完成关键双人闭环验收；阶段二 A 的原生节点已经实现，仍需生成并手工连接行为树资产后完成运行时验收。
+当前开发阶段为“阶段二 B：Boss Charge”，状态为 `Partial`。阶段一已完成关键双人闭环验收，阶段二 A 的单人核心追击/攻击循环已通过；Charge 分支已经接入 Behavior Tree 并完成首轮单人核心验收，仍需重编译复测预警与高差修正、异常取消和双人权威行为。
 
 ---
 
@@ -60,7 +60,7 @@
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-19。
+状态：`Partial`，最后更新：2026-07-20。
 
 已完成实现：
 
@@ -126,7 +126,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-19。
+状态：`Partial`，最后更新：2026-07-20。
 
 已完成实现：
 
@@ -139,13 +139,28 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已新增 `Content/Python/boss/setup_boss_decision.py`，用于幂等创建 `BP_ArenaBossAIController`、`BB_ArenaBoss`、`BT_ArenaBoss` 资产外壳，连接 Python 反射层可访问的 Controller/Boss/BehaviorTree 引用，且不覆盖手工 Behavior Tree 图；UE Python 未导出 Blackboard Key 类型或 `BehaviorTree.BlackboardAsset` 时会保留对应手动配置入口，不再中止整个脚本。
 - 已在 `Content/Python/boss/README.md` 记录阶段二 A 固定树结构、Decorator Abort 配置、MoveTo 参数与手工连接步骤。
 - 已成功执行 `setup_boss_decision.py` 并保存 `BP_ArenaBossAIController`、`BB_ArenaBoss`、`BT_ArenaBoss` 与更新后的 `BP_ArenaBossCharacter`；当前 UE Python 未导出 Blackboard Key 和 BehaviorTree Blackboard 引用，因此这两项按文档手工配置。
+- 已完成阶段二 A 的单人核心循环验收：`TargetActor` 能驱动 Chase/MoveTo，Boss 路径朝向稳定，GroundSlam 在进入范围后中断追击，冷却期间恢复 Chase，墙体遮挡时继续 NavMesh 寻路且不会原地停滞。
+- 已为 `UArenaGameplayAbility_EnemyAttackBase` 增加可选最小攻击距离和可复用的服务器校验、Commit、目标缓存及 `State.Attacking` 初始化入口，既有近战、远程和 GroundSlam 仍走原生命周期。
+- 已让 `UBTDecorator_ArenaBossCanActivateAbility` 同时检查攻击最小/最大距离，并让 `AArenaEnemyCharacter::CancelPrimaryAttack()` 取消全部活跃 `EnemyAttackBase` Spec，支持多技能 Boss 的异常清理。
+- 已实现 `UArenaGameplayAbility_BossCharge`：服务器在 Commit 时锁定方向和终点，先显示默认 `0.8s` 固定直线预警，再使用 GAS RootMotion 直线冲锋；路径 Sweep 可分别命中多个存活玩家且每人最多一次，Pawn 不阻挡冲锋，墙体阻挡会立即结束。
+- Charge 伤害继续使用 `GE_Damage + Damage.Physical`；Shield、Defense、Crit、Dash 无敌和死亡判定继续由现有权威伤害管线处理，不在 Ability 中直接修改属性。
+- 已新增 Charge Ability、Cooldown 与 Telegraph/Active/Impact GameplayCue 原生标签，以及按固定位置、方向和实际距离缩放 Niagara 的 `AArenaGameplayCueNotify_BossChargeTelegraph`。
+- Charge 的 Timer、RootMotion、Montage、Cue、临时 Pawn 碰撞响应、速度、命中缓存和 `State.Attacking` 均由 Ability 结束路径统一清理；Stun、死亡、终局和 BT Abort 会复用取消路径。
+- 已新增幂等 `Content/Python/boss/setup_boss_charge.py`，用于创建 Charge 动画副本、关闭动画 Root Motion、创建 Montage、GA/GE/Cue、复制 Boss 专属 Niagara，并向 Boss `StartupAbilities` 追加且只保留一份 Charge；脚本不会修改 Behavior Tree 图。
+- 已成功完成首次 `setup_boss_charge.py` 执行并保存 `AM_BossCharge`、`GA_BossCharge`、三个 Charge GameplayCue 与更新后的 `BP_ArenaBossCharacter`；Content Validation 已启动且日志没有脚本异常。
+- 首次生成期间 Active/Impact Cue 曾在改写 Tag 前被编辑器临时按 Shield/Physical 模板 Tag 注册；脚本现已改为直接从原生 Looping/Burst 类创建新 Cue，并显式保存冷却 GE，现有资产需重启编辑器后重跑确认注册结果。
+- 已在 `Content/Python/boss/README.md` 记录 `GroundSlam -> Charge -> Chase -> Wait` 的手工接线顺序和 Charge 节点参数。
+- 已完成 Charge 单人核心行为的首轮验收：行为树分支与 StartupAbilities 配置正确，中距离能进入锁向冲锋，玩家可横移躲避，每名玩家最多受伤一次，撞墙和到达终点均会结束，冷却期间回退 Chase/GroundSlam，正常结束未观察到速度或表现残留。
+- 根据首轮验收反馈，Charge 碰撞结束逻辑已改为忽略 `CharacterMovement` 判定为可行走的地面 Hit，避免斜坡/台阶被误认为墙；Telegraph 默认加宽、抬高并延长到 `0.8s`，等待重新编译与资产脚本同步后复测。
 
 尚未完成或尚未验证：
 
-- 用户已完成编译并重启编辑器，Python 能读取 `ArenaBossAIController` 等新增原生类型；运行时行为仍需通过行为树资产与 PIE 验证。
-- `BT_ArenaBoss` 图仍需按固定结构手工连接；GroundSlam、Chase 与 Wait 的运行时切换尚未验证。
-- 单人目标选择、墙体寻路、冷却重评估、Stun/死亡/终局清理，以及双人 `150` 单位滞回与单次权威 GroundSlam 均待 PIE 验收。
-- 阶段二后续 Charge、FireZone 与 EQS 尚未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
+- 尚未验证当前目标死亡后的 `0.2s` 内重选，以及 GroundSlam 在 Stun、Boss 死亡、终局和 Montage 中断时的 Task/Ability/Focus 清理。
+- 尚未单独记录墙体路径重新满足攻击条件后，Decorator 能及时从 Chase 切回 GroundSlam。
+- 双人 `150` 单位目标切换滞回、当前目标死亡后的存活玩家重选，以及单次权威 GroundSlam 仍待 PIE 验收。
+- 尚未验证 `setup_boss_decision.py` 连续执行不会生成重复资产或覆盖已连接的 Behavior Tree 图。
+- 修正版脚本重跑、加强后的 Telegraph 可读性、斜坡高差移动、Stun/死亡/终局/Montage 中断清理和多人 Sweep 尚未验证。
+- FireZone 与 EQS 尚未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
 
 ### 阶段边界
 

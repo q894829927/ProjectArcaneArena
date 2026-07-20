@@ -100,8 +100,15 @@ bool UBTDecorator_ArenaBossCanActivateAbility::CalculateRawConditionValue(
 		Cast<UArenaGameplayAbility_EnemyAttackBase>(AbilityCDO))
 	{
 		const float AttackRange = FMath::Max(EnemyAttack->GetAttackRange(), 0.0f);
-		if (FVector::DistSquared2D(Boss->GetActorLocation(), TargetActor->GetActorLocation())
-			> FMath::Square(AttackRange)
+		const float MinimumAttackRange = FMath::Clamp(
+			EnemyAttack->GetMinimumAttackRange(),
+			0.0f,
+			AttackRange);
+		const float DistanceSquared = FVector::DistSquared2D(
+			Boss->GetActorLocation(),
+			TargetActor->GetActorLocation());
+		if (DistanceSquared < FMath::Square(MinimumAttackRange)
+			|| DistanceSquared > FMath::Square(AttackRange)
 			|| !EnemyAttack->HasAttackPathForAI(Boss, TargetActor))
 		{
 			return false;

@@ -67,23 +67,15 @@
 
 ### 资产配置
 
-原生编译、编辑器重启和三个 `/Game/Boss/AI` 资产外壳生成已经完成。当前待验证步骤：
-
-1. 在 `BB_ArenaBoss` 手工添加 `TargetActor` Object Key，并将 Base Class 设为 `Actor`、关闭 `Instance Synced`。
-2. 在 `BT_ArenaBoss` 手工选择 `BB_ArenaBoss` 作为 Blackboard Asset。
-3. 按 `Content/Python/boss/README.md` 手工连接固定的 `GroundSlam / Chase / Wait` 树，并保存四个相关 Blueprint/BT/BB 资产。
-4. 再次执行脚本，确认没有 `_1`、`_2` 资产，已连接的 Behavior Tree 图没有被覆盖。
+原生编译、编辑器重启、三个 `/Game/Boss/AI` 资产、`TargetActor` Key、Blackboard 引用和固定 `GroundSlam / Chase / Wait` 图已经完成并通过运行时使用。当前只需再次执行脚本，确认没有 `_1`、`_2` 资产，且已连接的 Behavior Tree 图不会被覆盖。
 
 ### 单人 PIE
 
-2026-07-20 首次运行结果：失败。Output Log 显示运行时生成 `ArenaBossAIController_0`，其 `BehaviorTreeAsset` 为空，说明 `BP_ArenaBossCharacter` 的蓝图 Controller 覆盖未在运行时生效；需重新设置并 Compile 两个相关 Blueprint 后复测。
+2026-07-20 复测结果：核心循环通过。Boss 能获取 `TargetActor` 并进入 Chase/MoveTo，路径朝向稳定且不会持续侧走、倒走或静止；进入范围后 GroundSlam 会中断追击，冷却期间恢复 Chase，墙体遮挡时继续寻路且不会原地停滞。
 
-1. 确认 Boss 获取玩家、追击，并在合法路径和攻击距离内停止移动后释放一次 GroundSlam。
-2. 让玩家沿直线、斜线和绕障碍移动，确认 Boss 胶囊朝向跟随路径速度，正常追击时不持续侧走或倒走；急转弯只允许短暂转身过渡。
-3. 冷却期间确认 Boss 执行 Chase；冷却完成且条件满足后，GroundSlam Decorator 中断低优先级 MoveTo。
-4. 在 Boss 与玩家间加入墙体，确认攻击路径失败时继续寻路；重新取得合法路径后恢复攻击。
-5. GroundSlam 前摇期间分别施加 `State.Stunned`、击杀 Boss、切换到 Victory/Defeat，并中断 Montage。
-6. 让当前玩家死亡，确认最多一个 `0.2s` Service 周期内清除或切换目标。
+1. 墙体路径重新满足攻击条件后，确认 Decorator 能及时从 Chase 切回 GroundSlam。
+2. GroundSlam 前摇期间分别施加 `State.Stunned`、击杀 Boss、切换到 Victory/Defeat，并中断 Montage。
+3. 让当前玩家死亡，确认最多一个 `0.2s` Service 周期内清除或切换目标。
 
 ### 双人 Listen Server
 
@@ -98,6 +90,50 @@
 - Ability Task 正常结束后继续决策；Abort、终局或死亡时没有迟到 GroundSlam、残留 Delegate、Focus 或 CombatTarget。
 - 墙体遮挡时不会原地反复空转，恢复攻击路径后能及时从 Chase 切回 GroundSlam。
 - 两人目标切换符合 `150` 单位滞回，当前目标死亡后可靠追击存活玩家。
+
+## Boss Charge 编译、资产与行为树
+
+### 测试方法
+
+1. 关闭 Live Coding 后编译窄范围 `ProjectArcaneArenaEditor Win64 Development`，重启编辑器并确认新增 Charge 原生类型与标签可见。
+2. 执行 `Content/Python/boss/setup_boss_charge.py` 两次，确认没有 `_1`、`_2` 资产，`BP_ArenaBossCharacter.StartupAbilities` 中 GroundSlam 与 Charge 各一份。
+3. 按 `Content/Python/boss/README.md` 在 `BT_ArenaBoss` 中连接 `GroundSlam -> Charge -> Chase -> Wait`，保存并重新打开树检查参数。
+4. 检查 `AS_BossCharge` 未启用 Root Motion，`GA_BossCharge` 已连接 `AM_BossCharge`、`GE_Damage` 和 `GE_Cooldown_BossCharge`。
+5. 打开三个 Charge GameplayCue，确认 Telegraph 使用 Boss 专属直线 Niagara、Active 使用 Boss 专属 Dash Aura、Impact 使用 Boss 专属 Mystic Hit。
+
+首次脚本已成功保存 Charge 资产，但同一编辑器会话中复制模板曾让 Active/Impact 临时以 Shield/Physical 旧 Tag 注册。生成器已改为直接创建原生 Looping/Burst 子类；关闭并重启编辑器后使用修正版重跑，确认 Output Log 不再出现这两条 `AddGameplayCueData_Internal` 冲突。
+
+### 通过标准
+
+- C++/UHT 编译通过，脚本重复执行不会覆盖 Behavior Tree 图、重复 Ability 或创建后缀资产。
+- Telegraph Cue 的世界位置不附着 Boss，方向来自 `Normal`，长度来自 `RawMagnitude`；Active Cue 附着 Boss 并与 Ability 成对结束。
+- Behavior Tree 近距离优先 GroundSlam，`350-900` 中距离可选 Charge，技能冷却或条件失败时回退 Chase。
+
+## Boss Charge 单人与双人闭环
+
+### 单人 PIE
+
+1. 在 `350-900` 距离触发 Charge，观察默认 `0.8s` 固定预警；前摇中横向移动，确认 Boss 仍沿锁定直线冲过原目标位置约 `150` 单位。
+2. 分别测试到达终点与撞墙：到达终点不额外产生 Impact，撞墙在阻挡点产生一次 Impact 并立即停止。
+3. 在路径上使用 Shield 和 Dash，确认 Shield-first 与无敌规则；让同一玩家胶囊持续位于 Sweep 中，确认一次 Charge 最多结算一次物理伤害。
+4. 在前摇和冲刺期间分别让目标死亡、给 Boss 添加 `State.Stunned`、击杀 Boss、中断 Montage，并切换到 Victory/Defeat。
+5. 分别在顶视角和第三人称观察预警长度、方向、速度、Active Cue 和 Impact 可读性。
+
+2026-07-20 首轮单人结果：BT 分支顺序与两项 StartupAbilities 已确认；中距离触发、锁向冲锋、横移躲避、单目标单次命中、撞墙/终点结束、冷却回退和正常表现清理通过。原 `0.6s` 预警不够明显，高差路径会在坡顶提前停止；代码已改为默认 `0.8s` 加宽抬高预警，并忽略可行走地面 Hit，等待编译和脚本重跑后复测。`State.Attacking`/RootMotion 内部清理、异常取消、Victory/Defeat 与双人测试仍未完成；当前孤立测试环境没有自然终局入口。
+
+### 双人 Listen Server
+
+1. 把两名玩家放在同一 Charge 路径上，确认 Boss 贯穿两人且每人最多结算一次。
+2. 让非锁定玩家进入路径挡枪，确认同样受伤但不阻挡 Boss；锁定玩家横移离线时可躲避。
+3. Host 与 Client 同时观察预警、Montage、Boss 位移、Active/Impact Cue、Shield/Health 和伤害次数。
+4. 在 Charge 前摇与冲刺中让当前目标死亡，确认 BT Task 结束后重新选择存活玩家。
+
+### 通过标准
+
+- 只有服务器执行 RootMotion Sweep 和 `GE_Damage`；两端看到同一个 Boss、同一条锁定路径和同一组 Cue。
+- 每名存活玩家一次 Charge 最多被处理一次，玩家不会阻挡 Boss，世界阻挡物会终止 Charge。
+- 所有正常、撞墙和取消路径均不残留 Timer、RootMotion、速度、Montage、Cue、临时碰撞响应、`State.Attacking` 或 BT Task。
+- GroundSlam、Charge 与 Chase 能按距离、冷却和状态切换，不同时激活，也不会永久停滞。
 
 ## 测试记录格式
 

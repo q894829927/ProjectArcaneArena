@@ -42,7 +42,7 @@ public:
 	float GetPrimaryAttackRange() const;
 	// 使用主攻击自身的视线或弹道规则判断当前目标是否可攻击。
 	bool HasPrimaryAttackPath(AActor* TargetActor);
-	// 取消当前主攻击实例，目标死亡或失效时阻止迟到命中和 Projectile。
+	// 取消所有正在运行的 EnemyAttackBase 实例，供多技能 Boss 和普通敌人共享异常清理。
 	void CancelPrimaryAttack();
 	// 由 AIController 通过 AbilityTag 请求激活近战技能。
 	bool TryActivateMeleeAttack();

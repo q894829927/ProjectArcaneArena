@@ -1,6 +1,6 @@
 # Boss Foundation 资产生成
 
-本目录负责 Boss Foundation 与阶段二 A 决策资产的幂等创建和连接；阶段二 A 只把现有 GroundSlam 接入 Behavior Tree，不包含 Charge、FireZone、阶段切换或演出逻辑。
+本目录负责 Boss Foundation、阶段二 A 决策资产和阶段二 B Charge 资产的幂等创建与连接。Behavior Tree 图始终由编辑器手动维护，脚本不会覆盖已经连接的节点。
 
 ## 使用前提
 
@@ -59,6 +59,39 @@ Content/Python/boss/setup_boss_decision.py
 
 保存并编译 `BP_ArenaBossAIController`、`BP_ArenaBossCharacter`、`BB_ArenaBoss` 和 `BT_ArenaBoss`。墙体阻挡攻击路径时，GroundSlam Decorator 会失败，Selector 会继续执行 Chase；重新获得合法攻击路径后，Decorator 会中断低优先级 MoveTo。
 
+## 阶段二 B：Boss Charge
+
+完整编译并重启编辑器后执行：
+
+```text
+Content/Python/boss/setup_boss_charge.py
+```
+
+也可以在编辑器控制台执行：
+
+```text
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_charge.py"
+```
+
+脚本会创建或复用 `AS_BossCharge`、`AM_BossCharge`、`GA_BossCharge`、Charge 冷却和三个 GameplayCue，并把 `GA_BossCharge` 向 `BP_ArenaBossCharacter.StartupAbilities` 追加且只保留一份。Active/Impact Cue 直接继承原生 Looping/Burst 类，避免复制模板时被 GameplayCueManager 临时注册为模板旧 Tag；脚本不修改 `BT_ArenaBoss` 图。
+
+打开 `BT_ArenaBoss`，把现有优先级调整为 `GroundSlam -> Charge -> Chase -> Wait`：
+
+1. 在 `GroundSlam` 与 `Chase` 之间新建 `Sequence`，命名为 `Charge`。
+2. 给 `Charge` 添加 Blackboard Decorator：`TargetActor Is Set`，`Observer Aborts=Both`。
+3. 再添加 `Arena Boss Can Activate Ability` Decorator：`TargetActorKey=TargetActor`、`AbilityTag=Ability.Enemy.Boss.Charge`、`Observer Aborts=Lower Priority`。不要设为 `Self` 或 `Both`，否则 Ability 添加 `State.Attacking` 后会中断自身。
+4. 在该 Sequence 内添加 `Arena Boss Activate Ability` Task：`TargetActorKey=TargetActor`、`AbilityTag=Ability.Enemy.Boss.Charge`。
+5. 确认左到右分支顺序严格为 `GroundSlam`、`Charge`、`Chase`、`Wait`，然后保存 Behavior Tree。
+
+最后打开并 Compile `BP_ArenaBossCharacter`，确认 `StartupAbilities` 同时包含且各只有一份：
+
+- `GA_BossGroundSlam`
+- `GA_BossCharge`
+
+Charge Decorator 会从 Ability CDO 读取 `350` 最小距离和 `900` 最大距离。近距离优先进入 GroundSlam，中距离可进入 Charge，技能不可用时回退 Chase。
+
+默认 Charge Telegraph 持续 `0.8s`；原生 Cue 会把 Niagara 沿路径长度缩放，并使用 `WidthScale=3`、`HeightScale=2`、`VerticalOffset=12` 提高双视角可读性。修改这些参数后应重新保存 `GCN_BossCharge_Telegraph`。
+
 开始 PIE 前还要在 Class Defaults 中确认：
 
 - `BP_ArenaBossAIController.BehaviorTreeAsset = BT_ArenaBoss`
@@ -76,6 +109,16 @@ Output Log 如果出现 `ArenaBossAIController_0 is missing BehaviorTreeAsset or
 - `/Game/Boss/GAS/GameplayCue/GCN_BossGroundSlam_Telegraph`
 - `/Game/Boss/GAS/GameplayCue/GCN_BossGroundSlam_Impact`
 - `/Game/Boss/Animation/AM_BossGroundSlam`
+- `/Game/Boss/GAS/GameplayAbility/GA_BossCharge`
+- `/Game/Boss/GAS/GameplayEffect/GE_Cooldown_BossCharge`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossCharge_Telegraph`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossCharge_Active`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossCharge_Impact`
+- `/Game/Boss/Animation/AS_BossCharge`
+- `/Game/Boss/Animation/AM_BossCharge`
+- `/Game/Boss/VFX/NS_BossCharge_Telegraph`
+- `/Game/Boss/VFX/NS_BossCharge_Active`
+- `/Game/Boss/VFX/NS_BossCharge_Impact`
 - Boss 直接引用的 Mesh、AnimBP、Animation 与 Niagara 副本
 - `DA_Waves_Prototype` 现有普通波次之后的唯一最终 Boss 波
 

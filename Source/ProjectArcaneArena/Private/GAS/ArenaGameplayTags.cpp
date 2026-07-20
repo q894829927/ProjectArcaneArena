@@ -40,6 +40,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_RangedAttack, "Cooldown.Enemy.RangedAttack", "Enemy ranged attack cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_Boss_GroundSlam, "Ability.Enemy.Boss.GroundSlam", "Boss fixed-location ground slam ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_Boss_GroundSlam, "Cooldown.Enemy.Boss.GroundSlam", "Boss ground slam cooldown.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_Boss_Charge, "Ability.Enemy.Boss.Charge", "Boss locked-direction charge ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_Boss_Charge, "Cooldown.Enemy.Boss.Charge", "Boss charge cooldown.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_BasicAttack_Activate, "GameplayCue.Ability.BasicAttack.Activate", "Basic attack activation presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Fireball_Cast, "GameplayCue.Ability.Fireball.Cast", "Confirmed fireball cast presentation.");
@@ -52,6 +54,9 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_EnemyMelee_Activate, "GameplayCue.Ability.EnemyMelee.Activate", "Enemy melee activation presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_GroundSlam_Telegraph, "GameplayCue.Ability.Boss.GroundSlam.Telegraph", "Boss ground slam warning at the committed world location.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_GroundSlam_Impact, "GameplayCue.Ability.Boss.GroundSlam.Impact", "Boss ground slam impact at the committed world location.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Charge_Telegraph, "GameplayCue.Ability.Boss.Charge.Telegraph", "Boss charge warning along the committed world-space line.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Charge_Active, "GameplayCue.Ability.Boss.Charge.Active", "Boss charge active presentation attached to the Boss.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Charge_Impact, "GameplayCue.Ability.Boss.Charge.Impact", "Boss charge contact or wall impact presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Fire, "GameplayCue.Hit.Fire", "Confirmed fire damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Lightning, "GameplayCue.Hit.Lightning", "Confirmed lightning damage hit presentation.");

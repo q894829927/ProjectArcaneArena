@@ -25,6 +25,35 @@ bool UArenaGameplayAbility_EnemyAttackBase::HasAttackPathForAI(
 	return HasAttackLineOfSight(SourceEnemy, TargetActor);
 }
 
+// 在服务器一次性完成通用攻击前置流程，派生 Ability 可在成功后接管自己的预警、位移和命中生命周期。
+bool UArenaGameplayAbility_EnemyAttackBase::BeginServerAttack(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo,
+	AArenaEnemyCharacter*& OutSourceEnemy,
+	AActor*& OutTargetActor,
+	UAbilitySystemComponent*& OutSourceASC)
+{
+	OutSourceEnemy = ActorInfo ? Cast<AArenaEnemyCharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
+	OutSourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+	OutTargetActor = OutSourceEnemy ? OutSourceEnemy->GetCombatTarget() : nullptr;
+	UAbilitySystemComponent* TargetASC = nullptr;
+	if (!OutSourceEnemy || !OutSourceASC || !HasRequiredAttackConfiguration()
+		|| !IsAttackTargetValid(OutSourceEnemy, OutTargetActor, TargetASC, true)
+		|| !CommitAbility(Handle, ActorInfo, ActivationInfo))
+	{
+		return false;
+	}
+
+	ActiveSourceEnemy = OutSourceEnemy;
+	ActiveTargetActor = OutTargetActor;
+	ActiveSourceASC = OutSourceASC;
+	bProcessedRelease = false;
+	bMontageCompleted = false;
+	ApplyAttackStateTag();
+	return true;
+}
+
 // 校验并锁定 AI 当前目标，提交后启动可复制 Montage，并按配置使用固定时间或动作结束点释放。
 void UArenaGameplayAbility_EnemyAttackBase::ActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
@@ -32,29 +61,20 @@ void UArenaGameplayAbility_EnemyAttackBase::ActivateAbility(
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
 {
-	AArenaEnemyCharacter* SourceEnemy = ActorInfo ? Cast<AArenaEnemyCharacter>(ActorInfo->AvatarActor.Get()) : nullptr;
-	UAbilitySystemComponent* SourceASC = ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-	AActor* TargetActor = SourceEnemy ? SourceEnemy->GetCombatTarget() : nullptr;
-	UAbilitySystemComponent* TargetASC = nullptr;
-	if (!SourceEnemy || !SourceASC || !HasRequiredAttackConfiguration()
-		|| !IsAttackTargetValid(SourceEnemy, TargetActor, TargetASC, true))
+	AArenaEnemyCharacter* SourceEnemy = nullptr;
+	AActor* TargetActor = nullptr;
+	UAbilitySystemComponent* SourceASC = nullptr;
+	if (!BeginServerAttack(
+		Handle,
+		ActorInfo,
+		ActivationInfo,
+		SourceEnemy,
+		TargetActor,
+		SourceASC))
 	{
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
-
-	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
-	{
-		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
-		return;
-	}
-
-	ActiveSourceEnemy = SourceEnemy;
-	ActiveTargetActor = TargetActor;
-	ActiveSourceASC = SourceASC;
-	bProcessedRelease = false;
-	bMontageCompleted = false;
-	ApplyAttackStateTag();
 
 	const FGameplayTag ActivationCueTag = GetAttackActivationCueTag();
 	if (ActivationCueTag.IsValid())
@@ -158,7 +178,7 @@ void UArenaGameplayAbility_EnemyAttackBase::ExecuteAttack(
 {
 }
 
-// 校验权威来源与存活目标，并允许派生攻击在释放阶段跳过距离和视线复验。
+// 校验权威来源与存活目标，并在需要时应用派生攻击的最小/最大距离、容差和视线规则。
 bool UArenaGameplayAbility_EnemyAttackBase::IsAttackTargetValid(
 	AArenaEnemyCharacter* SourceEnemy,
 	AActor* TargetActor,
@@ -175,9 +195,18 @@ bool UArenaGameplayAbility_EnemyAttackBase::IsAttackTargetValid(
 		&& OutTargetASC != SourceASC
 		&& !OutTargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 		&& (!bCheckRangeAndLineOfSight
-			|| (FVector::Dist2D(SourceEnemy->GetActorLocation(), TargetActor->GetActorLocation())
-				<= GetAttackRange() + GetAttackRangeTolerance()
-				&& HasAttackLineOfSight(SourceEnemy, TargetActor)));
+			|| ([this, SourceEnemy, TargetActor]()
+			{
+				const float Distance = FVector::Dist2D(
+					SourceEnemy->GetActorLocation(),
+					TargetActor->GetActorLocation());
+				const float Tolerance = FMath::Max(GetAttackRangeTolerance(), 0.0f);
+				const float MinimumRange = FMath::Max(GetMinimumAttackRange() - Tolerance, 0.0f);
+				const float MaximumRange = FMath::Max(GetAttackRange(), 0.0f) + Tolerance;
+				return Distance >= MinimumRange
+					&& Distance <= MaximumRange
+					&& HasAttackLineOfSight(SourceEnemy, TargetActor);
+			}()));
 }
 
 // 到达权威释放时机后只处理一次；远程可跳过距离复验以兑现已经完成的施法。
