@@ -119,7 +119,7 @@
 4. 在前摇和冲刺期间分别让目标死亡、给 Boss 添加 `State.Stunned`、击杀 Boss、中断 Montage，并切换到 Victory/Defeat。
 5. 分别在顶视角和第三人称观察预警长度、方向、速度、Active Cue 和 Impact 可读性。
 
-2026-07-20 首轮单人结果：BT 分支顺序与两项 StartupAbilities 已确认；中距离触发、锁向冲锋、横移躲避、单目标单次命中、撞墙/终点结束、冷却回退和正常表现清理通过。原 `0.6s` 预警不够明显，高差路径会在坡顶提前停止；代码已改为默认 `0.8s` 加宽抬高预警，并忽略可行走地面 Hit，等待编译和脚本重跑后复测。`State.Attacking`/RootMotion 内部清理、异常取消、Victory/Defeat 与双人测试仍未完成；当前孤立测试环境没有自然终局入口。
+2026-07-21 单人进度：BT 分支顺序与两项 StartupAbilities 已确认；中距离触发、锁向冲锋、横移躲避、单目标单次命中、撞墙/终点结束、冷却回退和正常表现清理通过。AbilitySystem Debug Target 已确认 Charge 期间存在 `State.Attacking`，结束后标签消失且 Boss 能恢复 Chase/Attack，因此正常 RootMotion 与 BT Task 退出通过。原 `0.6s` 预警不够明显，高差路径会在坡顶提前停止；代码已改为默认 `0.8s` 加宽抬高预警，并忽略可行走地面 Hit，等待复测。异常取消、Victory/Defeat 与双人测试仍未完成；当前孤立测试环境没有自然终局入口。
 
 ### 双人 Listen Server
 

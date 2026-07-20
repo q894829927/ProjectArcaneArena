@@ -151,6 +151,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 首次生成期间 Active/Impact Cue 曾在改写 Tag 前被编辑器临时按 Shield/Physical 模板 Tag 注册；脚本现已改为直接从原生 Looping/Burst 类创建新 Cue，并显式保存冷却 GE，现有资产需重启编辑器后重跑确认注册结果。
 - 已在 `Content/Python/boss/README.md` 记录 `GroundSlam -> Charge -> Chase -> Wait` 的手工接线顺序和 Charge 节点参数。
 - 已完成 Charge 单人核心行为的首轮验收：行为树分支与 StartupAbilities 配置正确，中距离能进入锁向冲锋，玩家可横移躲避，每名玩家最多受伤一次，撞墙和到达终点均会结束，冷却期间回退 Chase/GroundSlam，正常结束未观察到速度或表现残留。
+- 已使用 AbilitySystem Debug Target 验证正常 Charge 生命周期：冲锋期间存在 `State.Attacking`，结束后标签消失，Boss 随后恢复 Chase/Attack，未残留 RootMotion 或 BT Task 阻塞。
 - 根据首轮验收反馈，Charge 碰撞结束逻辑已改为忽略 `CharacterMovement` 判定为可行走的地面 Hit，避免斜坡/台阶被误认为墙；Telegraph 默认加宽、抬高并延长到 `0.8s`，等待重新编译与资产脚本同步后复测。
 
 尚未完成或尚未验证：
