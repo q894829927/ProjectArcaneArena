@@ -12,7 +12,7 @@ DEFINE_LOG_CATEGORY(LogArenaBossAI);
 
 const FName AArenaBossAIController::TargetActorKeyName(TEXT("TargetActor"));
 
-// Boss Controller 不启用普通敌人的决策 Tick，所有选择由服务器 BehaviorTree 驱动。
+// Boss Controller 不启用普通敌人的决策 Tick，寻路与朝向分别交给 BehaviorTree 和 CharacterMovement。
 AArenaBossAIController::AArenaBossAIController()
 {
 	PrimaryActorTick.bCanEverTick = false;

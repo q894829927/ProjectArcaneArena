@@ -79,10 +79,11 @@
 2026-07-20 首次运行结果：失败。Output Log 显示运行时生成 `ArenaBossAIController_0`，其 `BehaviorTreeAsset` 为空，说明 `BP_ArenaBossCharacter` 的蓝图 Controller 覆盖未在运行时生效；需重新设置并 Compile 两个相关 Blueprint 后复测。
 
 1. 确认 Boss 获取玩家、追击，并在合法路径和攻击距离内停止移动后释放一次 GroundSlam。
-2. 冷却期间确认 Boss 执行 Chase；冷却完成且条件满足后，GroundSlam Decorator 中断低优先级 MoveTo。
-3. 在 Boss 与玩家间加入墙体，确认攻击路径失败时继续寻路；重新取得合法路径后恢复攻击。
-4. GroundSlam 前摇期间分别施加 `State.Stunned`、击杀 Boss、切换到 Victory/Defeat，并中断 Montage。
-5. 让当前玩家死亡，确认最多一个 `0.2s` Service 周期内清除或切换目标。
+2. 让玩家沿直线、斜线和绕障碍移动，确认 Boss 胶囊朝向跟随路径速度，正常追击时不持续侧走或倒走；急转弯只允许短暂转身过渡。
+3. 冷却期间确认 Boss 执行 Chase；冷却完成且条件满足后，GroundSlam Decorator 中断低优先级 MoveTo。
+4. 在 Boss 与玩家间加入墙体，确认攻击路径失败时继续寻路；重新取得合法路径后恢复攻击。
+5. GroundSlam 前摇期间分别施加 `State.Stunned`、击杀 Boss、切换到 Victory/Defeat，并中断 Montage。
+6. 让当前玩家死亡，确认最多一个 `0.2s` Service 周期内清除或切换目标。
 
 ### 双人 Listen Server
 

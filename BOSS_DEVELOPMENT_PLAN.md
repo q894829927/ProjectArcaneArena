@@ -131,6 +131,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 已完成实现：
 
 - 已新增服务器专用 `AArenaBossAIController`，Boss 原生默认 Controller 不再使用普通敌人的低频 Tick 决策；普通近战与远程敌人保持现有 `AArenaEnemyAIController`。
+- 已明确 Boss 移动朝向职责：Behavior Tree 保留原有 `Move To` 路径行为，关闭角色 Controller Yaw，`CharacterMovement` 以 `720 deg/s` 面向路径速度；进入攻击 Task 时仍立即水平朝向校验目标。
 - Controller 仅在 `Combat` 阶段且 Boss 未死亡、未眩晕时启动配置的 Behavior Tree；死亡、眩晕、终局、`UnPossess` 和 `EndPlay` 会停止 Brain/寻路、清除 Focus、Blackboard `TargetActor`、`CombatTarget` 并取消当前主攻击。
 - 已新增 `UBTService_ArenaBossUpdateTarget`，每 `0.2s` 从 `GameState.PlayerArray` 选择最近存活玩家，并以 `150` 单位距离优势作为切换滞回；攻击期间锁定仍存活的当前目标，目标失效时先取消旧攻击，再同步 Blackboard 与 Boss `CombatTarget`。
 - 已新增 `UBTDecorator_ArenaBossCanActivateAbility`，按精确 AssetTag 查找唯一 AbilitySpec，检查 Combat 阶段、目标、Boss 状态、攻击距离、攻击路径以及 GAS `CanActivateAbility()`；条件变化时支持中断低优先级 Chase。
