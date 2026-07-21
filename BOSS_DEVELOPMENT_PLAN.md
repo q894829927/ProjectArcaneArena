@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前开发阶段为“阶段二 B：Boss Charge”，状态为 `Partial`。阶段一已完成关键双人闭环验收，阶段二 A 的单人核心追击/攻击循环已通过；Charge 分支已经接入 Behavior Tree 并完成首轮单人核心验收，仍需重编译复测预警与高差修正、异常取消和双人权威行为。
+当前开发阶段为“阶段二 C：Boss FireZone”，状态为 `Partial`。阶段一已完成关键双人闭环验收，阶段二 A 的单人核心追击/攻击循环已通过，Charge 分支已完成首轮单人核心验收；FireZone 运行时代码和生成资产已加入，仍需完成编译、Behavior Tree 接线及单人/双人权威验收。
 
 ---
 
@@ -60,7 +60,7 @@
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-20。
+状态：`Partial`，最后更新：2026-07-21。
 
 已完成实现：
 
@@ -153,6 +153,15 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已完成 Charge 单人核心行为的首轮验收：行为树分支与 StartupAbilities 配置正确，中距离能进入锁向冲锋，玩家可横移躲避，每名玩家最多受伤一次，撞墙和到达终点均会结束，冷却期间回退 Chase/GroundSlam，正常结束未观察到速度或表现残留。
 - 已使用 AbilitySystem Debug Target 验证正常 Charge 生命周期：冲锋期间存在 `State.Attacking`，结束后标签消失，Boss 随后恢复 Chase/Attack，未残留 RootMotion 或 BT Task 阻塞。
 - 根据首轮验收反馈，Charge 碰撞结束逻辑已改为忽略 `CharacterMovement` 判定为可行走的地面 Hit，避免斜坡/台阶被误认为墙；Telegraph 默认加宽、抬高并延长到 `0.8s`，等待重新编译与资产脚本同步后复测。
+- 已实现 `UArenaGameplayAbility_BossFireZone`：服务器在 Commit 前验证视线并解析目标脚下地面，Commit 后固定落点和 `1.0s` 预警；目标随后移动、死亡或失去视线不会取消已承诺的固定火区。
+- FireZone 复用敌人攻击基类的 Montage、Commit、`State.Attacking` 与取消生命周期，并只在前摇期间添加复制的 `State.Casting`；Stun、Boss 死亡、终局、Montage 中断或 BT Abort 会阻止迟到 Area。
+- 已新增复制的 `AArenaBossFireZoneArea`：生成时立即结算第一跳，随后每 `0.5s` 运行服务器 Timer，默认持续 `5s`、半径 `300`、最多十跳；每个 Area 每 Tick 对同一玩家最多结算一次，并通过 `GE_Damage + Damage.Fire` 复用既有伤害管线。
+- FireZone Area 使用严格二维半径和垂直高度过滤，允许多个区域独立重叠；每个复制 Area 以自身作为本地 GameplayCue Target，单个区域销毁不会移除其他同 Tag 火区表现。
+- FireZone Area 在来源 Boss 死亡/销毁或 GameState 离开 `Combat` 时立即销毁并清理 Timer、ASC/GameState/Actor 委托和持续 Cue；Boss 在 Area 生成后被 Stun 不会清除已落地火区。
+- 已新增 FireZone Ability、Cooldown 与 Telegraph/Active GameplayCue 原生标签、八秒冷却 GE，以及按真实半径动态缩放 Niagara 的 `AArenaGameplayCueNotify_BossFireZoneRadius`。
+- 已新增幂等 `Content/Python/boss/setup_boss_fire_zone.py`，用于创建 FireZone 动画副本、无 Root Motion Montage、GA/GE、复制 Area、两个 Boss 专属 Niagara/Cue，并向 Boss `StartupAbilities` 追加且只保留一份 FireZone；脚本不会修改 Behavior Tree 图。
+- 已在 `Content/Python/boss/README.md` 记录 `GroundSlam -> Charge -> FireZone -> Chase -> Wait` 的手工接线顺序、三个 StartupAbilities 和 FireZone 节点参数。
+- `setup_boss_fire_zone.py` 已输出成功日志，并已将动画、Montage、两个 Niagara、GA、Cooldown、Area、两个 Cue 和更新后的 Boss Character 全部保存到磁盘。
 
 尚未完成或尚未验证：
 
@@ -161,7 +170,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 双人 `150` 单位目标切换滞回、当前目标死亡后的存活玩家重选，以及单次权威 GroundSlam 仍待 PIE 验收。
 - 尚未验证 `setup_boss_decision.py` 连续执行不会生成重复资产或覆盖已连接的 Behavior Tree 图。
 - 修正版脚本重跑、加强后的 Telegraph 可读性、斜坡高差移动、Stun/死亡/终局/Montage 中断清理和多人 Sweep 尚未验证。
-- FireZone 与 EQS 尚未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
+- FireZone 尚未完成 C++/UHT 编译、Behavior Tree 手工接线、单人/双人伤害与清理验收；EQS 仍未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
 
 ### 阶段边界
 

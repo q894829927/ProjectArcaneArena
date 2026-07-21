@@ -1,0 +1,45 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameplayCueNotify_Actor.h"
+#include "ArenaGameplayCueNotify_BossFireZoneRadius.generated.h"
+
+class UNiagaraComponent;
+class UNiagaraSystem;
+
+UCLASS(Blueprintable, NotPlaceable)
+class PROJECTARCANEARENA_API AArenaGameplayCueNotify_BossFireZoneRadius : public AGameplayCueNotify_Actor
+{
+	GENERATED_BODY()
+
+public:
+	// 创建固定世界位置的圆形 Niagara 组件，蓝图子类只需配置具体系统和缩放基准。
+	AArenaGameplayCueNotify_BossFireZoneRadius();
+
+protected:
+	// 首次收到持续 Cue 时按 RawMagnitude 表示的真实半径启动圆形表现。
+	virtual bool OnActive_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) override;
+	// 客户端中途同步持续 Cue 时按同一组参数重建圆形表现。
+	virtual bool WhileActive_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) override;
+	// Cue 移除时立即停止 Niagara，避免预警或火区残留。
+	virtual bool OnRemove_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters) override;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone")
+	TObjectPtr<UNiagaraSystem> ZoneSystem;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone", meta = (ClampMin = "1.0"))
+	float ReferenceRadius = 100.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone")
+	float VerticalOffset = 10.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone", meta = (ClampMin = "0.01"))
+	float HeightScale = 1.0f;
+
+private:
+	// 把固定位置和真实半径转换为世界 Transform，并激活当前蓝图配置的 Niagara。
+	bool ConfigureAndActivate(const FGameplayCueParameters& Parameters);
+
+	UPROPERTY(VisibleAnywhere, Category = "Arena|Boss|Fire Zone")
+	TObjectPtr<UNiagaraComponent> ZoneComponent;
+};

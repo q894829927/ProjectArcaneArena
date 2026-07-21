@@ -1,6 +1,6 @@
 # Boss Foundation 资产生成
 
-本目录负责 Boss Foundation、阶段二 A 决策资产和阶段二 B Charge 资产的幂等创建与连接。Behavior Tree 图始终由编辑器手动维护，脚本不会覆盖已经连接的节点。
+本目录负责 Boss Foundation、阶段二 A 决策资产、阶段二 B Charge 和阶段二 C FireZone 资产的幂等创建与连接。Behavior Tree 图始终由编辑器手动维护，脚本不会覆盖已经连接的节点。
 
 ## 使用前提
 
@@ -100,6 +100,40 @@ Charge Decorator 会从 Ability CDO 读取 `350` 最小距离和 `900` 最大距
 
 Output Log 如果出现 `ArenaBossAIController_0 is missing BehaviorTreeAsset or BlackboardAsset`，表示运行时仍生成了原生 Controller。重新设置并 Compile 上述两个 Blueprint，停止当前 PIE 后重新开始；正确的运行时 Controller 名称通常包含 `BP_ArenaBossAIController_C`。
 
+## 阶段二 C：Boss FireZone
+
+完整编译并重启编辑器后执行：
+
+```text
+Content/Python/boss/setup_boss_fire_zone.py
+```
+
+也可以在编辑器控制台执行：
+
+```text
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_fire_zone.py"
+```
+
+脚本会创建或复用 `AS_BossFireZone`、`AM_BossFireZone`、`GA_BossFireZone`、FireZone 冷却、复制 Area 和两个半径 Cue，并把 `GA_BossFireZone` 向 `BP_ArenaBossCharacter.StartupAbilities` 追加且只保留一份。脚本不修改 `BT_ArenaBoss` 图。
+
+打开 `BT_ArenaBoss`，把现有优先级调整为 `GroundSlam -> Charge -> FireZone -> Chase -> Wait`：
+
+1. 在 `Charge` 与 `Chase` 之间新建 `Sequence`，命名为 `FireZone`。
+2. 给 `FireZone` 添加 Blackboard Decorator：`TargetActor Is Set`，`Observer Aborts=Both`。
+3. 再添加 `Arena Boss Can Activate Ability` Decorator：`TargetActorKey=TargetActor`、`AbilityTag=Ability.Enemy.Boss.FireZone`、`Observer Aborts=Lower Priority`。不要设为 `Self` 或 `Both`，否则 Ability 添加 `State.Attacking` 后会中断自身。
+4. 在该 Sequence 内添加 `Arena Boss Activate Ability` Task：`TargetActorKey=TargetActor`、`AbilityTag=Ability.Enemy.Boss.FireZone`。
+5. 确认左到右分支顺序严格为 `GroundSlam`、`Charge`、`FireZone`、`Chase`、`Wait`，然后保存 Behavior Tree。
+
+最后打开并 Compile `BP_ArenaBossCharacter`，确认 `StartupAbilities` 同时包含且各只有一份：
+
+- `GA_BossGroundSlam`
+- `GA_BossCharge`
+- `GA_BossFireZone`
+
+FireZone Decorator 从 Ability CDO 读取 `600` 最小距离和 `1200` 最大距离。`600-900` 内 Charge 优先，Charge 冷却时可回退 FireZone；`900-1200` 主要由 FireZone 覆盖。找不到目标脚下地面或存在视线阻挡时，分支失败并继续 Chase。
+
+默认 FireZone 固定预警 `1.0s`，半径 `300`，持续 `5s`，生成时立即结算第一跳并每 `0.5s` 继续结算。多个复制 Area 使用各自本地 Cue Target，不会在移除一个火区时清掉其他重叠火区。
+
 ## 生成内容
 
 - `/Game/Boss/Character/BP_ArenaBossCharacter`
@@ -119,6 +153,15 @@ Output Log 如果出现 `ArenaBossAIController_0 is missing BehaviorTreeAsset or
 - `/Game/Boss/VFX/NS_BossCharge_Telegraph`
 - `/Game/Boss/VFX/NS_BossCharge_Active`
 - `/Game/Boss/VFX/NS_BossCharge_Impact`
+- `/Game/Boss/GAS/GameplayAbility/GA_BossFireZone`
+- `/Game/Boss/GAS/GameplayEffect/GE_Cooldown_BossFireZone`
+- `/Game/Boss/GAS/Area/BP_ArenaBossFireZoneArea`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossFireZone_Telegraph`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossFireZone_Active`
+- `/Game/Boss/Animation/AS_BossFireZone`
+- `/Game/Boss/Animation/AM_BossFireZone`
+- `/Game/Boss/VFX/NS_BossFireZone_Telegraph`
+- `/Game/Boss/VFX/NS_BossFireZone_Active`
 - Boss 直接引用的 Mesh、AnimBP、Animation 与 Niagara 副本
 - `DA_Waves_Prototype` 现有普通波次之后的唯一最终 Boss 波
 

@@ -69,7 +69,9 @@ protected:
 	virtual bool HasAttackLineOfSight(AArenaEnemyCharacter* SourceEnemy, AActor* TargetActor) const;
 	// 决定释放时是否再次检查距离和视线；近战默认复验，已完成前摇的远程攻击可选择保证发射。
 	virtual bool ShouldRevalidateRangeAndLineOfSightAtRelease() const { return true; }
-	// 在服务器释放时执行派生攻击，目标已通过存活校验和该攻击类型要求的可选空间复验。
+	// 决定释放时是否仍要求最初目标存活；固定世界落点技能可在 Commit 后独立兑现。
+	virtual bool ShouldRequireLivingTargetAtRelease() const { return true; }
+	// 在服务器释放时执行派生攻击；目标可能为空，具体存活和空间要求由上述释放策略决定。
 	virtual void ExecuteAttack(
 		AArenaEnemyCharacter* SourceEnemy,
 		AActor* TargetActor,

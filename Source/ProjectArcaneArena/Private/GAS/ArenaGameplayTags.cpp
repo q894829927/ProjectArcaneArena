@@ -42,6 +42,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_Boss_GroundSlam, "Cooldown.Enemy.Boss.GroundSlam", "Boss ground slam cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_Boss_Charge, "Ability.Enemy.Boss.Charge", "Boss locked-direction charge ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_Boss_Charge, "Cooldown.Enemy.Boss.Charge", "Boss charge cooldown.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_Boss_FireZone, "Ability.Enemy.Boss.FireZone", "Boss fixed-location periodic fire zone ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_Boss_FireZone, "Cooldown.Enemy.Boss.FireZone", "Boss fire zone cooldown.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_BasicAttack_Activate, "GameplayCue.Ability.BasicAttack.Activate", "Basic attack activation presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Fireball_Cast, "GameplayCue.Ability.Fireball.Cast", "Confirmed fireball cast presentation.");
@@ -57,6 +59,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Charge_Telegraph, "GameplayCue.Ability.Boss.Charge.Telegraph", "Boss charge warning along the committed world-space line.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Charge_Active, "GameplayCue.Ability.Boss.Charge.Active", "Boss charge active presentation attached to the Boss.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Charge_Impact, "GameplayCue.Ability.Boss.Charge.Impact", "Boss charge contact or wall impact presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_FireZone_Telegraph, "GameplayCue.Ability.Boss.FireZone.Telegraph", "Boss fire zone warning at the committed world location.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_FireZone_Active, "GameplayCue.Ability.Boss.FireZone.Active", "Boss persistent fire zone presentation owned by each replicated area.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Fire, "GameplayCue.Hit.Fire", "Confirmed fire damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Lightning, "GameplayCue.Hit.Lightning", "Confirmed lightning damage hit presentation.");

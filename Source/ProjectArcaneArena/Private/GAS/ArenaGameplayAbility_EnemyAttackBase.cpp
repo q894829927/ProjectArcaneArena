@@ -209,7 +209,7 @@ bool UArenaGameplayAbility_EnemyAttackBase::IsAttackTargetValid(
 			}()));
 }
 
-// 到达权威释放时机后只处理一次；远程可跳过距离复验以兑现已经完成的施法。
+// 到达权威释放时机后只处理一次；远程可跳过空间复验，固定落点技能可跳过原目标存活要求。
 void UArenaGameplayAbility_EnemyAttackBase::HandleReleaseDelayFinished()
 {
 	if (bProcessedRelease)
@@ -221,12 +221,21 @@ void UArenaGameplayAbility_EnemyAttackBase::HandleReleaseDelayFinished()
 	AArenaEnemyCharacter* SourceEnemy = ActiveSourceEnemy.Get();
 	AActor* TargetActor = ActiveTargetActor.Get();
 	UAbilitySystemComponent* SourceASC = ActiveSourceASC.Get();
-	UAbilitySystemComponent* TargetASC = nullptr;
-	if (SourceASC && IsAttackTargetValid(
-		SourceEnemy,
-		TargetActor,
-		TargetASC,
-		ShouldRevalidateRangeAndLineOfSightAtRelease()))
+	UAbilitySystemComponent* TargetASC = TargetActor
+		? UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor)
+		: nullptr;
+	const bool bHasValidSource = SourceEnemy
+		&& SourceEnemy->HasAuthority()
+		&& SourceASC
+		&& !SourceASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+		&& !SourceASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
+	const bool bHasValidReleaseTarget = !ShouldRequireLivingTargetAtRelease()
+		|| IsAttackTargetValid(
+			SourceEnemy,
+			TargetActor,
+			TargetASC,
+			ShouldRevalidateRangeAndLineOfSightAtRelease());
+	if (bHasValidSource && bHasValidReleaseTarget)
 	{
 		ExecuteAttack(SourceEnemy, TargetActor, SourceASC, TargetASC);
 	}

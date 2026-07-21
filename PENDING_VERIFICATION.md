@@ -135,6 +135,48 @@
 - 所有正常、撞墙和取消路径均不残留 Timer、RootMotion、速度、Montage、Cue、临时碰撞响应、`State.Attacking` 或 BT Task。
 - GroundSlam、Charge 与 Chase 能按距离、冷却和状态切换，不同时激活，也不会永久停滞。
 
+## Boss FireZone 编译、资产与行为树
+
+### 测试方法
+
+1. 关闭 Live Coding 后编译窄范围 `ProjectArcaneArenaEditor Win64 Development`，重启编辑器并确认 FireZone Ability、Area、Cooldown 和半径 Cue 原生类型可见。
+2. 执行 `Content/Python/boss/setup_boss_fire_zone.py` 两次，确认没有 `_1`、`_2` 资产，脚本最终输出 `Boss FireZone setup completed`，且 Boss `StartupAbilities` 中三个技能各一份。
+3. 按 `Content/Python/boss/README.md` 连接 `GroundSlam -> Charge -> FireZone -> Chase -> Wait`，保存并重新打开 Behavior Tree 检查分支顺序和标签。
+4. 检查 `AS_BossFireZone` 未启用 Root Motion，`GA_BossFireZone` 已连接 `AM_BossFireZone`、`GE_Damage`、`GE_Cooldown_BossFireZone` 和 `BP_ArenaBossFireZoneArea`。
+5. 打开两个 FireZone GameplayCue，确认 Telegraph 与 Active 分别使用 Boss 专属圆形预警和火焰 Niagara，半径缩放基准为 `100`。
+
+### 通过标准
+
+- C++/UHT 编译通过，脚本重复执行不覆盖 Behavior Tree 图、不重复 Ability，也不创建后缀资产。
+- Behavior Tree 在 `600-900` 内优先 Charge、Charge 冷却时可选择 FireZone，`900-1200` 可选择 FireZone，条件失败时回退 Chase。
+- 预警和 Active Cue 固定在解析后的地面位置，真实 `300` 半径在顶视角和第三人称均可辨认。
+
+## Boss FireZone 单人与双人闭环
+
+### 单人 PIE
+
+1. 在 `600-1200` 距离触发 FireZone，观察固定 `1.0s` 预警；前摇期间横移，确认火区仍在原锁定地面点生成。
+2. 让原目标在 Commit 后死亡或躲到墙后，确认预警仍兑现；在 Commit 前用墙遮挡或站在无法向下找到地面的位置，确认 Boss 回退 Chase。
+3. 持续站在火区中，确认生成时立即受第一跳并每 `0.5s` 继续受伤，五秒内最多十跳；离开圆柱范围或存在明显垂直高差时停止受伤。
+4. 分别使用 Shield 和 Dash，确认 Shield-first、无敌过滤与 `Damage.Fire` 命中表现；检查单个 Area 同 Tick 不重复伤害。
+5. 前摇期间对 Boss 施加 `State.Stunned`、击杀 Boss或中断 Montage，确认不生成迟到 Area；Area 生成后再 Stun，确认已落地火区继续存在。
+6. Area 存在时击杀 Boss或进入 Victory/Defeat，确认 Area、Timer 和 Active Cue 立即清除。
+7. 临时把 FireZone 冷却缩短到两秒，制造两个重叠 Area，确认伤害可独立叠加，任一 Area 到期不会提前移除另一 Area 的 Cue。
+
+### 双人 Listen Server
+
+1. Host 与 Client 同时观察同一固定预警和复制 Area，确认每次施法仅服务器生成一个 Area。
+2. 两名玩家分别进出区域，确认各自按位置独立结算，单个 Area 每玩家每 Tick 最多一次。
+3. Boss 死亡或终局时确认两端所有重叠 Area 同步销毁，没有客户端残留 Niagara。
+4. 分别在顶视角和第三人称检查预警范围、Active 火焰和移动躲避可读性。
+
+### 通过标准
+
+- 客户端不运行伤害 Timer；所有 `GE_Damage + Damage.Fire` 只由服务器应用并在两端得到一致 Shield/Health 结果。
+- Commit 后目标变化不会改变固定落点；Boss 前摇取消不会生成 Area，Area 落地后的 Boss Stun 不会错误清除它。
+- 多个重叠 Area 的 Timer、伤害次数和本地 Cue 生命周期彼此独立，Boss 死亡或离开 Combat 时全部正确清理。
+- GroundSlam、Charge、FireZone 与 Chase 能按距离、冷却和状态切换，不同时激活，也不会永久停滞。
+
 ## 测试记录格式
 
 每次执行测试时，在需要保留的失败条目下追加以下信息：
