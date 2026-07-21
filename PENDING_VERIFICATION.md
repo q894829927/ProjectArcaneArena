@@ -141,17 +141,17 @@
 
 ### 单人 PIE
 
-1. 编译新增开场缓冲后，确认 Boss 生成时可以立即选敌和 Chase，但默认前 `1.5s` 不会释放 GroundSlam、Charge 或 FireZone；缓冲结束后无需重启行为树即可正常施法。
+1. 编译并同步 Controller 蓝图后，确认 Boss 生成时可以立即选敌和 Chase，但默认前 `3.0s` 不会释放 GroundSlam、Charge 或 FireZone；缓冲结束后无需重启行为树即可正常施法。
 2. 让原目标在 Commit 后死亡或躲到墙后，确认预警仍兑现；在 Commit 前用墙遮挡或站在无法向下找到地面的位置，确认 Boss 回退 Chase。
 3. 离开圆柱范围或制造明显垂直高差，确认 FireZone 停止对该玩家造成伤害。
-4. 临时把 FireZone 冷却缩短到两秒，制造两个重叠 Area，确认伤害可独立叠加，任一 Area 到期不会提前移除另一 Area 的 Cue。
+4. 确认 Active 火焰外侧的常驻圆环 Mesh 在完整 `5s` 内显示，并与真实 `300` 半径一致；临时把 FireZone 冷却缩短到两秒，制造两个重叠 Area，确认伤害可独立叠加，任一 Area 到期不会提前移除另一 Area 的火焰或边界 Cue。
 
 ### 双人 Listen Server
 
 1. Host 与 Client 同时观察同一固定预警和复制 Area，确认每次施法仅服务器生成一个 Area。
 2. 两名玩家分别进出区域，确认各自按位置独立结算，单个 Area 每玩家每 Tick 最多一次。
 3. Boss 死亡或终局时确认两端所有重叠 Area 同步销毁，没有客户端残留 Niagara。
-4. 分别在顶视角和第三人称检查预警范围、Active 火焰和移动躲避可读性。
+4. 分别在顶视角和第三人称检查预警范围、Active 火焰、持续伤害边界圈和移动躲避可读性。
 
 ### 通过标准
 

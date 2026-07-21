@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前开发阶段为“阶段二 C：Boss FireZone”，状态为 `Partial`。阶段一已完成关键双人闭环验收，阶段二 A 的单人核心追击/攻击循环已通过，Charge 分支已完成首轮单人核心验收；FireZone 已完成编译、资产幂等、Behavior Tree 接线和单人核心验收，当前正在修正 Boss 生成后立即施法，并继续补齐多人及异常生命周期验证。
+当前开发阶段为“阶段二 C：Boss FireZone”，状态为 `Partial`。阶段一已完成关键双人闭环验收，阶段二 A 的单人核心追击/攻击循环已通过，Charge 分支已完成首轮单人核心验收；FireZone 已完成编译、资产幂等、Behavior Tree 接线和单人核心验收，当前已把开场技能缓冲提高到 `3.0s` 并为持续火区补充伤害边界圈，仍需完成资产同步及多人/异常生命周期验证。
 
 ---
 
@@ -159,13 +159,13 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已新增复制的 `AArenaBossFireZoneArea`：生成时立即结算第一跳，随后每 `0.5s` 运行服务器 Timer，默认持续 `5s`、半径 `300`、最多十跳；每个 Area 每 Tick 对同一玩家最多结算一次，并通过 `GE_Damage + Damage.Fire` 复用既有伤害管线。
 - FireZone Area 使用严格二维半径和垂直高度过滤，允许多个区域独立重叠；每个复制 Area 以自身作为本地 GameplayCue Target，单个区域销毁不会移除其他同 Tag 火区表现。
 - FireZone Area 在来源 Boss 死亡/销毁或 GameState 离开 `Combat` 时立即销毁并清理 Timer、ASC/GameState/Actor 委托和持续 Cue；Boss 在 Area 生成后被 Stun 不会清除已落地火区。
-- 已新增 FireZone Ability、Cooldown 与 Telegraph/Active GameplayCue 原生标签、八秒冷却 GE，以及按真实半径动态缩放 Niagara 的 `AArenaGameplayCueNotify_BossFireZoneRadius`。
+- 已新增 FireZone Ability、Cooldown 与 Telegraph/Active GameplayCue 原生标签、八秒冷却 GE，以及按真实半径动态缩放表现的 `AArenaGameplayCueNotify_BossFireZoneRadius`；Active Cue 同时播放火焰、边界 Niagara 和常驻圆环 Mesh，圆环按 Mesh 包围盒匹配真实半径，不再依赖一次性粒子生命周期。
 - 已新增幂等 `Content/Python/boss/setup_boss_fire_zone.py`，用于创建 FireZone 动画副本、无 Root Motion Montage、GA/GE、复制 Area、两个 Boss 专属 Niagara/Cue，并向 Boss `StartupAbilities` 追加且只保留一份 FireZone；脚本不会修改 Behavior Tree 图。
 - 已在 `Content/Python/boss/README.md` 记录 `GroundSlam -> Charge -> FireZone -> Chase -> Wait` 的手工接线顺序、三个 StartupAbilities 和 FireZone 节点参数。
 - `setup_boss_fire_zone.py` 已输出成功日志，并已将动画、Montage、两个 Niagara、GA、Cooldown、Area、两个 Cue 和更新后的 Boss Character 全部保存到磁盘。
 - 已完成 FireZone C++/UHT 编译、生成脚本连续两次幂等执行和 `GroundSlam -> Charge -> FireZone -> Chase -> Wait` 行为树顺序验收。
 - 已完成 FireZone 单人核心验收：固定落点、生成时即时第一跳、`0.5s` 周期、五秒生命周期、Shield-first、Dash 无敌过滤和取消清理均符合预期。
-- 已在 `AArenaBossAIController` 增加默认 `1.5s` 的 `InitialAbilityDelay`；Behavior Tree 可立即选敌和追击，但所有技能 Decorator 在缓冲结束前统一失败，不占用真实 Ability 冷却。
+- 已将 `AArenaBossAIController.InitialAbilityDelay` 默认值提高到 `3.0s`；Behavior Tree 可立即选敌和追击，但所有技能 Decorator 在缓冲结束前统一失败，不占用真实 Ability 冷却。
 
 尚未完成或尚未验证：
 
@@ -175,7 +175,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 尚未验证 `setup_boss_decision.py` 连续执行不会生成重复资产或覆盖已连接的 Behavior Tree 图。
 - 修正版脚本重跑、加强后的 Telegraph 可读性、斜坡高差移动、Stun/死亡/终局/Montage 中断清理和多人 Sweep 尚未验证。
 - Charge 路径预检仍需编译并验证：非法高低差不应产生预警或冷却，可直接通行的 NavMesh 斜坡不能被误拒绝，动态阻挡进入已承诺路径后仍由运行时墙体碰撞正常结束。
-- Boss 初始技能缓冲仍需完成 C++ 编译和 PIE 回归，确认生成后先追击而不会立即释放技能。
+- Boss 的 `3.0s` 初始技能缓冲仍需完成 C++ 编译、Controller 蓝图同步和 PIE 回归，确认生成后先追击而不会立即释放技能。
 - FireZone 的 Commit 后目标死亡/失去视线边界、垂直过滤、重叠区域独立性、双视角表现和 2-player Listen Server 权威行为仍待验证；EQS 仍未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
 
 ### 阶段边界

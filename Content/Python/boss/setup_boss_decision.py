@@ -18,6 +18,7 @@ CONTROLLER_PATH = f"{AI_DIRECTORY}/BP_ArenaBossAIController"
 BLACKBOARD_PATH = f"{AI_DIRECTORY}/BB_ArenaBoss"
 BEHAVIOR_TREE_PATH = f"{AI_DIRECTORY}/BT_ArenaBoss"
 BOSS_CHARACTER_PATH = "/Game/Boss/Character/BP_ArenaBossCharacter"
+DEFAULT_INITIAL_ABILITY_DELAY = 3.0
 
 
 def _require_editor_type(type_name):
@@ -137,7 +138,7 @@ def _compile_blueprint_if_available(blueprint, asset_path):
 
 
 def _validate_runtime_blueprint_defaults(behavior_tree):
-    """重新加载 GeneratedClass 并验证运行时必须使用蓝图 Controller 与指定 BehaviorTree。"""
+    """验证运行时 Controller、BehaviorTree、开场缓冲和 Boss 类引用。"""
     controller_class = tools.load_blueprint_class(CONTROLLER_PATH)
     controller_defaults = unreal.get_default_object(controller_class)
     configured_tree = controller_defaults.get_editor_property("behavior_tree_asset")
@@ -145,6 +146,12 @@ def _validate_runtime_blueprint_defaults(behavior_tree):
         raise RuntimeError(
             "BP_ArenaBossAIController did not retain BehaviorTreeAsset=BT_ArenaBoss. "
             "Set it in Class Defaults and compile the Blueprint manually."
+        )
+    configured_delay = controller_defaults.get_editor_property("initial_ability_delay")
+    if abs(float(configured_delay) - DEFAULT_INITIAL_ABILITY_DELAY) > 0.001:
+        raise RuntimeError(
+            "BP_ArenaBossAIController did not retain InitialAbilityDelay="
+            f"{DEFAULT_INITIAL_ABILITY_DELAY}. Set it in Class Defaults and compile manually."
         )
 
     boss_class = tools.load_blueprint_class(BOSS_CHARACTER_PATH)
@@ -179,7 +186,7 @@ def _validate_prerequisites():
 
 
 def main():
-    """创建并连接阶段二 A 资产外壳，保留 BehaviorTree 图供编辑器手动搭建。"""
+    """创建阶段二 A 资产、同步开场缓冲，并保留 BehaviorTree 图供手动搭建。"""
     (
         boss_controller_type,
         behavior_tree_factory_type,
@@ -211,6 +218,10 @@ def main():
     controller_defaults = unreal.get_default_object(controller_class)
     controller_defaults.modify()
     controller_defaults.set_editor_property("behavior_tree_asset", behavior_tree)
+    controller_defaults.set_editor_property(
+        "initial_ability_delay",
+        DEFAULT_INITIAL_ABILITY_DELAY,
+    )
 
     boss_blueprint, boss_class = tools.require_blueprint(
         BOSS_CHARACTER_PATH,

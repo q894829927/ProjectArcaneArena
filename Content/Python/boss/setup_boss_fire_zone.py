@@ -16,6 +16,7 @@ tools = importlib.reload(arena_asset_tools)
 SOURCE_CAST_ANIMATION = "/Game/CombatMagicAnims/Animations/AS_SpellAndCastFireball"
 SOURCE_TELEGRAPH_NIAGARA = "/Game/Boss/VFX/NS_BossGroundSlam_Telegraph"
 SOURCE_ACTIVE_NIAGARA = "/Game/SlashTrail_SoftTofu/Niagara/Fire/NS_AuraFX_Fire"
+SOURCE_BOUNDARY_MESH = "/Game/ParagonMuriel/FX/Meshes/Hero_Specific/SM_Knock_Up_Runes_Ring"
 DAMAGE_EFFECT_PATH = "/Game/GAS/GameplayEffect/GE_Damage"
 BOSS_CHARACTER_PATH = "/Game/Boss/Character/BP_ArenaBossCharacter"
 BOSS_MESH_PATH = "/Game/Boss/Character/SKM_ArenaBoss"
@@ -98,6 +99,7 @@ def _validate_prerequisites():
     tools.require_asset(SOURCE_CAST_ANIMATION, unreal.AnimSequence)
     tools.require_asset(SOURCE_TELEGRAPH_NIAGARA, unreal.NiagaraSystem)
     tools.require_asset(SOURCE_ACTIVE_NIAGARA, unreal.NiagaraSystem)
+    tools.require_asset(SOURCE_BOUNDARY_MESH, unreal.StaticMesh)
     tools.require_blueprint(DAMAGE_EFFECT_PATH, unreal.GameplayEffect)
 
     for tag_name in (
@@ -286,14 +288,26 @@ def _configure_ability(runtime_blueprints, montage):
     tools.save_asset(runtime_blueprints["ability_path"])
 
 
-def _configure_radius_cue(cue_class, cue_path, tag_name, niagara_system, height_scale):
-    """配置固定世界位置、按 RawMagnitude 动态缩放的 FireZone 圆形 Cue。"""
+def _configure_radius_cue(
+    cue_class,
+    cue_path,
+    tag_name,
+    niagara_system,
+    height_scale,
+    boundary_system=None,
+    boundary_mesh=None,
+):
+    """配置固定世界位置、按 RawMagnitude 缩放的主体与持续伤害边界。"""
     defaults = unreal.get_default_object(cue_class)
     defaults.modify()
     defaults.set_editor_property("gameplay_cue_tag", tools.make_tag(tag_name))
     defaults.set_editor_property("zone_system", niagara_system)
+    defaults.set_editor_property("boundary_system", boundary_system)
+    defaults.set_editor_property("boundary_mesh", boundary_mesh)
     defaults.set_editor_property("reference_radius", 100.0)
     defaults.set_editor_property("vertical_offset", 10.0)
+    defaults.set_editor_property("boundary_vertical_offset", 2.0)
+    defaults.set_editor_property("boundary_mesh_thickness_scale", 0.1)
     defaults.set_editor_property("height_scale", height_scale)
     tools.save_asset(cue_path)
 
@@ -360,6 +374,8 @@ def main():
             "GameplayCue.Ability.Boss.FireZone.Active",
             direct_assets["active"],
             1.5,
+            direct_assets["telegraph"],
+            tools.require_asset(SOURCE_BOUNDARY_MESH, unreal.StaticMesh),
         )
         task.enter_progress_frame(1, "Configured FireZone GameplayCues")
 

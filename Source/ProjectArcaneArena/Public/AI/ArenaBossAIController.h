@@ -39,7 +39,7 @@ protected:
 
 	// Boss 生成后的首次施法缓冲，不占用 Ability 自身冷却并为后续 Intro 留出接入点。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss AI", meta = (ClampMin = "0.0"))
-	float InitialAbilityDelay = 1.5f;
+	float InitialAbilityDelay = 3.0f;
 
 private:
 	// 根据 Combat 阶段及 Dead/Stunned 标签统一启动或停止 Boss Brain。
