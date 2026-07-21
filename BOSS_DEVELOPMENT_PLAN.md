@@ -153,6 +153,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已完成 Charge 单人核心行为的首轮验收：行为树分支与 StartupAbilities 配置正确，中距离能进入锁向冲锋，玩家可横移躲避，每名玩家最多受伤一次，撞墙和到达终点均会结束，冷却期间回退 Chase/GroundSlam，正常结束未观察到速度或表现残留。
 - 已使用 AbilitySystem Debug Target 验证正常 Charge 生命周期：冲锋期间存在 `State.Attacking`，结束后标签消失，Boss 随后恢复 Chase/Attack，未残留 RootMotion 或 BT Task 阻塞。
 - 根据首轮验收反馈，Charge 碰撞结束逻辑已改为忽略 `CharacterMovement` 判定为可行走的地面 Hit，避免斜坡/台阶被误认为墙；Telegraph 默认加宽、抬高并延长到 `0.8s`，等待重新编译与资产脚本同步后复测。
+- Charge 激活路径新增直线 NavMesh Raycast 与缩小胶囊 Sweep 双重预检；高低层断路、断崖或身体无法穿过的墙体会在 Commit 前拒绝技能，BT 可回退 FireZone/Chase，合法直坡仍可进入 Charge。
 - 已实现 `UArenaGameplayAbility_BossFireZone`：服务器在 Commit 前验证视线并解析目标脚下地面，Commit 后固定落点和 `1.0s` 预警；目标随后移动、死亡或失去视线不会取消已承诺的固定火区。
 - FireZone 复用敌人攻击基类的 Montage、Commit、`State.Attacking` 与取消生命周期，并只在前摇期间添加复制的 `State.Casting`；Stun、Boss 死亡、终局、Montage 中断或 BT Abort 会阻止迟到 Area。
 - 已新增复制的 `AArenaBossFireZoneArea`：生成时立即结算第一跳，随后每 `0.5s` 运行服务器 Timer，默认持续 `5s`、半径 `300`、最多十跳；每个 Area 每 Tick 对同一玩家最多结算一次，并通过 `GE_Damage + Damage.Fire` 复用既有伤害管线。
@@ -173,6 +174,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 双人 `150` 单位目标切换滞回、当前目标死亡后的存活玩家重选，以及单次权威 GroundSlam 仍待 PIE 验收。
 - 尚未验证 `setup_boss_decision.py` 连续执行不会生成重复资产或覆盖已连接的 Behavior Tree 图。
 - 修正版脚本重跑、加强后的 Telegraph 可读性、斜坡高差移动、Stun/死亡/终局/Montage 中断清理和多人 Sweep 尚未验证。
+- Charge 路径预检仍需编译并验证：非法高低差不应产生预警或冷却，可直接通行的 NavMesh 斜坡不能被误拒绝，动态阻挡进入已承诺路径后仍由运行时墙体碰撞正常结束。
 - Boss 初始技能缓冲仍需完成 C++ 编译和 PIE 回归，确认生成后先追击而不会立即释放技能。
 - FireZone 的 Commit 后目标死亡/失去视线边界、垂直过滤、重叠区域独立性、双视角表现和 2-player Listen Server 权威行为仍待验证；EQS 仍未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
 

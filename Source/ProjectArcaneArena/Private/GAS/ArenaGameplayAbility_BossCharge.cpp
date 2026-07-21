@@ -9,12 +9,14 @@
 #include "Components/CapsuleComponent.h"
 #include "Core/ArenaGameState.h"
 #include "Engine/HitResult.h"
+#include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/RootMotionSource.h"
 #include "GAS/ArenaGameplayEffect_BossChargeCooldown.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
+#include "NavigationSystem.h"
 #include "TimerManager.h"
 
 namespace
@@ -33,6 +35,72 @@ UArenaGameplayAbility_BossCharge::UArenaGameplayAbility_BossCharge()
 	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Enemy_Boss_Charge));
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Enemy_Boss_Charge);
 	CooldownGameplayEffectClass = UArenaGameplayEffect_BossChargeCooldown::StaticClass();
+}
+
+// NavMesh Raycast 拒绝高低层断路，缩小胶囊 Sweep 再拒绝实际身体无法穿过的直线阻挡。
+bool UArenaGameplayAbility_BossCharge::HasAttackLineOfSight(
+	AArenaEnemyCharacter* SourceEnemy,
+	AActor* TargetActor) const
+{
+	if (!Super::HasAttackLineOfSight(SourceEnemy, TargetActor))
+	{
+		return false;
+	}
+
+	UWorld* World = SourceEnemy ? SourceEnemy->GetWorld() : nullptr;
+	UCapsuleComponent* SourceCapsule = SourceEnemy ? SourceEnemy->GetCapsuleComponent() : nullptr;
+	const AArenaPlayerCharacter* PlayerTarget = Cast<AArenaPlayerCharacter>(TargetActor);
+	if (!World || !SourceCapsule || !PlayerTarget)
+	{
+		return false;
+	}
+
+	const FVector NavStart = SourceEnemy->GetNavAgentLocation();
+	const FVector NavEnd = PlayerTarget->GetNavAgentLocation();
+	FVector NavigationHitLocation = NavStart;
+	if (UNavigationSystemV1::NavigationRaycast(
+		World,
+		NavStart,
+		NavEnd,
+		NavigationHitLocation,
+		nullptr,
+		SourceEnemy->GetController()))
+	{
+		return false;
+	}
+
+	const FVector HorizontalDirection = (TargetActor->GetActorLocation() - SourceEnemy->GetActorLocation()).GetSafeNormal2D();
+	if (HorizontalDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const UCapsuleComponent* TargetCapsule = PlayerTarget->GetCapsuleComponent();
+	const float TargetRadius = TargetCapsule ? TargetCapsule->GetScaledCapsuleRadius() : 0.0f;
+	const FVector ProbeEnd = TargetActor->GetActorLocation() - HorizontalDirection * TargetRadius;
+	const float ProbeRadius = FMath::Max(
+		SourceCapsule->GetScaledCapsuleRadius() * FMath::Clamp(PathProbeRadiusScale, 0.1f, 1.0f),
+		1.0f);
+	const float ProbeHalfHeight = FMath::Max(
+		SourceCapsule->GetScaledCapsuleHalfHeight() * FMath::Clamp(PathProbeHalfHeightScale, 0.1f, 1.0f),
+		ProbeRadius);
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(BossChargePath), false, SourceEnemy);
+	// Charge 运行时会穿过所有玩家，因此预检也忽略 Pawn，避免队友站位错误阻断技能选择。
+	for (TActorIterator<AArenaPlayerCharacter> It(World); It; ++It)
+	{
+		QueryParams.AddIgnoredActor(*It);
+	}
+
+	FHitResult BlockingHit;
+	return !World->SweepSingleByChannel(
+		BlockingHit,
+		SourceEnemy->GetActorLocation(),
+		ProbeEnd,
+		FQuat::Identity,
+		SourceCapsule->GetCollisionObjectType(),
+		FCollisionShape::MakeCapsule(ProbeRadius, ProbeHalfHeight),
+		QueryParams);
 }
 
 // 通用入口负责校验和 Commit；Charge 随后固定世界方向，整个前摇不再追踪移动目标。

@@ -29,6 +29,9 @@ public:
 	virtual float GetMinimumAttackRange() const override { return MinimumAttackRange; }
 
 protected:
+	// Charge 同时要求目标间存在可直线穿越的 NavMesh 走廊和无阻挡的胶囊空间。
+	virtual bool HasAttackLineOfSight(AArenaEnemyCharacter* SourceEnemy, AActor* TargetActor) const override;
+
 	// 提交后锁定方向和终点，启动固定世界预警，预警结束后再创建可沿地面行走的 RootMotion。
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
@@ -76,6 +79,14 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Charge", meta = (ClampMin = "1.0"))
 	float HitRadius = 110.0f;
+
+	// 路径探测胶囊略小于 Boss 碰撞体，避免贴地接触被误判为墙体。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Charge|Path", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float PathProbeRadiusScale = 0.85f;
+
+	// 缩短探测胶囊高度以给斜坡和台阶留出小容差，但仍能拦截不可穿越墙体。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Charge|Path", meta = (ClampMin = "0.1", ClampMax = "1.0"))
+	float PathProbeHalfHeightScale = 0.85f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Charge", meta = (ClampMin = "0.0"))
 	float BaseDamage = 25.0f;

@@ -23,7 +23,8 @@ public class ProjectArcaneArena : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[]
 		{
-			"Niagara"
+			"Niagara",
+			"NavigationSystem"
 		});
 	}
 }

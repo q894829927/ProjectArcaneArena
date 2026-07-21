@@ -113,13 +113,14 @@
 
 ### 单人 PIE
 
-1. 在 `350-900` 距离触发 Charge，观察默认 `0.8s` 固定预警；前摇中横向移动，确认 Boss 仍沿锁定直线冲过原目标位置约 `150` 单位。
-2. 分别测试到达终点与撞墙：到达终点不额外产生 Impact，撞墙在阻挡点产生一次 Impact 并立即停止。
-3. 在路径上使用 Shield 和 Dash，确认 Shield-first 与无敌规则；让同一玩家胶囊持续位于 Sweep 中，确认一次 Charge 最多结算一次物理伤害。
-4. 在前摇和冲刺期间分别让目标死亡、给 Boss 添加 `State.Stunned`、击杀 Boss、中断 Montage，并切换到 Victory/Defeat。
-5. 分别在顶视角和第三人称观察预警长度、方向、速度、Active Cue 和 Impact 可读性。
+1. 把玩家放在同层直线路径、可直接通行的斜坡、隔墙高台、下层断崖和需要绕路才能到达的位置，分别观察 Charge 分支选择。
+2. 非法直线路径必须在 Commit 前回退 FireZone 或 Chase，不显示 Telegraph、不添加 `State.Attacking`、不产生 `Cooldown.Enemy.Boss.Charge`；重新获得合法直线路径后应自动恢复 Charge 资格。
+3. 可直接通行的 NavMesh 斜坡应正常 Charge，且可行走地面 Hit 不应在坡顶误触发墙体 Impact。
+4. 在合法预警出现后把动态阻挡物移入路径，确认运行时碰撞仍在阻挡点执行一次 Impact 并立即结束。
+5. 在前摇和冲刺期间分别让目标死亡、给 Boss 添加 `State.Stunned`、击杀 Boss、中断 Montage，并切换到 Victory/Defeat。
+6. 分别在顶视角和第三人称观察预警长度、方向、速度、Active Cue 和 Impact 可读性。
 
-2026-07-21 单人进度：BT 分支顺序与两项 StartupAbilities 已确认；中距离触发、锁向冲锋、横移躲避、单目标单次命中、撞墙/终点结束、冷却回退和正常表现清理通过。AbilitySystem Debug Target 已确认 Charge 期间存在 `State.Attacking`，结束后标签消失且 Boss 能恢复 Chase/Attack，因此正常 RootMotion 与 BT Task 退出通过。原 `0.6s` 预警不够明显，高差路径会在坡顶提前停止；代码已改为默认 `0.8s` 加宽抬高预警，并忽略可行走地面 Hit，等待复测。异常取消、Victory/Defeat 与双人测试仍未完成；当前孤立测试环境没有自然终局入口。
+2026-07-21 单人进度：BT 分支顺序与两项 StartupAbilities 已确认；中距离触发、锁向冲锋、横移躲避、单目标单次命中、撞墙/终点结束、冷却回退和正常表现清理通过。AbilitySystem Debug Target 已确认 Charge 期间存在 `State.Attacking`，结束后标签消失且 Boss 能恢复 Chase/Attack，因此正常 RootMotion 与 BT Task 退出通过。原 `0.6s` 预警不够明显，高差路径会在坡顶提前停止；代码已改为默认 `0.8s` 加宽抬高预警、忽略可行走地面 Hit，并在 Commit 前增加 NavMesh 直线和胶囊空间预检，等待复测。异常取消、Victory/Defeat 与双人测试仍未完成；当前孤立测试环境没有自然终局入口。
 
 ### 双人 Listen Server
 
@@ -132,6 +133,7 @@
 
 - 只有服务器执行 RootMotion Sweep 和 `GE_Damage`；两端看到同一个 Boss、同一条锁定路径和同一组 Cue。
 - 每名存活玩家一次 Charge 最多被处理一次，玩家不会阻挡 Boss，世界阻挡物会终止 Charge。
+- Charge 只对存在直线可通行 NavMesh 走廊且胶囊空间无阻挡的目标激活，非法路径不会消耗冷却或播放预警。
 - 所有正常、撞墙和取消路径均不残留 Timer、RootMotion、速度、Montage、Cue、临时碰撞响应、`State.Attacking` 或 BT Task。
 - GroundSlam、Charge 与 Chase 能按距离、冷却和状态切换，不同时激活，也不会永久停滞。
 

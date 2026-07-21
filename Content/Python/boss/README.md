@@ -90,6 +90,8 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_cha
 
 Charge Decorator 会从 Ability CDO 读取 `350` 最小距离和 `900` 最大距离。近距离优先进入 GroundSlam，中距离可进入 Charge，技能不可用时回退 Chase。
 
+Charge 还会在服务器同时执行 NavMesh 直线 Raycast 和缩小胶囊 Sweep。隔墙高台、断崖或需要绕路才能到达的目标不会进入 Charge 分支，也不会消耗冷却；可直接通行的斜坡仍允许冲刺。运行中后来进入路径的动态墙体继续由碰撞命中结束 Charge。
+
 默认 Charge Telegraph 持续 `0.8s`；原生 Cue 会把 Niagara 沿路径长度缩放，并使用 `WidthScale=3`、`HeightScale=2`、`VerticalOffset=12` 提高双视角可读性。修改这些参数后应重新保存 `GCN_BossCharge_Telegraph`。
 
 开始 PIE 前还要在 Class Defaults 中确认：
