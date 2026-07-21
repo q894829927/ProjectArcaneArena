@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前开发阶段为“阶段二 C：Boss FireZone”，状态为 `Partial`。阶段一已完成关键双人闭环验收，阶段二 A 的单人核心追击/攻击循环已通过，Charge 分支已完成首轮单人核心验收；FireZone 运行时代码和生成资产已加入，仍需完成编译、Behavior Tree 接线及单人/双人权威验收。
+当前开发阶段为“阶段二 C：Boss FireZone”，状态为 `Partial`。阶段一已完成关键双人闭环验收，阶段二 A 的单人核心追击/攻击循环已通过，Charge 分支已完成首轮单人核心验收；FireZone 已完成编译、资产幂等、Behavior Tree 接线和单人核心验收，当前正在修正 Boss 生成后立即施法，并继续补齐多人及异常生命周期验证。
 
 ---
 
@@ -126,7 +126,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-20。
+状态：`Partial`，最后更新：2026-07-21。
 
 已完成实现：
 
@@ -162,6 +162,9 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已新增幂等 `Content/Python/boss/setup_boss_fire_zone.py`，用于创建 FireZone 动画副本、无 Root Motion Montage、GA/GE、复制 Area、两个 Boss 专属 Niagara/Cue，并向 Boss `StartupAbilities` 追加且只保留一份 FireZone；脚本不会修改 Behavior Tree 图。
 - 已在 `Content/Python/boss/README.md` 记录 `GroundSlam -> Charge -> FireZone -> Chase -> Wait` 的手工接线顺序、三个 StartupAbilities 和 FireZone 节点参数。
 - `setup_boss_fire_zone.py` 已输出成功日志，并已将动画、Montage、两个 Niagara、GA、Cooldown、Area、两个 Cue 和更新后的 Boss Character 全部保存到磁盘。
+- 已完成 FireZone C++/UHT 编译、生成脚本连续两次幂等执行和 `GroundSlam -> Charge -> FireZone -> Chase -> Wait` 行为树顺序验收。
+- 已完成 FireZone 单人核心验收：固定落点、生成时即时第一跳、`0.5s` 周期、五秒生命周期、Shield-first、Dash 无敌过滤和取消清理均符合预期。
+- 已在 `AArenaBossAIController` 增加默认 `1.5s` 的 `InitialAbilityDelay`；Behavior Tree 可立即选敌和追击，但所有技能 Decorator 在缓冲结束前统一失败，不占用真实 Ability 冷却。
 
 尚未完成或尚未验证：
 
@@ -170,7 +173,8 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 双人 `150` 单位目标切换滞回、当前目标死亡后的存活玩家重选，以及单次权威 GroundSlam 仍待 PIE 验收。
 - 尚未验证 `setup_boss_decision.py` 连续执行不会生成重复资产或覆盖已连接的 Behavior Tree 图。
 - 修正版脚本重跑、加强后的 Telegraph 可读性、斜坡高差移动、Stun/死亡/终局/Montage 中断清理和多人 Sweep 尚未验证。
-- FireZone 尚未完成 C++/UHT 编译、Behavior Tree 手工接线、单人/双人伤害与清理验收；EQS 仍未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
+- Boss 初始技能缓冲仍需完成 C++ 编译和 PIE 回归，确认生成后先追击而不会立即释放技能。
+- FireZone 的 Commit 后目标死亡/失去视线边界、垂直过滤、重叠区域独立性、双视角表现和 2-player Listen Server 权威行为仍待验证；EQS 仍未开始，本阶段不能标记为 `Implemented` 或 `Verified`。
 
 ### 阶段边界
 

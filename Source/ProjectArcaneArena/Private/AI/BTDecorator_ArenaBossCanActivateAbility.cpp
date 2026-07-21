@@ -68,6 +68,7 @@ bool UBTDecorator_ArenaBossCanActivateAbility::CalculateRawConditionValue(
 
 	if (!BossController || !BossController->HasAuthority() || !Boss || !BossASC || !ArenaGameState
 		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Combat
+		|| !BossController->CanActivateBossAbilities()
 		|| Boss->IsDeadOrStunned()
 		|| BossASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Attacking)
 		|| BossASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Casting)

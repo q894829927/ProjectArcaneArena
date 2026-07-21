@@ -23,6 +23,9 @@ public:
 	// Blackboard 只使用一个 Actor Key 同时驱动追击与 Ability CombatTarget。
 	static const FName TargetActorKeyName;
 
+	// 开场缓冲结束前只允许行为树选敌和追击，所有技能分支统一保持不可激活。
+	bool CanActivateBossAbilities() const;
+
 protected:
 	// 绑定 Boss 状态和 GameState 阶段，并在 Combat 中启动专用 BehaviorTree。
 	virtual void OnPossess(APawn* InPawn) override;
@@ -33,6 +36,10 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss AI")
 	TObjectPtr<UBehaviorTree> BehaviorTreeAsset;
+
+	// Boss 生成后的首次施法缓冲，不占用 Ability 自身冷却并为后续 Intro 留出接入点。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss AI", meta = (ClampMin = "0.0"))
+	float InitialAbilityDelay = 1.5f;
 
 private:
 	// 根据 Combat 阶段及 Dead/Stunned 标签统一启动或停止 Boss Brain。
@@ -57,4 +64,5 @@ private:
 	TWeakObjectPtr<AArenaGameState> BoundGameState;
 	FDelegateHandle DeadTagDelegateHandle;
 	FDelegateHandle StunnedTagDelegateHandle;
+	float AbilityActivationAllowedTime = 0.0f;
 };

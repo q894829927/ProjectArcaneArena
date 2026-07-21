@@ -6,6 +6,7 @@
 #include "BehaviorTree/BlackboardComponent.h"
 #include "BrainComponent.h"
 #include "Character/ArenaBossCharacter.h"
+#include "Engine/World.h"
 #include "GAS/ArenaGameplayTags.h"
 
 DEFINE_LOG_CATEGORY(LogArenaBossAI);
@@ -17,6 +18,13 @@ AArenaBossAIController::AArenaBossAIController()
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bAttachToPawn = true;
+}
+
+// 使用服务器世界时间判断开场缓冲，不创建额外 Timer，也不复制本地 AI 决策状态。
+bool AArenaBossAIController::CanActivateBossAbilities() const
+{
+	const UWorld* World = GetWorld();
+	return World && World->GetTimeSeconds() >= AbilityActivationAllowedTime;
 }
 
 // 只接受 Boss Pawn，并在完整配置与 Combat 阶段下启动服务器 BehaviorTree。
@@ -37,6 +45,10 @@ void AArenaBossAIController::OnPossess(APawn* InPawn)
 		return;
 	}
 
+	// BehaviorTree 可以立即选敌和 Chase，但技能 Decorator 要等统一开场缓冲结束。
+	AbilityActivationAllowedTime = GetWorld()
+		? GetWorld()->GetTimeSeconds() + FMath::Max(InitialAbilityDelay, 0.0f)
+		: 0.0f;
 	BindBossDelegates();
 	RefreshBossLogicState();
 }
@@ -47,6 +59,7 @@ void AArenaBossAIController::OnUnPossess()
 	StopBossLogic(TEXT("Boss unpossessed"));
 	UnbindBossDelegates();
 	ControlledBoss.Reset();
+	AbilityActivationAllowedTime = 0.0f;
 	Super::OnUnPossess();
 }
 
