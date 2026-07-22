@@ -2,7 +2,9 @@
 
 #include "Abilities/GameplayAbility.h"
 #include "Abilities/GameplayAbilityTypes.h"
+#include "Character/ArenaCharacterBase.h"
 #include "Character/ArenaPlayerCharacter.h"
+#include "Components/ArenaHitReactionComponent.h"
 #include "Core/ArenaPlayerState.h"
 #include "Engine/World.h"
 #include "GAS/ArenaGameplayTags.h"
@@ -10,6 +12,46 @@
 #include "TimerManager.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogArenaDamageEvents, Log, All);
+
+namespace
+{
+	// 根据 Damage Spec 标签选择唯一元素命中 Cue；异常标签只跳过元素表现，不伪装成物理伤害。
+	FGameplayTag ResolveDamageTypeCue(const FGameplayTagContainer& SourceTags)
+	{
+		const bool bPhysical = SourceTags.HasTagExact(ArenaGameplayTags::Damage_Physical);
+		const bool bFire = SourceTags.HasTagExact(ArenaGameplayTags::Damage_Fire);
+		const bool bLightning = SourceTags.HasTagExact(ArenaGameplayTags::Damage_Lightning);
+		const int32 TypeCount = static_cast<int32>(bPhysical)
+			+ static_cast<int32>(bFire)
+			+ static_cast<int32>(bLightning);
+		if (TypeCount != 1)
+		{
+			return FGameplayTag();
+		}
+
+		return bPhysical
+			? ArenaGameplayTags::GameplayCue_Hit_Physical
+			: (bFire ? ArenaGameplayTags::GameplayCue_Hit_Fire : ArenaGameplayTags::GameplayCue_Hit_Lightning);
+	}
+
+	// 将权威资源损失分类映射到独立结果 Cue，避免与元素类型和 ShieldBreak 被动混用。
+	FGameplayTag ResolveDamageResultCue(EArenaDamageFeedbackType FeedbackType)
+	{
+		switch (FeedbackType)
+		{
+		case EArenaDamageFeedbackType::ShieldOnly:
+			return ArenaGameplayTags::GameplayCue_Damage_Result_ShieldHit;
+		case EArenaDamageFeedbackType::ShieldBreak:
+			return ArenaGameplayTags::GameplayCue_Damage_Result_ShieldBreak;
+		case EArenaDamageFeedbackType::HealthOnly:
+			return ArenaGameplayTags::GameplayCue_Damage_Result_HealthHit;
+		case EArenaDamageFeedbackType::ShieldBreakWithHealthDamage:
+			return ArenaGameplayTags::GameplayCue_Damage_Result_ShieldBreakHealthHit;
+		default:
+			return FGameplayTag();
+		}
+	}
+}
 
 // 构造项目自定义 ASC，后续集中扩展输入、标签和项目辅助函数。
 UArenaAbilitySystemComponent::UArenaAbilitySystemComponent()
@@ -73,19 +115,19 @@ void UArenaAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& In
 	}
 }
 
-// 将同一目标本 Tick 的伤害反馈排入一个网络批次，避免并发状态伤害继续触发第三个 Multicast。
-void UArenaAbilitySystemComponent::QueueAuthoritativeGameplayCues(
-	const FGameplayTagContainer& GameplayCueTags,
-	const FGameplayCueParameters& GameplayCueParameters)
+// 将同一目标本 Tick 的独立伤害结算排入一个网络批次，避免并发伤害耗尽 Cue RPC 配额。
+void UArenaAbilitySystemComponent::QueueAuthoritativeDamageFeedback(
+	const FArenaDamageFeedbackData& DamageFeedback)
 {
-	if (!IsOwnerActorAuthoritative() || GameplayCueTags.IsEmpty())
+	if (!IsOwnerActorAuthoritative()
+		|| DamageFeedback.FeedbackType == EArenaDamageFeedbackType::None
+		|| DamageFeedback.GetTotalDamage() <= KINDA_SMALL_NUMBER)
 	{
 		return;
 	}
 
 	FArenaGameplayCueBatchItem& BatchItem = PendingGameplayCueBatch.Emplace_GetRef();
-	BatchItem.GameplayCueTags = GameplayCueTags;
-	BatchItem.CueParameters = GameplayCueParameters;
+	BatchItem.DamageFeedback = DamageFeedback;
 
 	if (GameplayCueBatchTimerHandle.IsValid())
 	{
@@ -119,15 +161,38 @@ void UArenaAbilitySystemComponent::FlushPendingGameplayCueBatch()
 	MulticastExecuteGameplayCueBatch(GameplayCueBatch);
 }
 
-// 每个客户端在本地执行标准 Cue 路由；批量 RPC 只替换传输层，不改变 Notify 标签或参数。
+// 每个客户端按固定顺序播放元素、结果和公共角色反馈；批量 RPC 只替换传输层。
 void UArenaAbilitySystemComponent::MulticastExecuteGameplayCueBatch_Implementation(
 	const TArray<FArenaGameplayCueBatchItem>& GameplayCueBatch)
 {
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
 	for (const FArenaGameplayCueBatchItem& BatchItem : GameplayCueBatch)
 	{
-		for (const FGameplayTag& GameplayCueTag : BatchItem.GameplayCueTags)
+		const FArenaDamageFeedbackData& DamageFeedback = BatchItem.DamageFeedback;
+		const FGameplayTag DamageTypeCue = ResolveDamageTypeCue(
+			DamageFeedback.CueParameters.AggregatedSourceTags);
+		const FGameplayTag DamageResultCue = ResolveDamageResultCue(DamageFeedback.FeedbackType);
+
+		// 显式顺序避免依赖 GameplayTagContainer 内部排序，复合伤害也只播放一个结果 Cue。
+		if (DamageTypeCue.IsValid())
 		{
-			InvokeGameplayCueEvent(GameplayCueTag, EGameplayCueEvent::Executed, BatchItem.CueParameters);
+			InvokeGameplayCueEvent(DamageTypeCue, EGameplayCueEvent::Executed, DamageFeedback.CueParameters);
+		}
+		if (DamageResultCue.IsValid())
+		{
+			InvokeGameplayCueEvent(DamageResultCue, EGameplayCueEvent::Executed, DamageFeedback.CueParameters);
+		}
+
+		if (AArenaCharacterBase* TargetCharacter = Cast<AArenaCharacterBase>(GetAvatarActor()))
+		{
+			if (UArenaHitReactionComponent* HitReactionComponent = TargetCharacter->GetHitReactionComponent())
+			{
+				HitReactionComponent->PresentDamageFeedback(DamageFeedback);
+			}
 		}
 	}
 }

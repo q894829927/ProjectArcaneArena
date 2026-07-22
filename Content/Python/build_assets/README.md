@@ -16,7 +16,7 @@
 | `generate_looping_gameplay_cues.py` | 复制模板并配置持续型 GameplayCue | `LOOPING_CUE_CONFIGS` |
 | `generate_burst_gameplay_cues.py` | 复制模板并配置一次性爆发 GameplayCue | `BURST_CUE_CONFIGS` |
 | `generate_damage_number_gameplay_cues.py` | 创建普通/暴击伤害数字 GameplayCue | `DAMAGE_NUMBER_CUE_CONFIGS` |
-| `configure_build_asset_links.py` | 设置 Ability 的 GE/Actor Class、更新 UpgradePool，并在远程敌人资产存在时保持四波混合配置 | `ABILITY_BINDINGS`、`ABILITY_CLASS_BINDINGS`、`UPGRADE_POOL_ASSET_PATHS` |
+| `configure_build_asset_links.py` | 设置 Ability 的 GE/Actor Class、更新 UpgradePool、连接角色 DamageFeedback 组件，并在远程敌人资产存在时保持四波混合配置 | `ABILITY_BINDINGS`、`ABILITY_CLASS_BINDINGS`、`DAMAGE_FEEDBACK_CHARACTER_PATHS`、`UPGRADE_POOL_ASSET_PATHS` |
 | `setup_build_assets.py` | 统一预检并按依赖顺序运行所有分类生成器 | `GENERATOR_MODULE_NAMES` |
 
 `Content/Python/setup_build_assets.py` 是根目录一键入口，实际实现位于本目录。
@@ -104,9 +104,9 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/build_assets/config
 
 新增持续 Cue 时，在 `LOOPING_CUE_CONFIGS` 中配置模板、Cue Tag、Niagara、附着规则和变换覆盖。`rotation` 顺序为 `(Pitch, Yaw, Roll)`，`scale` 顺序为 `(X, Y, Z)`。
 
-新增一次性 Cue 时，在 `BURST_CUE_CONFIGS` 中填写放置参数，并通过 `niagara_paths` 配置一个或多个同点播放的 Niagara；World Location 表现应使用 `DO_NOT_ATTACH` 和 `KEEP_WORLD`。
+新增一次性 Cue 时，在 `BURST_CUE_CONFIGS` 中填写放置参数，并通过 `niagara_paths` 配置一个或多个同点播放的 Niagara；World Location 表现应使用 `DO_NOT_ATTACH` 和 `KEEP_WORLD`。Damage Feedback Foundation 也复用该配置表幂等生成 `GCN_ShieldHit`、`GCN_ShieldBreak`、`GCN_HealthHit` 和 `GCN_ShieldBreakHealthHit`，占位资源使用独立的 Scifi/Basic 结果层风格，避免与 Physical/Fire/Lightning 元素命中 Cue 重复；生成器不会复制或改写 Niagara Graph。
 
-普通/暴击伤害数字 Cue 由 `generate_damage_number_gameplay_cues.py` 创建原生 Cue Notify 的 Blueprint 子类；配置只区分 Cue Tag 和 `critical_style`，实际伤害值来自服务器确认的 `RawMagnitude`。
+旧普通/暴击伤害数字 Cue 由 `generate_damage_number_gameplay_cues.py` 继续幂等维护，供已有资产兼容；统一 DamageFeedback 主路径不再派发这两个 Tag，而是直接复用 `ArenaDamageNumberActor/Widget`，避免同次伤害生成重复数字。
 
 最后在 `ABILITY_BINDINGS` 中连接 Ability 属性，并把需要进入随机候选池的升级路径加入 `UPGRADE_POOL_ASSET_PATHS`。
 

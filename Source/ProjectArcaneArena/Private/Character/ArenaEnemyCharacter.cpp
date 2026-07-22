@@ -2,6 +2,7 @@
 
 #include "AI/ArenaEnemyAIController.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/ArenaHitReactionComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
@@ -364,18 +365,12 @@ void AArenaEnemyCharacter::RefreshMovementState()
 	}
 }
 
-// 响应 Health 变化，刷新血条并触发受击表现；伤害数字改由权威伤害 Cue 提供。
+// Health 变化只刷新血条和数值通知，完整受击表现统一由权威 DamageFeedback 批次驱动。
 void AArenaEnemyCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
 	const float MaxHealth = AttributeSet ? AttributeSet->GetMaxHealth() : 0.0f;
 	SetHealthBarValues(Data.NewValue, MaxHealth);
 	K2_OnHealthChanged(Data.OldValue, Data.NewValue, MaxHealth);
-
-	const float DamageAmount = FMath::Max(Data.OldValue - Data.NewValue, 0.0f);
-	if (DamageAmount > 0.0f)
-	{
-		K2_OnDamaged(DamageAmount, Data.NewValue, MaxHealth);
-	}
 }
 
 // 执行一次性死亡流程：停移动、关碰撞、取消技能、广播死亡事件。
@@ -471,34 +466,26 @@ void AArenaEnemyCharacter::SetHealthBarValues(float Health, float MaxHealth)
 	HealthBarWidget->SetHealthValues(Health, MaxHealth);
 }
 
-// 根据服务器确认的实际伤害生成本地数字，支持纯护盾伤害和暴击样式。
+// 旧 Cue 兼容入口委托给公共组件，避免角色类继续维护第二套 SpawnActor 逻辑。
 void AArenaEnemyCharacter::SpawnDamageNumber(float DamageAmount, bool bCriticalHit)
 {
-	if (DamageAmount <= 0.0f || !DamageNumberActorClass || GetNetMode() == NM_DedicatedServer)
+	if (HitReactionComponent)
 	{
-		return;
+		HitReactionComponent->SpawnDamageNumber(
+			DamageAmount,
+			bCriticalHit,
+			EArenaDamageFeedbackType::HealthOnly);
 	}
+}
 
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
+// 暴露现有敌人数字 Blueprint Class，公共组件优先复用而不要求立即迁移资产字段。
+TSubclassOf<AArenaDamageNumberActor> AArenaEnemyCharacter::GetDamageNumberActorClassForFeedback() const
+{
+	return DamageNumberActorClass;
+}
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.Instigator = GetInstigator();
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	// 伤害数字是本地表现 Actor，不复制也不参与任何伤害结算。
-	AArenaDamageNumberActor* DamageNumberActor = World->SpawnActor<AArenaDamageNumberActor>(
-		DamageNumberActorClass,
-		GetActorLocation() + DamageNumberSpawnOffset,
-		FRotator::ZeroRotator,
-		SpawnParameters);
-
-	if (DamageNumberActor)
-	{
-		DamageNumberActor->SetDamagePresentation(DamageAmount, bCriticalHit);
-	}
+// 保留敌人原有头顶数字高度，普通玩家仍可使用组件默认值。
+FVector AArenaEnemyCharacter::GetDamageNumberSpawnOffsetForFeedback(const FVector& ComponentDefault) const
+{
+	return DamageNumberSpawnOffset;
 }

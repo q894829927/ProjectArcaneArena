@@ -5,6 +5,7 @@
 #include "Core/ArenaGameState.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
+#include "GAS/ArenaDamageFeedbackTypes.h"
 #include "TimerManager.h"
 #include "ArenaPlayerHUDWidget.generated.h"
 
@@ -60,6 +61,14 @@ public:
 	// 刷新能源显示，数值来自 GAS Attribute delegate。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetEnergyValues(float InEnergy, float InMaxEnergy);
+
+	// 刷新复用的本地受击提示，不创建新的方向 Widget 或持有玩法状态。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void ShowDamageFeedback(
+		float DirectionAngleDegrees,
+		bool bHasDirection,
+		float Intensity,
+		EArenaDamageFeedbackType FeedbackType);
 
 	// 根据冷却标签有无刷新普攻状态，兼容没有倒计时数据的蓝图调用。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
@@ -155,6 +164,26 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> BossHealthText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Damage Feedback")
+	TObjectPtr<UWidget> DamageDirectionIndicator;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Damage Feedback")
+	TObjectPtr<UTextBlock> ShieldBreakText;
+
+	// 蓝图可在同一个常驻 HUD 上播放更完整动画，不能据此修改 Shield 或 Health。
+	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|UI|Damage Feedback", meta = (DisplayName = "On Damage Feedback"))
+	void K2_OnDamageFeedback(
+		float DirectionAngleDegrees,
+		bool bHasDirection,
+		float Intensity,
+		EArenaDamageFeedbackType FeedbackType);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|UI|Damage Feedback", meta = (ClampMin = "0.0"))
+	float DamageDirectionDuration = 0.45f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|UI|Damage Feedback", meta = (ClampMin = "0.0"))
+	float ShieldBreakMessageDuration = 0.7f;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> BasicAttackCooldownProgressBar;
@@ -253,6 +282,8 @@ protected:
 	float LightningStormCooldownPercent = 0.0f;
 
 private:
+	// 隐藏复用的方向提示和破盾文本，连续受伤只刷新同一个 Timer。
+	void ClearDamageFeedbackPresentation();
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
 	// 解绑当前 Boss 属性和死亡标签委托，避免换 Boss 或切图后残留回调。
@@ -359,4 +390,6 @@ private:
 	FTimerHandle DashCooldownTimerHandle;
 	FTimerHandle ShieldCooldownTimerHandle;
 	FTimerHandle LightningStormCooldownTimerHandle;
+	FTimerHandle DamageFeedbackTimerHandle;
+	bool bUsesRuntimeDamageDirectionIndicator = false;
 };

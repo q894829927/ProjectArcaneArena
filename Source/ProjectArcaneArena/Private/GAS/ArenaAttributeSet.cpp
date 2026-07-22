@@ -4,6 +4,7 @@
 #include "Components/SceneComponent.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
+#include "GAS/ArenaDamageFeedbackTypes.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffectExtension.h"
 #include "GameplayEffectTypes.h"
@@ -98,6 +99,36 @@ namespace
 			*GetNameSafe(TargetActor),
 			AppliedDamage);
 	}
+
+	// 优先保存 EffectCauser 的命中时位置，失效时回退到 Instigator 或来源 ASC Avatar。
+	bool ResolveDamageSourceLocation(const FGameplayEffectSpec& EffectSpec, FVector& OutLocation)
+	{
+		const FGameplayEffectContextHandle EffectContext = EffectSpec.GetEffectContext();
+		const AActor* SourceActor = EffectContext.GetEffectCauser();
+		if (!SourceActor)
+		{
+			SourceActor = Cast<AActor>(EffectContext.GetSourceObject());
+		}
+		if (!SourceActor)
+		{
+			SourceActor = EffectContext.GetOriginalInstigator();
+		}
+		if (!SourceActor)
+		{
+			if (const UAbilitySystemComponent* SourceASC = EffectContext.GetInstigatorAbilitySystemComponent())
+			{
+				SourceActor = SourceASC->GetAvatarActor();
+			}
+		}
+
+		if (!SourceActor)
+		{
+			return false;
+		}
+
+		OutLocation = SourceActor->GetActorLocation();
+		return true;
+	}
 }
 
 // 构造属性集，设置玩家和敌人可共用的基础默认值。
@@ -167,7 +198,9 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		FGameplayTagContainer TargetTagsBeforeDamage;
 		float AppliedDamage = 0.0f;
 		float AppliedShieldDamage = 0.0f;
+		float AppliedHealthDamage = 0.0f;
 		bool bShieldBrokenByDamage = false;
+		float ShieldBeforeDamage = GetShield();
 
 		if (LocalDamage > 0.0f)
 		{
@@ -176,7 +209,6 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 				TargetASC->GetOwnedGameplayTags(TargetTagsBeforeDamage);
 			}
 
-			const float ShieldBeforeDamage = GetShield();
 			const float HealthBeforeDamage = GetHealth();
 			// 伤害先消耗护盾，剩余部分才扣 Health。
 			const float ShieldDamage = FMath::Min(ShieldBeforeDamage, LocalDamage);
@@ -187,8 +219,8 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 
 			// 过量伤害不计入事件数值，只有真正消耗的 Shield + Health 才能触发被动。
 			AppliedShieldDamage = FMath::Max(ShieldBeforeDamage - GetShield(), 0.0f);
-			AppliedDamage = AppliedShieldDamage
-				+ FMath::Max(HealthBeforeDamage - GetHealth(), 0.0f);
+			AppliedHealthDamage = FMath::Max(HealthBeforeDamage - GetHealth(), 0.0f);
+			AppliedDamage = AppliedShieldDamage + AppliedHealthDamage;
 			bShieldBrokenByDamage = ShieldBeforeDamage > KINDA_SMALL_NUMBER
 				&& AppliedShieldDamage > KINDA_SMALL_NUMBER
 				&& GetShield() <= KINDA_SMALL_NUMBER;
@@ -199,7 +231,7 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		if (AppliedDamage > KINDA_SMALL_NUMBER)
 		{
 			LogAuthoritativeDamage(Data.EffectSpec, TargetASC, AppliedDamage);
-			ExecuteDamageFeedbackGameplayCues(Data, AppliedDamage);
+			QueueDamageFeedback(Data, ShieldBeforeDamage, AppliedShieldDamage, AppliedHealthDamage);
 			UAbilitySystemComponent* SourceASC = Data.EffectSpec.GetEffectContext().GetInstigatorAbilitySystemComponent();
 			if (UArenaAbilitySystemComponent* ArenaSourceASC = Cast<UArenaAbilitySystemComponent>(SourceASC))
 			{
@@ -375,59 +407,97 @@ void UArenaAttributeSet::RefreshShieldGameplayCue()
 	}
 }
 
-// 同次伤害共享一份位置、数值与上下文，并用标签容器同时路由命中特效和伤害数字。
-void UArenaAttributeSet::ExecuteDamageFeedbackGameplayCues(
+// 根据权威实际资源损失分类，并保存位置、标签和比例供客户端只做表现。
+void UArenaAttributeSet::QueueDamageFeedback(
 	const FGameplayEffectModCallbackData& Data,
-	float AppliedDamage) const
+	float ShieldBeforeDamage,
+	float ActualShieldDamage,
+	float ActualHealthDamage) const
 {
 	UArenaAbilitySystemComponent* TargetASC = Cast<UArenaAbilitySystemComponent>(GetOwningAbilitySystemComponent());
-	if (!TargetASC || !TargetASC->IsOwnerActorAuthoritative() || AppliedDamage <= 0.0f)
+	const float AppliedDamage = ActualShieldDamage + ActualHealthDamage;
+	if (!TargetASC || !TargetASC->IsOwnerActorAuthoritative() || AppliedDamage <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	const bool bLostShield = ActualShieldDamage > KINDA_SMALL_NUMBER;
+	const bool bLostHealth = ActualHealthDamage > KINDA_SMALL_NUMBER;
+	const bool bShieldBroken = ShieldBeforeDamage > KINDA_SMALL_NUMBER
+		&& bLostShield
+		&& GetShield() <= KINDA_SMALL_NUMBER;
+
+	FArenaDamageFeedbackData DamageFeedback;
+	if (bShieldBroken && bLostHealth)
+	{
+		DamageFeedback.FeedbackType = EArenaDamageFeedbackType::ShieldBreakWithHealthDamage;
+	}
+	else if (bShieldBroken)
+	{
+		DamageFeedback.FeedbackType = EArenaDamageFeedbackType::ShieldBreak;
+	}
+	else if (bLostShield)
+	{
+		DamageFeedback.FeedbackType = EArenaDamageFeedbackType::ShieldOnly;
+	}
+	else if (bLostHealth)
+	{
+		DamageFeedback.FeedbackType = EArenaDamageFeedbackType::HealthOnly;
+	}
+	else
 	{
 		return;
 	}
 
 	FGameplayTagContainer AssetTags;
 	Data.EffectSpec.GetAllAssetTags(AssetTags);
-	FGameplayTag HitCueTag = ArenaGameplayTags::GameplayCue_Hit_Physical;
-	if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Fire))
-	{
-		HitCueTag = ArenaGameplayTags::GameplayCue_Hit_Fire;
-	}
-	else if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Lightning))
-	{
-		HitCueTag = ArenaGameplayTags::GameplayCue_Hit_Lightning;
-	}
-	const FGameplayTag DamageNumberCueTag = AssetTags.HasTagExact(ArenaGameplayTags::Damage_Critical)
-		? ArenaGameplayTags::GameplayCue_Damage_Critical
-		: ArenaGameplayTags::GameplayCue_Damage_Number;
+	DamageFeedback.ActualShieldDamage = ActualShieldDamage;
+	DamageFeedback.ActualHealthDamage = ActualHealthDamage;
+	DamageFeedback.HealthDamageRatio = GetMaxHealth() > KINDA_SMALL_NUMBER
+		? FMath::Clamp(ActualHealthDamage / GetMaxHealth(), 0.0f, 1.0f)
+		: 0.0f;
+	FVector DamageSourceLocation = FVector::ZeroVector;
+	DamageFeedback.bHasDamageSourceLocation = ResolveDamageSourceLocation(Data.EffectSpec, DamageSourceLocation);
+	DamageFeedback.DamageSourceLocation = DamageSourceLocation;
 
-	FGameplayCueParameters CueParameters(Data.EffectSpec.GetEffectContext());
-	CueParameters.RawMagnitude = AppliedDamage;
-	CueParameters.EffectContext = Data.EffectSpec.GetEffectContext();
-	CueParameters.AggregatedSourceTags.AppendTags(AssetTags);
-	if (const FHitResult* HitResult = CueParameters.EffectContext.GetHitResult())
+	DamageFeedback.CueParameters = FGameplayCueParameters(Data.EffectSpec.GetEffectContext());
+	DamageFeedback.CueParameters.RawMagnitude = AppliedDamage;
+	DamageFeedback.CueParameters.NormalizedMagnitude = DamageFeedback.HealthDamageRatio;
+	DamageFeedback.CueParameters.EffectContext = Data.EffectSpec.GetEffectContext();
+	DamageFeedback.CueParameters.AggregatedSourceTags.AppendTags(AssetTags);
+	if (const FHitResult* HitResult = DamageFeedback.CueParameters.EffectContext.GetHitResult())
 	{
-		CueParameters.Location = HitResult->ImpactPoint;
-		CueParameters.Normal = HitResult->ImpactNormal;
+		DamageFeedback.CueParameters.Location = HitResult->ImpactPoint;
+		DamageFeedback.CueParameters.Normal = HitResult->ImpactNormal;
 	}
 	else if (const AActor* TargetAvatar = TargetASC->GetAvatarActor())
 	{
-		CueParameters.Location = TargetAvatar->GetActorLocation();
-		CueParameters.Normal = FVector::UpVector;
+		FVector BoundsOrigin = FVector::ZeroVector;
+		FVector BoundsExtent = FVector::ZeroVector;
+		TargetAvatar->GetActorBounds(true, BoundsOrigin, BoundsExtent);
+		FVector SurfaceNormal = DamageFeedback.bHasDamageSourceLocation
+			? (FVector(DamageFeedback.DamageSourceLocation) - BoundsOrigin).GetSafeNormal()
+			: FVector::UpVector;
+		if (SurfaceNormal.IsNearlyZero())
+		{
+			SurfaceNormal = FVector::UpVector;
+		}
+		const float SurfaceDistance = FMath::Max(BoundsExtent.GetAbsMax(), 1.0f);
+		DamageFeedback.CueParameters.Location = BoundsOrigin + SurfaceNormal * SurfaceDistance;
+		DamageFeedback.CueParameters.Normal = SurfaceNormal;
 	}
 
-	FGameplayTagContainer DamageFeedbackCueTags;
-	DamageFeedbackCueTags.AddTag(HitCueTag);
-	DamageFeedbackCueTags.AddTag(DamageNumberCueTag);
-	TargetASC->QueueAuthoritativeGameplayCues(DamageFeedbackCueTags, CueParameters);
+	TargetASC->QueueAuthoritativeDamageFeedback(DamageFeedback);
 	if (ArenaAbilityNetworkDebug::IsAuditEnabled())
 	{
-		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] Damage Target=%s Amount=%.2f Cues=%s,%s"),
+		UE_LOG(LogArenaAbilityNet, Log,
+			TEXT("[%llu] DamageFeedback Target=%s Type=%d Shield=%.2f Health=%.2f Total=%.2f"),
 			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
 			*GetNameSafe(TargetASC->GetAvatarActor()),
-			AppliedDamage,
-			*HitCueTag.ToString(),
-			*DamageNumberCueTag.ToString());
+			static_cast<int32>(DamageFeedback.FeedbackType),
+			ActualShieldDamage,
+			ActualHealthDamage,
+			AppliedDamage);
 	}
 }
 
