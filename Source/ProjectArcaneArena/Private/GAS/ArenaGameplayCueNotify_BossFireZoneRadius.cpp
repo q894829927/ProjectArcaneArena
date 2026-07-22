@@ -10,7 +10,9 @@
 // 火区可持续显示真实伤害范围。
 AArenaGameplayCueNotify_BossFireZoneRadius::AArenaGameplayCueNotify_BossFireZoneRadius()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
+	PrimaryActorTick.TickInterval = 0.05f;
 	bAutoAttachToOwner = false;
 	bAutoDestroyOnRemove = true;
 
@@ -35,6 +37,25 @@ AArenaGameplayCueNotify_BossFireZoneRadius::AArenaGameplayCueNotify_BossFireZone
 	BoundaryMeshComponent->SetAbsolute(false, false, true);
 }
 
+// 持续模式同时检查组件完成状态并按固定间隔强制重播，兼容 System 仍 Active 但内部 Burst 已经结束的 Niagara。
+void AArenaGameplayCueNotify_BossFireZoneRadius::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (!bCuePresentationActive || !bRestartZoneSystemWhileActive || !ZoneComponent || !ZoneSystem)
+	{
+		return;
+	}
+
+	ZoneSystemReplayElapsedTime += DeltaSeconds;
+	const float SafeReplayInterval = FMath::Max(ZoneSystemReplayInterval, 0.05f);
+	if (!ZoneComponent->IsActive() || ZoneSystemReplayElapsedTime >= SafeReplayInterval)
+	{
+		ZoneComponent->SetAsset(ZoneSystem);
+		ZoneComponent->Activate(true);
+		ZoneSystemReplayElapsedTime = 0.0f;
+	}
+}
+
 // OnActive 与 WhileActive 使用同一路径，确保首次激活和晚加入客户端外观一致。
 bool AArenaGameplayCueNotify_BossFireZoneRadius::OnActive_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters)
 {
@@ -50,6 +71,9 @@ bool AArenaGameplayCueNotify_BossFireZoneRadius::WhileActive_Implementation(AAct
 // Area 或预警结束时立即停掉粒子，并允许 GameplayCueManager 回收 Actor。
 bool AArenaGameplayCueNotify_BossFireZoneRadius::OnRemove_Implementation(AActor* MyTarget, const FGameplayCueParameters& Parameters)
 {
+	bCuePresentationActive = false;
+	ZoneSystemReplayElapsedTime = 0.0f;
+	SetActorTickEnabled(false);
 	if (ZoneComponent)
 	{
 		ZoneComponent->DeactivateImmediate();
@@ -66,8 +90,7 @@ bool AArenaGameplayCueNotify_BossFireZoneRadius::OnRemove_Implementation(AActor*
 	return true;
 }
 
-// 主体和边界共用真实 XY 半径；静态圆环按自身包围盒换算世界尺寸，避免一次性
-// Niagara 结束后丢失伤害范围。
+// 主体和边界共用真实 XY 半径；Active 主体开启完成后重启，静态圆环使用持续材质，二者共同覆盖完整 Area 生命周期。
 bool AArenaGameplayCueNotify_BossFireZoneRadius::ConfigureAndActivate(const FGameplayCueParameters& Parameters)
 {
 	if (!ZoneComponent || !ZoneSystem)
@@ -81,6 +104,9 @@ bool AArenaGameplayCueNotify_BossFireZoneRadius::ConfigureAndActivate(const FGam
 	SetActorScale3D(FVector(RadiusScale, RadiusScale, FMath::Max(HeightScale, 0.01f)));
 	ZoneComponent->SetAsset(ZoneSystem);
 	ZoneComponent->Activate(true);
+	bCuePresentationActive = true;
+	ZoneSystemReplayElapsedTime = 0.0f;
+	SetActorTickEnabled(bRestartZoneSystemWhileActive);
 	if (BoundaryComponent)
 	{
 		BoundaryComponent->SetRelativeLocation(FVector(0.0f, 0.0f, BoundaryVerticalOffset));
@@ -101,6 +127,14 @@ bool AArenaGameplayCueNotify_BossFireZoneRadius::ConfigureAndActivate(const FGam
 		if (BoundaryMesh)
 		{
 			BoundaryMeshComponent->SetStaticMesh(BoundaryMesh);
+			if (BoundaryMaterial)
+			{
+				const int32 MaterialSlotCount = FMath::Max(BoundaryMeshComponent->GetNumMaterials(), 1);
+				for (int32 MaterialIndex = 0; MaterialIndex < MaterialSlotCount; ++MaterialIndex)
+				{
+					BoundaryMeshComponent->SetMaterial(MaterialIndex, BoundaryMaterial);
+				}
+			}
 			const FVector MeshExtent = BoundaryMesh->GetBounds().BoxExtent;
 			const float MeshRadius = FMath::Max(FMath::Max(MeshExtent.X, MeshExtent.Y), 1.0f);
 			const float MeshRadiusScale = Parameters.RawMagnitude / MeshRadius;

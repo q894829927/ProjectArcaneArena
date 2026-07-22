@@ -134,7 +134,7 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_fir
 
 FireZone Decorator 从 Ability CDO 读取 `600` 最小距离和 `1200` 最大距离。`600-900` 内 Charge 优先，Charge 冷却时可回退 FireZone；`900-1200` 主要由 FireZone 覆盖。找不到目标脚下地面或存在视线阻挡时，分支失败并继续 Chase。
 
-默认 FireZone 固定预警 `1.0s`，半径 `300`，持续 `5s`，生成时立即结算第一跳并每 `0.5s` 继续结算。Active Cue 会同时播放火焰主体、边界 Niagara 和常驻圆环 Mesh；三者共用服务器复制的真实半径，圆环 Mesh 不依赖 Niagara 生命周期。多个复制 Area 使用各自本地 Cue Target，不会在移除一个火区时清掉其他重叠火区。
+默认 FireZone 固定预警 `1.0s`，半径 `300`，持续 `5s`，生成时立即结算第一跳并每 `0.5s` 继续结算。Active Cue 会同时播放火焰主体、边界 Niagara 和常驻圆环 Mesh；火焰 Niagara 默认每 `0.8s` 强制重播，因此不依赖 System Active 状态，圆环 Mesh 使用持续 Unlit Glow 材质。多个复制 Area 使用各自本地 Cue Target，不会在移除一个火区时清掉其他重叠火区。
 
 ## 生成内容
 

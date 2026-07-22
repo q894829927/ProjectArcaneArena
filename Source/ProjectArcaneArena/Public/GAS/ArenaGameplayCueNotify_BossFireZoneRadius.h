@@ -6,6 +6,7 @@
 
 class UNiagaraComponent;
 class UNiagaraSystem;
+class UMaterialInterface;
 class UStaticMesh;
 class UStaticMeshComponent;
 
@@ -15,9 +16,10 @@ class PROJECTARCANEARENA_API AArenaGameplayCueNotify_BossFireZoneRadius : public
 	GENERATED_BODY()
 
 public:
-	// 创建固定世界位置的主体、可选边界 Niagara 与常驻圆环
-	// Mesh，蓝图子类只需配置表现资源和缩放基准。
+	// 创建固定世界位置的主体、可选边界 Niagara 与常驻圆环 Mesh，并为需要持续播放的主体准备低频重启检查。
 	AArenaGameplayCueNotify_BossFireZoneRadius();
+	// Active 火区仅在 Niagara 自行完成后重启主体系统，保持表现覆盖整个 Area 生命周期。
+	virtual void Tick(float DeltaSeconds) override;
 
 protected:
 	// 首次收到持续 Cue 时按 RawMagnitude 表示的真实半径启动圆形表现。
@@ -31,10 +33,19 @@ protected:
 	TObjectPtr<UNiagaraSystem> ZoneSystem;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone")
+	bool bRestartZoneSystemWhileActive = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone", meta = (ClampMin = "0.05"))
+	float ZoneSystemReplayInterval = 0.8f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone")
 	TObjectPtr<UNiagaraSystem> BoundarySystem;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone")
 	TObjectPtr<UStaticMesh> BoundaryMesh;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone")
+	TObjectPtr<UMaterialInterface> BoundaryMaterial;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Fire Zone", meta = (ClampMin = "1.0"))
 	float ReferenceRadius = 100.0f;
@@ -52,8 +63,7 @@ protected:
 	float HeightScale = 1.0f;
 
 private:
-	// 把固定位置和真实半径转换为世界 Transform，并激活主体、可选边界 Niagara
-	// 与常驻圆环 Mesh。
+	// 把固定位置和真实半径转换为世界 Transform，并激活主体、可选边界 Niagara 与使用持续材质的常驻圆环 Mesh。
 	bool ConfigureAndActivate(const FGameplayCueParameters& Parameters);
 
 	UPROPERTY(VisibleAnywhere, Category = "Arena|Boss|Fire Zone")
@@ -64,4 +74,7 @@ private:
 
 	UPROPERTY(VisibleAnywhere, Category = "Arena|Boss|Fire Zone")
 	TObjectPtr<UStaticMeshComponent> BoundaryMeshComponent;
+
+	bool bCuePresentationActive = false;
+	float ZoneSystemReplayElapsedTime = 0.0f;
 };

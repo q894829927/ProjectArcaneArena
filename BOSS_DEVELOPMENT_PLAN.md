@@ -159,7 +159,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已新增复制的 `AArenaBossFireZoneArea`：生成时立即结算第一跳，随后每 `0.5s` 运行服务器 Timer，默认持续 `5s`、半径 `300`、最多十跳；每个 Area 每 Tick 对同一玩家最多结算一次，并通过 `GE_Damage + Damage.Fire` 复用既有伤害管线。
 - FireZone Area 使用严格二维半径和垂直高度过滤，允许多个区域独立重叠；每个复制 Area 以自身作为本地 GameplayCue Target，单个区域销毁不会移除其他同 Tag 火区表现。
 - FireZone Area 在来源 Boss 死亡/销毁或 GameState 离开 `Combat` 时立即销毁并清理 Timer、ASC/GameState/Actor 委托和持续 Cue；Boss 在 Area 生成后被 Stun 不会清除已落地火区。
-- 已新增 FireZone Ability、Cooldown 与 Telegraph/Active GameplayCue 原生标签、八秒冷却 GE，以及按真实半径动态缩放表现的 `AArenaGameplayCueNotify_BossFireZoneRadius`；Active Cue 同时播放火焰、边界 Niagara 和常驻圆环 Mesh，圆环按 Mesh 包围盒匹配真实半径，不再依赖一次性粒子生命周期。
+- 已新增 FireZone Ability、Cooldown 与 Telegraph/Active GameplayCue 原生标签、八秒冷却 GE，以及按真实半径动态缩放表现的 `AArenaGameplayCueNotify_BossFireZoneRadius`；Active Cue 除检查 Niagara 完成状态外，还会默认每 `0.8s` 强制重播，兼容 System 保持 Active 但内部 Burst 已结束的资产；圆环使用不含时间淡出的 Unlit Glow 材质。
 - 已新增幂等 `Content/Python/boss/setup_boss_fire_zone.py`，用于创建 FireZone 动画副本、无 Root Motion Montage、GA/GE、复制 Area、两个 Boss 专属 Niagara/Cue，并向 Boss `StartupAbilities` 追加且只保留一份 FireZone；脚本不会修改 Behavior Tree 图。
 - 已在 `Content/Python/boss/README.md` 记录 `GroundSlam -> Charge -> FireZone -> Chase -> Wait` 的手工接线顺序、三个 StartupAbilities 和 FireZone 节点参数。
 - `setup_boss_fire_zone.py` 已输出成功日志，并已将动画、Montage、两个 Niagara、GA、Cooldown、Area、两个 Cue 和更新后的 Boss Character 全部保存到磁盘。

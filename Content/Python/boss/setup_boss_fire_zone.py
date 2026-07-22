@@ -17,6 +17,7 @@ SOURCE_CAST_ANIMATION = "/Game/CombatMagicAnims/Animations/AS_SpellAndCastFireba
 SOURCE_TELEGRAPH_NIAGARA = "/Game/Boss/VFX/NS_BossGroundSlam_Telegraph"
 SOURCE_ACTIVE_NIAGARA = "/Game/SlashTrail_SoftTofu/Niagara/Fire/NS_AuraFX_Fire"
 SOURCE_BOUNDARY_MESH = "/Game/ParagonMuriel/FX/Meshes/Hero_Specific/SM_Knock_Up_Runes_Ring"
+SOURCE_BOUNDARY_MATERIAL = "/Game/LevelPrototyping/Interactable/JumpPad/Assets/Materials/MI_GlowNT"
 DAMAGE_EFFECT_PATH = "/Game/GAS/GameplayEffect/GE_Damage"
 BOSS_CHARACTER_PATH = "/Game/Boss/Character/BP_ArenaBossCharacter"
 BOSS_MESH_PATH = "/Game/Boss/Character/SKM_ArenaBoss"
@@ -100,6 +101,7 @@ def _validate_prerequisites():
     tools.require_asset(SOURCE_TELEGRAPH_NIAGARA, unreal.NiagaraSystem)
     tools.require_asset(SOURCE_ACTIVE_NIAGARA, unreal.NiagaraSystem)
     tools.require_asset(SOURCE_BOUNDARY_MESH, unreal.StaticMesh)
+    tools.require_asset(SOURCE_BOUNDARY_MATERIAL, unreal.MaterialInterface)
     tools.require_blueprint(DAMAGE_EFFECT_PATH, unreal.GameplayEffect)
 
     for tag_name in (
@@ -296,14 +298,26 @@ def _configure_radius_cue(
     height_scale,
     boundary_system=None,
     boundary_mesh=None,
+    boundary_material=None,
+    restart_zone_system_while_active=False,
+    zone_system_replay_interval=0.8,
 ):
-    """配置固定世界位置、按 RawMagnitude 缩放的主体与持续伤害边界。"""
+    """配置固定世界位置、持续边界以及不依赖 System Active 状态的 Niagara 定时重播。"""
     defaults = unreal.get_default_object(cue_class)
     defaults.modify()
     defaults.set_editor_property("gameplay_cue_tag", tools.make_tag(tag_name))
     defaults.set_editor_property("zone_system", niagara_system)
+    defaults.set_editor_property(
+        "restart_zone_system_while_active",
+        restart_zone_system_while_active,
+    )
+    defaults.set_editor_property(
+        "zone_system_replay_interval",
+        zone_system_replay_interval,
+    )
     defaults.set_editor_property("boundary_system", boundary_system)
     defaults.set_editor_property("boundary_mesh", boundary_mesh)
+    defaults.set_editor_property("boundary_material", boundary_material)
     defaults.set_editor_property("reference_radius", 100.0)
     defaults.set_editor_property("vertical_offset", 10.0)
     defaults.set_editor_property("boundary_vertical_offset", 2.0)
@@ -374,8 +388,14 @@ def main():
             "GameplayCue.Ability.Boss.FireZone.Active",
             direct_assets["active"],
             1.5,
-            direct_assets["telegraph"],
-            tools.require_asset(SOURCE_BOUNDARY_MESH, unreal.StaticMesh),
+            boundary_system=direct_assets["telegraph"],
+            boundary_mesh=tools.require_asset(SOURCE_BOUNDARY_MESH, unreal.StaticMesh),
+            boundary_material=tools.require_asset(
+                SOURCE_BOUNDARY_MATERIAL,
+                unreal.MaterialInterface,
+            ),
+            restart_zone_system_while_active=True,
+            zone_system_replay_interval=0.8,
         )
         task.enter_progress_frame(1, "Configured FireZone GameplayCues")
 
