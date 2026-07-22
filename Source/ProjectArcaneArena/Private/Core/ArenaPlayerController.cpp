@@ -1,11 +1,13 @@
 #include "Core/ArenaPlayerController.h"
 
+#include "Character/ArenaPlayerCharacter.h"
 #include "Core/ArenaGameMode.h"
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaUpgradeDataAsset.h"
 #include "Components/Widget.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "Math/RotationMatrix.h"
 #include "UI/ArenaPlayerHUDWidget.h"
 #include "UI/ArenaUpgradeSelectionWidget.h"
 
@@ -45,6 +47,45 @@ AArenaPlayerController::AArenaPlayerController()
 	bEnableMouseOverEvents = false;
 	DefaultMouseCursor = EMouseCursor::Default;
 	UpgradeSelectionWidgetClass = UArenaUpgradeSelectionWidget::StaticClass();
+}
+
+// 使用本地相机朝向把世界伤害来源转换为屏幕角度，远程玩家不会调用该入口。
+void AArenaPlayerController::ShowLocalDamageFeedback(
+	const FArenaDamageFeedbackData& DamageFeedback,
+	float FeedbackIntensity)
+{
+	if (!IsLocalController() || !PlayerHUDWidget)
+	{
+		return;
+	}
+
+	const APawn* ControlledPawn = GetPawn();
+	bool bHasDirection = DamageFeedback.bHasDamageSourceLocation && ControlledPawn;
+	float DirectionAngleDegrees = 0.0f;
+	if (bHasDirection)
+	{
+		FVector ToDamageSource = FVector(DamageFeedback.DamageSourceLocation) - ControlledPawn->GetActorLocation();
+		ToDamageSource.Z = 0.0f;
+		bHasDirection = ToDamageSource.Normalize();
+		if (bHasDirection)
+		{
+			const FRotator ViewRotation = PlayerCameraManager
+				? PlayerCameraManager->GetCameraRotation()
+				: GetControlRotation();
+			const FRotationMatrix ViewYawRotation(FRotator(0.0f, ViewRotation.Yaw, 0.0f));
+			const FVector ViewForward = ViewYawRotation.GetUnitAxis(EAxis::X);
+			const FVector ViewRight = ViewYawRotation.GetUnitAxis(EAxis::Y);
+			DirectionAngleDegrees = FMath::RadiansToDegrees(FMath::Atan2(
+				FVector::DotProduct(ToDamageSource, ViewRight),
+				FVector::DotProduct(ToDamageSource, ViewForward)));
+		}
+	}
+
+	PlayerHUDWidget->ShowDamageFeedback(
+		DirectionAngleDegrees,
+		bHasDirection,
+		FMath::Max(FeedbackIntensity, 0.0f),
+		DamageFeedback.FeedbackType);
 }
 
 // 本地控制器开始时创建 HUD/升级界面，并绑定 PlayerState 与 GameState 数据源。

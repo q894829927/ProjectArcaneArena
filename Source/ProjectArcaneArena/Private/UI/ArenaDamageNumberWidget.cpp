@@ -11,8 +11,18 @@ void UArenaDamageNumberWidget::SetDamageAmount(float InDamageAmount)
 // 根据暴击结果设置文本、颜色和字号，显示层不参与伤害结算。
 void UArenaDamageNumberWidget::SetDamagePresentation(float InDamageAmount, bool bInCriticalHit)
 {
+	SetDamageFeedbackPresentation(InDamageAmount, bInCriticalHit, EArenaDamageFeedbackType::HealthOnly);
+}
+
+// 资源分类决定普通数字颜色，暴击在其上统一使用更大的金色强调。
+void UArenaDamageNumberWidget::SetDamageFeedbackPresentation(
+	float InDamageAmount,
+	bool bInCriticalHit,
+	EArenaDamageFeedbackType InFeedbackType)
+{
 	DamageAmount = FMath::Max(InDamageAmount, 0.0f);
 	bCriticalHit = bInCriticalHit;
+	FeedbackType = InFeedbackType;
 
 	if (DamageText)
 	{
@@ -28,8 +38,25 @@ void UArenaDamageNumberWidget::SetDamagePresentation(float InDamageAmount, bool 
 			? FMath::RoundToInt(static_cast<float>(CachedBaseFontSize) * CriticalFontScale)
 			: CachedBaseFontSize;
 		DamageText->SetFont(Font);
-		DamageText->SetColorAndOpacity(bCriticalHit
-			? FSlateColor(FLinearColor(1.0f, 0.72f, 0.12f, 1.0f))
-			: CachedBaseColor);
+		FLinearColor FeedbackColor = CachedBaseColor.GetSpecifiedColor();
+		switch (FeedbackType)
+		{
+		case EArenaDamageFeedbackType::ShieldOnly:
+			FeedbackColor = FLinearColor(0.1f, 0.85f, 1.0f, 1.0f);
+			break;
+		case EArenaDamageFeedbackType::ShieldBreak:
+			FeedbackColor = FLinearColor(0.65f, 0.95f, 1.0f, 1.0f);
+			break;
+		case EArenaDamageFeedbackType::ShieldBreakWithHealthDamage:
+			FeedbackColor = FLinearColor(0.9f, 0.4f, 0.75f, 1.0f);
+			break;
+		case EArenaDamageFeedbackType::HealthOnly:
+		default:
+			FeedbackColor = FLinearColor(1.0f, 0.72f, 0.68f, 1.0f);
+			break;
+		}
+		DamageText->SetColorAndOpacity(FSlateColor(bCriticalHit
+			? FLinearColor(1.0f, 0.72f, 0.12f, 1.0f)
+			: FeedbackColor));
 	}
 }

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "GAS/ArenaDamageFeedbackTypes.h"
 #include "ArenaDamageNumberActor.generated.h"
 
 class UWidgetComponent;
@@ -23,6 +24,12 @@ public:
 	// 同步实际伤害和暴击样式，供本地 GameplayCue 调用。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetDamagePresentation(float InDamageAmount, bool bInCriticalHit);
+	// 根据权威资源损失分类刷新数字颜色与复合样式。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetDamageFeedbackPresentation(
+		float InDamageAmount,
+		bool bInCriticalHit,
+		EArenaDamageFeedbackType InFeedbackType);
 
 protected:
 	// BeginPlay 时刷新生命周期和初始显示数值。
@@ -42,6 +49,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	bool bCriticalHit = false;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
+	EArenaDamageFeedbackType FeedbackType = EArenaDamageFeedbackType::HealthOnly;
 
 private:
 	FVector2D CachedBaseDrawSize = FVector2D::ZeroVector;

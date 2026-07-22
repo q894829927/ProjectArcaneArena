@@ -12,6 +12,7 @@
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
 struct FGameplayEffectModCallbackData;
+struct FArenaDamageFeedbackData;
 
 UCLASS()
 class PROJECTARCANEARENA_API UArenaAttributeSet : public UAttributeSet
@@ -117,8 +118,12 @@ private:
 	void UpdateDeadTag() const;
 	// 根据权威 Shield 数值添加或移除持续 Cue，重复补盾不会重复 Add。
 	void RefreshShieldGameplayCue();
-	// 将同次伤害的元素命中与普通/暴击数字 Cue 合并成一个权威 Multicast。
-	void ExecuteDamageFeedbackGameplayCues(const FGameplayEffectModCallbackData& Data, float AppliedDamage) const;
+	// 根据结算前后资源损失生成一段权威反馈，并排入目标 ASC 的下一 Tick 批次。
+	void QueueDamageFeedback(
+		const FGameplayEffectModCallbackData& Data,
+		float ShieldBeforeDamage,
+		float ActualShieldDamage,
+		float ActualHealthDamage) const;
 
 	bool bShieldGameplayCueActive = false;
 };

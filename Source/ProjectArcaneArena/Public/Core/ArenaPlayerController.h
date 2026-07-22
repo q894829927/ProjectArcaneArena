@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "Core/ArenaGameState.h"
 #include "GameFramework/PlayerController.h"
+#include "GAS/ArenaDamageFeedbackTypes.h"
 #include "TimerManager.h"
 #include "ArenaPlayerController.generated.h"
 
@@ -26,6 +27,9 @@ public:
 	// 客户端只提交候选 ID，服务器 GameMode 会重新验证阶段、候选和堆叠资格。
 	UFUNCTION(Server, Reliable)
 	void ServerSelectUpgrade(FName UpgradeID);
+
+	// 仅在受害者本地 Controller 上把来源方向和强度转成 HUD 表现数据。
+	void ShowLocalDamageFeedback(const FArenaDamageFeedbackData& DamageFeedback, float FeedbackIntensity);
 
 protected:
 	// 初始化本地输入模式，确保第一次鼠标点击不会被视口捕获吞掉。

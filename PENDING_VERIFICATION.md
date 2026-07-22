@@ -910,11 +910,64 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 1. 开启 `AbilitySystem.GameplayCueCheckForTooManyRPCs 1`，让 Boss 同时受到 Fireball 直接伤害、Burning 周期伤害、LightningStorm 和 Overload 中至少两种同帧结算。
 2. 在单人 PIE 观察每次伤害对应的元素命中特效与普通/暴击数字，并检查 Output Log。
 3. 使用 `2 Players` Listen Server 重复测试，分别从 Host 和 Client 对 Boss 造成重叠伤害。
-4. 开启 `arena.Net.AbilityAudit 1`，对比服务器实际伤害结算次数、批量 Cue 标签和两端可见表现次数。
-- 测试已完成，但是会出现数字重叠
+4. 开启 `arena.Net.AbilityAudit 1`，对比服务器实际伤害结算次数、批量反馈项和两端可见表现次数。
+5. 检查新数字五槽横向偏移能否解决已观察到的完全重叠，同时确认每段结算仍对应一个数字。
 ### 通过标准
 
-- 同一目标在一个 Tick 内的所有权威伤害结算只发送一个项目级批量 Multicast；每段结算仍分别携带一个命中标签、一个数字标签和独立参数。
+- 同一目标在一个 Tick 内的所有权威伤害结算只发送一个项目级批量 Multicast；每段结算仍分别携带独立 `FArenaDamageFeedbackData`。
 - Output Log 不再出现并发命中与数字耗尽 `net.MaxRPCPerNetUpdate=2` 的警告，三段以上同帧伤害也不会丢失后续表现。
-- Host 与 Client 均看到对应元素命中特效和一个伤害数字；暴击仍显示金色 Critical 样式。
+- Host 与 Client 均按元素 Cue、结果 Cue、一个伤害数字的顺序看到反馈；暴击仍显示金色 Critical 样式。
 - 合并只改变表现 RPC 数量，不改变 Health、Shield、Crit、OnDamage、OnCrit、OnKill 或 Overload 的权威结算次数。
+
+## Damage Feedback Foundation 表现配置与安全退化
+
+> 当前状态：本轮按用户要求暂缓运行时测试。以下配置与验收步骤继续保留，恢复验证后通过一项便移除对应条目。
+
+### 测试方法
+
+1. 在角色材质中加入 `HitFlashColor` 和 `HitFlashIntensity` 参数；先验证 C++ 回退方向符号与破盾文本，再在 `WBP_PlayerHUD` 中按需提供 `DamageDirectionIndicator`、`ShieldBreakText` 并实现 `On Damage Feedback` 动画覆盖回退布局。
+2. 为 `HitReactionComponent` 配置轻/中/重与破盾 CameraShake，以及 ShieldHit、ShieldBreak、HealthHit 音效；缺少正式资源时保持为空。
+3. 分别在 Listen Server、Client 和 Dedicated Server 路径检查未配置表现资源时的退化行为。
+
+### 通过标准
+
+- Dedicated Server 不创建 MID、音频、DamageNumber、Widget 或 CameraShake。
+- 未配置材质参数、Sound、CameraShake 或 HUD 可选控件时安全退化，不崩溃且不影响伤害结算。
+
+## 四类伤害反馈与事件边界
+
+### 测试方法
+
+1. 先记录 `GE_Init_PlayerAttributes`、`GE_Init_EnemyAttributes`、`GA_BasicAttack` 和 `GA_EnemyMeleeAttack` 的原值；测试结束后必须恢复，避免把验收数值带入正式平衡配置。
+2. 世界反馈阶段：把玩家 `AttackPower/CritChance` 设为 `0/0`、敌人 `Defense` 设为 `0`，依次把敌人初始 `Shield/Health` 与 `GA_BasicAttack.BaseDamage` 配成 `30/100/10`、`10/100/10`、`10/100/30`、`0/100/20`；每次重新开始 PIE 后只攻击一次。
+3. 本地玩家反馈阶段：把敌人 `AttackPower/CritChance` 设为 `0/0`、玩家 `Defense` 设为 `0`，用同样四组 `Shield/Health` 和 `GA_EnemyMeleeAttack.BaseDamage` 让敌人只命中本地玩家一次。
+4. 两个阶段都开启 `arena.Net.AbilityAudit 1`，同时观察 Shield/Health、批次日志、元素 Cue、结果 Cue、唯一数字、HUD 方向提示和 CameraShake；当前材质没有 `HitFlashColor/HitFlashIntensity` 参数时，闪烁安全缺席不作为分类失败。
+5. 对 Shield 已为零的目标继续伤害，再用一个不修改 Damage Meta Attribute 的 Instant GE 直接把正数 Shield Override 为 `0`。
+6. Dash 期间确认存在 `State.Invincible` 后重复相同攻击。
+7. 把目标设为 `Shield=10, Health=15`，使用 `Damage=30` 制造一次同时破盾、伤血并致死的结算，比较视觉分类与 `Trigger.OnShieldBreak`。
+
+### 通过标准
+
+- 四组结果依次为 `ShieldOnly`、`ShieldBreak`、`ShieldBreakWithHealthDamage`、`HealthOnly`，实际属性分别为 `20/100`、`0/100`、`0/80`、`0/80`。
+- 每段结算只播放一个结果 Cue 和一个数字；复合伤害不重复播放完整 ShieldHit 或 HealthHit。
+- Shield 原本为零、直接属性修改和零实际损失不产生破盾反馈；无敌不产生任何受伤反馈。
+- 致死复合伤害仍显示 `ShieldBreakWithHealthDamage`，但保持现有规则，不派发存活目标专用 `Trigger.OnShieldBreak`。
+- `OnDamage -> OnCrit -> OnKill -> 存活目标 OnShieldBreak` 的玩法事件顺序没有变化。
+
+## Damage Feedback 周期伤害、Boss 与多人归属
+
+### 测试方法
+
+1. 分别使用 Burning、LightningStorm、Overload、Boss FireZone、GroundSlam、Charge 和敌人远程投射物制造四类资源损失。
+2. 在顶视角和第三人称从前、后、左、右攻击本地玩家，观察方向角与屏幕提示。
+3. 2-player Listen Server 分别让 Host 和 Client 受伤，并让两人同帧同时受伤。
+4. Dedicated Server 双客户端重复 HealthOnly 和复合伤害。
+5. 让旧 `BP_ArenaEnemyCharacter` 的 `K2_OnDamaged` 蓝图图表仍保留原节点，确认统一反馈后不会因 Health Delegate 再播放第二次完整闪白或数字。
+
+### 通过标准
+
+- 每次真实周期伤害独立分类且同 Tick 只占一个批量 Multicast；元素 Cue、结果 Cue和数字不丢失、不重复。
+- Host 受伤只影响 Host HUD/相机，Client 受伤只影响 Client HUD/相机；双方仍能看到彼此的世界空间 Cue 和数字。
+- ShieldOnly 不显示红色方向边缘；HealthOnly 和复合伤害能区分前后左右；无来源时安全回退为无方向表现。
+- GroundSlam、Charge 和 FireZone 不改变各自服务器伤害次数、取消清理、Shield-first 或死亡流程。
+- 普通数字按 Shield/Break/Health/复合使用青蓝、亮蓝、淡红、复合色；暴击使用更大金色；同 Tick 数字不再完全重叠。

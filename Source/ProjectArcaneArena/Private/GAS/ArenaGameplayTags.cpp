@@ -64,8 +64,12 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Fire, "GameplayCue.Hit.Fire", "Confirmed fire damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Lightning, "GameplayCue.Hit.Lightning", "Confirmed lightning damage hit presentation.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Number, "GameplayCue.Damage.Number", "Confirmed normal damage number presentation.");
-	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Critical, "GameplayCue.Damage.Critical", "Confirmed critical damage number presentation.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Number, "GameplayCue.Damage.Number", "Legacy normal damage number presentation retained for asset compatibility.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Critical, "GameplayCue.Damage.Critical", "Legacy critical damage number presentation retained for asset compatibility.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Result_ShieldHit, "GameplayCue.Damage.Result.ShieldHit", "Damage was absorbed without breaking Shield.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Result_ShieldBreak, "GameplayCue.Damage.Result.ShieldBreak", "Damage depleted Shield without reducing Health.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Result_HealthHit, "GameplayCue.Damage.Result.HealthHit", "Damage reduced Health while Shield was already empty.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Damage_Result_ShieldBreakHealthHit, "GameplayCue.Damage.Result.ShieldBreakHealthHit", "Damage broke Shield and overflowed into Health.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Combat, "Phase.Combat", "A combat wave is active.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Phase_Upgrade, "Phase.Upgrade", "Players are choosing upgrades.");

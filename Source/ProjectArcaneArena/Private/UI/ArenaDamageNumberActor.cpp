@@ -48,8 +48,18 @@ void AArenaDamageNumberActor::SetDamageAmount(float InDamageAmount)
 // 设置伤害数字与暴击样式，并为暴击扩展绘制区域以避免大字号被裁切。
 void AArenaDamageNumberActor::SetDamagePresentation(float InDamageAmount, bool bInCriticalHit)
 {
+	SetDamageFeedbackPresentation(InDamageAmount, bInCriticalHit, EArenaDamageFeedbackType::HealthOnly);
+}
+
+// 设置总实际损失、暴击与资源分类，并适当扩大破盾数字绘制区域。
+void AArenaDamageNumberActor::SetDamageFeedbackPresentation(
+	float InDamageAmount,
+	bool bInCriticalHit,
+	EArenaDamageFeedbackType InFeedbackType)
+{
 	DamageAmount = FMath::Max(InDamageAmount, 0.0f);
 	bCriticalHit = bInCriticalHit;
+	FeedbackType = InFeedbackType;
 
 	if (!WidgetComponent)
 	{
@@ -60,9 +70,10 @@ void AArenaDamageNumberActor::SetDamagePresentation(float InDamageAmount, bool b
 	{
 		CachedBaseDrawSize = WidgetComponent->GetDrawSize();
 	}
-	const FVector2D PresentationDrawSize = bCriticalHit
-		? CachedBaseDrawSize * 1.35
-		: CachedBaseDrawSize;
+	const bool bEmphasized = bCriticalHit
+		|| FeedbackType == EArenaDamageFeedbackType::ShieldBreak
+		|| FeedbackType == EArenaDamageFeedbackType::ShieldBreakWithHealthDamage;
+	const FVector2D PresentationDrawSize = bEmphasized ? CachedBaseDrawSize * 1.35 : CachedBaseDrawSize;
 	WidgetComponent->SetDrawSize(PresentationDrawSize);
 
 	WidgetComponent->InitWidget();
@@ -72,6 +83,6 @@ void AArenaDamageNumberActor::SetDamagePresentation(float InDamageAmount, bool b
 		WidgetComponent->GetUserWidgetObject());
 	if (DamageNumberWidget)
 	{
-		DamageNumberWidget->SetDamagePresentation(DamageAmount, bCriticalHit);
+		DamageNumberWidget->SetDamageFeedbackPresentation(DamageAmount, bCriticalHit, FeedbackType);
 	}
 }

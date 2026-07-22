@@ -75,6 +75,13 @@ GAME_MODE_PATH = "/Game/GameMode/BP_ArenaGameMode"
 PROTOTYPE_WAVE_DATA_PATH = "/Game/Blueprints/DataAsset/DA_Waves_Prototype"
 PROTOTYPE_ENEMY_PATH = "/Game/Characters/ArenaEnemy/BP_ArenaEnemyCharacter"
 PROTOTYPE_RANGED_ENEMY_PATH = "/Game/Characters/ArenaEnemy/BP_ArenaRangedEnemy"
+DAMAGE_NUMBER_ACTOR_PATH = "/Game/UI/BP_ArenaDamageNumberActor"
+DAMAGE_FEEDBACK_CHARACTER_PATHS = (
+    "/Game/Characters/ArenaPlayer/BP_ArenaPlayerCharacter",
+    "/Game/Characters/ArenaEnemy/BP_ArenaEnemyCharacter",
+    "/Game/Characters/ArenaEnemy/BP_ArenaRangedEnemy",
+    "/Game/Boss/Character/BP_ArenaBossCharacter",
+)
 UPGRADE_POOL_ASSET_PATHS = [
     "/Game/Data/Upgrade/DA_Upgrade_FireballDamage",
     "/Game/Data/Upgrade/DA_Upgrade_FireballBurning",
@@ -230,6 +237,27 @@ def validate_configs(generated_asset_paths=None):
             f"Wave data {PROTOTYPE_WAVE_DATA_PATH} does not expose 'waves': {error}"
         )
 
+    damage_number_parent = tools.require_unreal_type("ArenaDamageNumberActor")
+    tools.require_blueprint(DAMAGE_NUMBER_ACTOR_PATH, damage_number_parent)
+    character_parent = tools.require_unreal_type("ArenaCharacterBase")
+    for character_path in DAMAGE_FEEDBACK_CHARACTER_PATHS:
+        if not unreal.EditorAssetLibrary.does_asset_exist(character_path):
+            unreal.log_warning(
+                f"Skipped DamageFeedback character validation because {character_path} is missing."
+            )
+            continue
+        _, character_class = tools.require_blueprint(character_path, character_parent)
+        character_defaults = unreal.get_default_object(character_class)
+        try:
+            hit_reaction_component = character_defaults.get_editor_property(
+                "hit_reaction_component"
+            )
+            hit_reaction_component.get_editor_property("damage_number_actor_class")
+        except Exception as error:
+            raise RuntimeError(
+                f"Character {character_path} does not expose DamageFeedback component settings: {error}"
+            )
+
 
 def _configure_ability_binding(binding):
     """把状态 GE Blueprint Class 写入 Ability 类默认对象。"""
@@ -356,8 +384,33 @@ def _configure_prototype_enemy_mixes():
     unreal.log(f"Configured prototype melee/ranged wave mixes: {PROTOTYPE_WAVE_DATA_PATH}")
 
 
+def _configure_damage_feedback_characters():
+    """把现有伤害数字 Blueprint Class 写入各角色公共受击组件。"""
+    damage_number_parent = tools.require_unreal_type("ArenaDamageNumberActor")
+    _, damage_number_class = tools.require_blueprint(
+        DAMAGE_NUMBER_ACTOR_PATH,
+        damage_number_parent,
+    )
+    character_parent = tools.require_unreal_type("ArenaCharacterBase")
+    for character_path in DAMAGE_FEEDBACK_CHARACTER_PATHS:
+        if not unreal.EditorAssetLibrary.does_asset_exist(character_path):
+            continue
+        _, character_class = tools.require_blueprint(character_path, character_parent)
+        character_defaults = unreal.get_default_object(character_class)
+        hit_reaction_component = character_defaults.get_editor_property(
+            "hit_reaction_component"
+        )
+        hit_reaction_component.modify()
+        hit_reaction_component.set_editor_property(
+            "damage_number_actor_class",
+            damage_number_class,
+        )
+        tools.save_asset(character_path)
+        unreal.log(f"Configured DamageFeedback component: {character_path}")
+
+
 def run():
-    """验证后连接 Ability/UpgradePool，并保持前四波混合敌人配置。"""
+    """验证后连接 Ability/UpgradePool、角色反馈与前四波混合敌人配置。"""
     validate_configs()
     for binding in ABILITY_BINDINGS:
         _configure_ability_binding(binding)
@@ -365,6 +418,7 @@ def run():
         _configure_ability_class_binding(binding)
     _configure_upgrade_pool()
     _configure_prototype_enemy_mixes()
+    _configure_damage_feedback_characters()
 
 
 def main():

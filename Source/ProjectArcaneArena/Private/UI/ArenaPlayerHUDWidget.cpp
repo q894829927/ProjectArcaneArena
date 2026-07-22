@@ -9,6 +9,7 @@
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
+#include "Components/Widget.h"
 #include "Core/ArenaGameState.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
@@ -219,6 +220,47 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 		}
 	}
 
+	if (!DamageDirectionIndicator && WidgetTree && RootCanvas)
+	{
+		UTextBlock* RuntimeDirectionIndicator = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			TEXT("DamageDirectionIndicator_Runtime"));
+		RuntimeDirectionIndicator->SetText(FText::FromString(TEXT("^")));
+		RuntimeDirectionIndicator->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.05f, 0.02f, 1.0f)));
+		FSlateFontInfo DirectionFont = RuntimeDirectionIndicator->GetFont();
+		DirectionFont.Size = 38;
+		DirectionFont.OutlineSettings.OutlineSize = 2;
+		RuntimeDirectionIndicator->SetFont(DirectionFont);
+		if (UCanvasPanelSlot* DirectionSlot = RootCanvas->AddChildToCanvas(RuntimeDirectionIndicator))
+		{
+			DirectionSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+			DirectionSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			DirectionSlot->SetPosition(FVector2D(0.0f, -220.0f));
+			DirectionSlot->SetAutoSize(true);
+		}
+		DamageDirectionIndicator = RuntimeDirectionIndicator;
+		bUsesRuntimeDamageDirectionIndicator = true;
+	}
+
+	if (!ShieldBreakText && WidgetTree && RootCanvas)
+	{
+		ShieldBreakText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			TEXT("ShieldBreakText_Runtime"));
+		ShieldBreakText->SetColorAndOpacity(FSlateColor(FLinearColor(0.55f, 0.95f, 1.0f, 1.0f)));
+		FSlateFontInfo ShieldBreakFont = ShieldBreakText->GetFont();
+		ShieldBreakFont.Size = 24;
+		ShieldBreakFont.OutlineSettings.OutlineSize = 2;
+		ShieldBreakText->SetFont(ShieldBreakFont);
+		if (UCanvasPanelSlot* ShieldBreakSlot = RootCanvas->AddChildToCanvas(ShieldBreakText))
+		{
+			ShieldBreakSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+			ShieldBreakSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+			ShieldBreakSlot->SetPosition(FVector2D(0.0f, -110.0f));
+			ShieldBreakSlot->SetAutoSize(true);
+		}
+	}
+
 	if (WidgetTree && RootCanvas && !BossPanel && !BossNameText && !BossHealthProgressBar && !BossHealthText)
 	{
 		// 蓝图尚未补 Boss 控件时创建可直接验收的数据面板，不把布局状态写回玩法系统。
@@ -277,6 +319,7 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 	SetWaveState(0, 0);
 	SetUpgradeRandomSeed(0);
 	SetBossPanelVisible(false);
+	ClearDamageFeedbackPresentation();
 }
 
 // 切换准星显示；HitTestInvisible 保证它不会拦截任何战斗输入。
@@ -514,6 +557,63 @@ void UArenaPlayerHUDWidget::SetEnergyValues(float InEnergy, float InMaxEnergy)
 	}
 }
 
+// 显示常驻 HUD 上的方向提示和破盾文本，并把动画扩展交给蓝图事件。
+void UArenaPlayerHUDWidget::ShowDamageFeedback(
+	float DirectionAngleDegrees,
+	bool bHasDirection,
+	float Intensity,
+	EArenaDamageFeedbackType FeedbackType)
+{
+	const bool bShowsHealthDirection = FeedbackType == EArenaDamageFeedbackType::HealthOnly
+		|| FeedbackType == EArenaDamageFeedbackType::ShieldBreakWithHealthDamage;
+	const bool bShowsShieldBreak = FeedbackType == EArenaDamageFeedbackType::ShieldBreak
+		|| FeedbackType == EArenaDamageFeedbackType::ShieldBreakWithHealthDamage;
+
+	if (DamageDirectionIndicator)
+	{
+		DamageDirectionIndicator->SetVisibility(
+			bShowsHealthDirection ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+		DamageDirectionIndicator->SetRenderOpacity(FMath::Clamp(Intensity, 0.2f, 1.0f));
+		FWidgetTransform DirectionTransform = DamageDirectionIndicator->GetRenderTransform();
+		DirectionTransform.Angle = bHasDirection ? DirectionAngleDegrees : 0.0f;
+		DamageDirectionIndicator->SetRenderTransform(DirectionTransform);
+
+		if (bUsesRuntimeDamageDirectionIndicator)
+		{
+			if (UCanvasPanelSlot* DirectionSlot = Cast<UCanvasPanelSlot>(DamageDirectionIndicator->Slot))
+			{
+				const float DirectionRadians = FMath::DegreesToRadians(DirectionAngleDegrees);
+				const FVector2D EdgeOffset = bHasDirection
+					? FVector2D(FMath::Sin(DirectionRadians) * 340.0f, -FMath::Cos(DirectionRadians) * 220.0f)
+					: FVector2D::ZeroVector;
+				DirectionSlot->SetPosition(EdgeOffset);
+			}
+		}
+	}
+
+	if (ShieldBreakText)
+	{
+		ShieldBreakText->SetText(NSLOCTEXT("ArenaPlayerHUDWidget", "ShieldBreakMessage", "SHIELD BREAK"));
+		ShieldBreakText->SetVisibility(
+			bShowsShieldBreak ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
+	K2_OnDamageFeedback(DirectionAngleDegrees, bHasDirection, Intensity, FeedbackType);
+
+	if (GetWorld())
+	{
+		const float DisplayDuration = bShowsShieldBreak
+			? FMath::Max(DamageDirectionDuration, ShieldBreakMessageDuration)
+			: DamageDirectionDuration;
+		GetWorld()->GetTimerManager().SetTimer(
+			DamageFeedbackTimerHandle,
+			this,
+			&UArenaPlayerHUDWidget::ClearDamageFeedbackPresentation,
+			FMath::Max(DisplayDuration, KINDA_SMALL_NUMBER),
+			false);
+	}
+}
+
 // 快速设置基础攻击冷却激活状态，供蓝图或简单状态刷新调用。
 void UArenaPlayerHUDWidget::SetBasicAttackCooldownActive(bool bInCooldownActive)
 {
@@ -635,10 +735,28 @@ void UArenaPlayerHUDWidget::SetLightningStormCooldownValues(bool bInCooldownActi
 // Widget 销毁时解绑 GAS 委托，避免 ASC 回调悬挂对象。
 void UArenaPlayerHUDWidget::NativeDestruct()
 {
+	if (GetWorld())
+	{
+		GetWorld()->GetTimerManager().ClearTimer(DamageFeedbackTimerHandle);
+	}
+	ClearDamageFeedbackPresentation();
 	UnbindFromBoss();
 	UnbindFromAbilitySystem();
 
 	Super::NativeDestruct();
+}
+
+// 隐藏复用控件；下一次受伤会刷新同一实例，不会持续创建 Widget。
+void UArenaPlayerHUDWidget::ClearDamageFeedbackPresentation()
+{
+	if (DamageDirectionIndicator)
+	{
+		DamageDirectionIndicator->SetVisibility(ESlateVisibility::Collapsed);
+	}
+	if (ShieldBreakText)
+	{
+		ShieldBreakText->SetVisibility(ESlateVisibility::Collapsed);
+	}
 }
 
 // 对称解除 Boss 属性与标签委托，并清空本地弱引用和面板状态。

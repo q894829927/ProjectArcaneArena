@@ -18,6 +18,7 @@ public class ProjectArcaneArena : ModuleRules
 			"GameplayTasks",
 			"AIModule",
 			"UMG",
+			"SlateCore",
 			"MassEntity"
 		});
 
