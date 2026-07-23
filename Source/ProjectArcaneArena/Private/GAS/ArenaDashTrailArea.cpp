@@ -198,7 +198,7 @@ bool AArenaDashTrailArea::CanDamageTarget(AActor* TargetActor, UAbilitySystemCom
 	return FMath::PointDistToSegment(FlatTarget, FlatStart, FlatEnd) <= TrailRadius;
 }
 
-// 每个目标使用独立 Lightning Spec，使 Crit、Defense、Shield、Shocked 和事件路由保持标准行为。
+// 每个目标使用带被动技能归属标签的独立 Lightning Spec，使伤害管线与日志都能识别冲刺轨迹。
 void AArenaDashTrailArea::ApplyDamageToTarget(UAbilitySystemComponent* TargetASC) const
 {
 	UAbilitySystemComponent* SourceASC = SourceAbilitySystemComponent.Get();
@@ -220,6 +220,7 @@ void AArenaDashTrailArea::ApplyDamageToTarget(UAbilitySystemComponent* TargetASC
 	DamageSpec->SetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Damage_Base, BaseDamage);
 	DamageSpec->SetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Damage_SkillMultiplier, 1.0f);
 	DamageSpec->AddDynamicAssetTag(ArenaGameplayTags::Damage_Lightning);
+	DamageSpec->AddDynamicAssetTag(ArenaGameplayTags::Ability_Passive_DashLightningTrail);
 	SourceASC->ApplyGameplayEffectSpecToTarget(*DamageSpec, TargetASC);
 }
 

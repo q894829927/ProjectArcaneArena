@@ -5,6 +5,7 @@
 #include "Abilities/Tasks/AbilityTask_WaitTargetData.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Core/ArenaPlayerState.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
@@ -114,7 +115,7 @@ void UArenaGameplayAbility_Dash::OnDashTargetDataCancelled(const FGameplayAbilit
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 }
 
-// 使用校验后的方向创建 RootMotion；服务器额外记录实际起点供完成事件使用。
+// 使用校验方向创建 RootMotion，并在两端临时允许胶囊穿过 Pawn；服务器额外记录实际起点。
 void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirection)
 {
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
@@ -128,6 +129,7 @@ void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirec
 
 	ActiveDashCharacter = Character;
 	ActiveDashASC = ActorInfo->AbilitySystemComponent.Get();
+	EnablePawnPassThrough(Character);
 	bSentDashEndEvent = false;
 	if (ActorInfo->IsNetAuthority())
 	{
@@ -168,7 +170,7 @@ void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirec
 	World->GetTimerManager().SetTimer(DashTimerHandle, this, &UArenaGameplayAbility_Dash::FinishDash, DashDuration, false);
 }
 
-// 清理计时器、RootMotion、状态与 Cue；取消路径不会补发 Dash 完成事件。
+// 清理位移与无敌计时器、RootMotion、临时碰撞、状态与 Cue；取消路径不会补发 Dash 完成事件。
 void UArenaGameplayAbility_Dash::EndAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -186,6 +188,7 @@ void UArenaGameplayAbility_Dash::EndAbility(
 		StopDashMovement(ActiveDashCharacter.Get());
 	}
 
+	RestorePawnCollision();
 	RemoveDashStateTags();
 	ActiveTargetDataTask = nullptr;
 	bConsumedTargetData = false;
@@ -287,7 +290,7 @@ void UArenaGameplayAbility_Dash::PlayDashMontage()
 	}
 }
 
-// 添加本地预测标签，并由服务器复制权威标签与 Dash Active Cue。
+// 添加本地预测冲刺标签，并由服务器复制权威状态与 Dash Active Cue；无敌帧使用独立窗口管理。
 void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC)
 {
 	if (!ASC || bAppliedDashStateTags)
@@ -296,11 +299,9 @@ void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC
 	}
 
 	ASC->AddLooseGameplayTag(ArenaGameplayTags::State_Dashing);
-	ASC->AddLooseGameplayTag(ArenaGameplayTags::State_Invincible);
 	if (ASC->IsOwnerActorAuthoritative())
 	{
 		ASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dashing);
-		ASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Invincible);
 		FGameplayCueParameters CueParameters;
 		AActor* CueAvatar = ASC->GetAvatarActor();
 		CueParameters.Instigator = CueAvatar;
@@ -317,20 +318,21 @@ void UArenaGameplayAbility_Dash::ApplyDashStateTags(UAbilitySystemComponent* ASC
 		}
 	}
 	bAppliedDashStateTags = true;
+	ApplyDashInvincibility(ASC);
 }
 
-// 移除当前 Ability 实例添加的标签和持续 Cue，保持预测拒绝与取消可回滚。
+// 移除当前 Ability 实例添加的冲刺标签、无敌帧和持续 Cue，保持预测拒绝与取消可回滚。
 void UArenaGameplayAbility_Dash::RemoveDashStateTags()
 {
+	RemoveDashInvincibility();
+
 	UAbilitySystemComponent* ASC = ActiveDashASC.Get();
 	if (ASC && bAppliedDashStateTags)
 	{
 		ASC->RemoveLooseGameplayTag(ArenaGameplayTags::State_Dashing);
-		ASC->RemoveLooseGameplayTag(ArenaGameplayTags::State_Invincible);
 		if (ASC->IsOwnerActorAuthoritative())
 		{
 			ASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Dashing);
-			ASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Invincible);
 			if (bAddedDashGameplayCue)
 			{
 				ASC->RemoveGameplayCue(ArenaGameplayTags::GameplayCue_Ability_Dash_Active);
@@ -348,6 +350,56 @@ void UArenaGameplayAbility_Dash::RemoveDashStateTags()
 	bAddedDashGameplayCue = false;
 	ActiveDashASC.Reset();
 	ActiveDashCharacter.Reset();
+}
+
+// 无敌帧在预测端立即生效、服务器权威拒绝伤害；较短窗口会在冲刺结束前独立到期。
+void UArenaGameplayAbility_Dash::ApplyDashInvincibility(UAbilitySystemComponent* ASC)
+{
+	if (!ASC || bAppliedDashInvincibilityTag || InvincibilityDuration <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	ASC->AddLooseGameplayTag(ArenaGameplayTags::State_Invincible);
+	if (ASC->IsOwnerActorAuthoritative())
+	{
+		ASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::State_Invincible);
+	}
+	bAppliedDashInvincibilityTag = true;
+
+	const float EffectiveDuration = FMath::Min(InvincibilityDuration, DashDuration);
+	if (EffectiveDuration + KINDA_SMALL_NUMBER < DashDuration)
+	{
+		if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				InvincibilityTimerHandle,
+				this,
+				&UArenaGameplayAbility_Dash::RemoveDashInvincibility,
+				EffectiveDuration,
+				false);
+		}
+	}
+}
+
+// 清除独立无敌计时器并成对移除预测与复制标签，重复调用不会误减其他来源的无敌层数。
+void UArenaGameplayAbility_Dash::RemoveDashInvincibility()
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(InvincibilityTimerHandle);
+	}
+
+	UAbilitySystemComponent* ASC = ActiveDashASC.Get();
+	if (ASC && bAppliedDashInvincibilityTag)
+	{
+		ASC->RemoveLooseGameplayTag(ArenaGameplayTags::State_Invincible);
+		if (ASC->IsOwnerActorAuthoritative())
+		{
+			ASC->RemoveReplicatedLooseGameplayTag(ArenaGameplayTags::State_Invincible);
+		}
+	}
+	bAppliedDashInvincibilityTag = false;
 }
 
 // 正常结束先记录实际终点并发送服务器事件，再清理位移和 Ability 状态。
@@ -414,4 +466,32 @@ void UArenaGameplayAbility_Dash::StopDashMovement(ACharacter* Character) const
 	{
 		Character->GetCharacterMovement()->StopMovementImmediately();
 	}
+}
+
+// 保存原始 Pawn 响应后切换为重叠，使预测端和服务器都能穿过敌人且不影响墙体阻挡。
+void UArenaGameplayAbility_Dash::EnablePawnPassThrough(ACharacter* Character)
+{
+	UCapsuleComponent* CapsuleComponent = Character ? Character->GetCapsuleComponent() : nullptr;
+	if (!CapsuleComponent || bPawnCollisionChanged)
+	{
+		return;
+	}
+
+	PreviousPawnCollisionResponse = CapsuleComponent->GetCollisionResponseToChannel(ECC_Pawn);
+	CapsuleComponent->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	bPawnCollisionChanged = true;
+}
+
+// 在所有结束路径恢复冲刺前的 Pawn 响应，避免角色在技能结束后继续穿透其他 Pawn。
+void UArenaGameplayAbility_Dash::RestorePawnCollision()
+{
+	ACharacter* Character = ActiveDashCharacter.Get();
+	UCapsuleComponent* CapsuleComponent = Character ? Character->GetCapsuleComponent() : nullptr;
+	if (CapsuleComponent && bPawnCollisionChanged)
+	{
+		CapsuleComponent->SetCollisionResponseToChannel(ECC_Pawn, PreviousPawnCollisionResponse);
+	}
+
+	bPawnCollisionChanged = false;
+	PreviousPawnCollisionResponse = ECR_Block;
 }

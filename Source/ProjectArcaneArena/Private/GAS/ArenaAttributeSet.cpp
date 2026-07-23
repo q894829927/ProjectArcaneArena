@@ -2,6 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Components/SceneComponent.h"
+#include "Core/ArenaUpgradeDataAsset.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaDamageFeedbackTypes.h"
@@ -14,14 +15,17 @@ DEFINE_LOG_CATEGORY_STATIC(LogArenaDamage, Log, All);
 
 namespace
 {
-	// 从伤害 Spec 的标签、效果类和来源对象解析便于排查的技能名称。
+	// 优先使用升级 DataAsset 的目标技能标签，再从 Spec 标签、效果类和来源对象解析伤害归属。
 	FString ResolveDamageSkillLabel(const FGameplayEffectSpec& EffectSpec)
 	{
 		FGameplayTagContainer AssetTags;
 		EffectSpec.GetAllAssetTags(AssetTags);
-		if (AssetTags.HasTagExact(ArenaGameplayTags::Damage_Secondary))
+
+		const UObject* SourceObject = EffectSpec.GetEffectContext().GetSourceObject();
+		const UArenaUpgradeDataAsset* UpgradeData = Cast<UArenaUpgradeDataAsset>(SourceObject);
+		if (UpgradeData && UpgradeData->TargetAbilityTag.IsValid())
 		{
-			return ArenaGameplayTags::Ability_Passive_Overload.GetTag().ToString();
+			return UpgradeData->TargetAbilityTag.ToString();
 		}
 
 		const FString EffectClassName = GetNameSafe(EffectSpec.Def);
@@ -39,7 +43,6 @@ namespace
 			}
 		}
 
-		const UObject* SourceObject = EffectSpec.GetEffectContext().GetSourceObject();
 		const FString SourceClassName = GetNameSafe(SourceObject ? SourceObject->GetClass() : nullptr);
 		if (SourceClassName.Contains(TEXT("BasicAttack")))
 		{

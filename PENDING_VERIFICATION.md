@@ -808,8 +808,12 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.
 2. 获得 Trail 升级，沿直线穿过多个高血量敌人，观察 World Outliner、Cue 和伤害日志。
 3. 把敌人分别放在线段中心附近、端点附近、距离路径约 `100` 和 `140` 的位置。
 4. 固定 AttackPower、CritChance 和敌人 Defense，记录 `2s / 0.5s` 的伤害次数；再测试敌人 Shield、CritChance `1`、Shocked 和 `State.Invincible`。
-5. 让 Trail 击杀敌人，并在拥有 Overload 时让 Trail 命中 Burning 敌人，观察 OnCrit、OnKill 和 Lightning 事件联动。
-6. 在 Trail 存续期间连续 Dash，观察多个 Area/Cue 生命周期是否各自正确结束。
+5. 冲刺正面穿过单个和多个敌人，确认不会被 Pawn 阻挡；冲刺结束、Stun、死亡和预测拒绝后确认角色重新正常阻挡 Pawn，墙体仍会阻挡冲刺。
+6. 检查权威伤害日志，轨迹伤害应显示 `Ability.Passive.DashLightningTrail`，不再显示 `ArenaUpgradeDataAsset`。
+7. 将 `InvincibilityDuration` 分别设为等于和短于 `DashDuration`，让近战、Projectile 与持续区域在窗口内外命中；窗口内不掉 Shield/Health，窗口到期后即使仍在移动也应正常受伤。
+8. 在正常结束、Stun、死亡和预测拒绝后使用 `showdebug abilitysystem`，确认不残留 `State.Invincible`。
+9. 让 Trail 击杀敌人，并在拥有 Overload 时让 Trail 命中 Burning 敌人，观察 OnCrit、OnKill 和 Lightning 事件联动。
+10. 在 Trail 存续期间连续 Dash，观察多个 Area/Cue 生命周期是否各自正确结束。
 
 ### 通过标准
 
