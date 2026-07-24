@@ -11,6 +11,7 @@ class AGameplayAbilityTargetActor;
 class UAbilitySystemComponent;
 class UAbilityTask_WaitTargetData;
 class UAnimMontage;
+class UCapsuleComponent;
 
 UCLASS(Blueprintable)
 class PROJECTARCANEARENA_API UArenaGameplayAbility_Dash : public UArenaGameplayAbility
@@ -20,7 +21,7 @@ class PROJECTARCANEARENA_API UArenaGameplayAbility_Dash : public UArenaGameplayA
 public:
 	UArenaGameplayAbility_Dash();
 
-	// 使用已校验方向启动两端冲刺，并在冲刺生命周期内临时允许角色穿过 Pawn。
+	// 使用已校验方向预计算安全终点，再启动允许穿过 Pawn 的两端连续冲刺。
 	void StartDashWithDirection(const FVector& DashDirection);
 
 protected:
@@ -58,6 +59,12 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Dash", meta = (ClampMin = "0.01"))
 	float DashDuration = 0.15f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Dash|Collision", meta = (ClampMin = "0.0"))
+	float EndpointPawnPassThroughSearchDistance = 200.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Dash|Collision", meta = (ClampMin = "0.0"))
+	float ObstacleClearance = 2.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Dash|Defense", meta = (ClampMin = "0.0"))
 	float InvincibilityDuration = 0.15f;
@@ -98,9 +105,35 @@ private:
 	float GetDashCooldownReduction(const FGameplayAbilityActorInfo* ActorInfo) const;
 	// 清除冲刺结束残留速度，避免 RootMotion 后继续滑动。
 	void StopDashMovement(ACharacter* Character) const;
+	// 在启动 RootMotion 前解析墙体截断和 Pawn 安全终点，返回本次实际连续移动距离。
+	bool ResolveDashTravelDistance(
+		const ACharacter* Character,
+		const FVector& DashDirection,
+		float& OutTravelDistance) const;
+	// 使用忽略全部 Pawn 的胶囊扫描取得世界障碍物允许的最远冲刺距离。
+	float FindWorldLimitedDashDistance(
+		const ACharacter* Character,
+		const UCapsuleComponent* CapsuleComponent,
+		const FVector& DashDirection,
+		float ProbeDistance) const;
+	// 在理想终点附近先向前再向后搜索可恢复 Pawn 阻挡的安全位置。
+	bool FindSafeDashEndpointDistance(
+		const ACharacter* Character,
+		const UCapsuleComponent* CapsuleComponent,
+		const FVector& DashDirection,
+		float PreferredDistance,
+		float MaximumDistance,
+		float& OutSafeDistance) const;
 	// 在预测端和服务器临时把角色胶囊对 Pawn 的响应改为重叠，世界障碍物仍保持原碰撞。
 	void EnablePawnPassThrough(ACharacter* Character);
-	// 恢复冲刺前保存的 Pawn 碰撞响应，覆盖正常结束、取消和预测拒绝路径。
+	// 仅为动态碰撞变化和预测误差兜底，异常终点重叠时沿实际路径寻找最近安全位置。
+	void ResolveDashEndOverlap();
+	// 检查完整角色胶囊在候选位置恢复 Pawn 阻挡后是否会发生阻挡重叠。
+	bool IsDashCapsuleBlockedAt(
+		const ACharacter* Character,
+		const UCapsuleComponent* CapsuleComponent,
+		const FVector& CandidateLocation) const;
+	// 在异常重叠保险检查后恢复冲刺前保存的 Pawn 碰撞响应。
 	void RestorePawnCollision();
 
 	FTimerHandle DashTimerHandle;
@@ -108,6 +141,8 @@ private:
 	TWeakObjectPtr<ACharacter> ActiveDashCharacter;
 	TWeakObjectPtr<UAbilitySystemComponent> ActiveDashASC;
 	FVector AuthorityDashStartLocation = FVector::ZeroVector;
+	FVector DashCollisionStartLocation = FVector::ZeroVector;
+	float ActiveDashDuration = 0.0f;
 	TEnumAsByte<ECollisionResponse> PreviousPawnCollisionResponse = ECR_Block;
 
 	UPROPERTY(Transient)

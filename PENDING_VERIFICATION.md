@@ -161,6 +161,23 @@
 - 多个重叠 Area 的 Timer、伤害次数和本地 Cue 生命周期彼此独立，Boss 死亡或离开 Combat 时全部正确清理。
 - GroundSlam、Charge、FireZone 与 Chase 能按距离、冷却和状态切换，不同时激活，也不会永久停滞。
 
+## 玩家 Dash 预计算终点与网络回归
+
+### 测试方法
+
+1. 在空旷地面、正对墙体、斜向墙角和紧贴墙体的位置分别冲刺，确认开始前缩短实际距离，结束时不再明显向后传送。
+2. 在冲刺默认终点附近放置普通敌人：敌人后方空间充足时确认角色穿到安全位置；敌人贴墙时确认角色直接停在敌人前方。
+3. 在冲刺开始后把动态阻挡物移入预计算终点，确认异常保险能恢复合法碰撞且不会永久保持 `Pawn Overlap`。
+4. 顶视角和第三人称分别观察 Montage、Camera SpringArm、`State.Dashing`、`State.Invincible` 和 Dash Active Cue。
+5. 双人 Listen Server 在 `150ms RTT + 2%/5% Packet Loss` 下重复墙边和穿敌测试，比较 owning client 与 authority 的终点、实际 `Trigger.OnDashEnd` 路径和闪电轨迹长度。
+
+### 通过标准
+
+- 正常路径不依赖 Dash 结束后的可见位置回退；墙体在 RootMotion 启动前缩短距离。
+- 敌人后方空间足够时允许穿过，空间不足时停在前方，不进入敌人或墙体胶囊。
+- 实际 Dash 速度保持不变，RootMotion 和无敌窗口按解析后的短距离正确结束。
+- 服务器仍以客户端提交的规范化方向重新计算权威终点，预测误差只产生常规 CharacterMovement 校正，不重复发送 `Trigger.OnDashEnd` 或生成多个闪电轨迹。
+
 ## 测试记录格式
 
 每次执行测试时，在需要保留的失败条目下追加以下信息：
@@ -808,12 +825,13 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.
 2. 获得 Trail 升级，沿直线穿过多个高血量敌人，观察 World Outliner、Cue 和伤害日志。
 3. 把敌人分别放在线段中心附近、端点附近、距离路径约 `100` 和 `140` 的位置。
 4. 固定 AttackPower、CritChance 和敌人 Defense，记录 `2s / 0.5s` 的伤害次数；再测试敌人 Shield、CritChance `1`、Shocked 和 `State.Invincible`。
-5. 冲刺正面穿过单个和多个敌人，确认不会被 Pawn 阻挡；冲刺结束、Stun、死亡和预测拒绝后确认角色重新正常阻挡 Pawn，墙体仍会阻挡冲刺。
+5. 冲刺正面穿过单个和多个敌人，并把敌人紧贴墙面放置；确认不会被 Pawn 阻挡，终点重叠时会沿原路径回退到最近安全点，不会卡进模型或穿到墙后。冲刺结束、Stun、死亡和预测拒绝后确认角色重新正常阻挡 Pawn。
 6. 检查权威伤害日志，轨迹伤害应显示 `Ability.Passive.DashLightningTrail`，不再显示 `ArenaUpgradeDataAsset`。
 7. 将 `InvincibilityDuration` 分别设为等于和短于 `DashDuration`，让近战、Projectile 与持续区域在窗口内外命中；窗口内不掉 Shield/Health，窗口到期后即使仍在移动也应正常受伤。
 8. 在正常结束、Stun、死亡和预测拒绝后使用 `showdebug abilitysystem`，确认不残留 `State.Invincible`。
-9. 让 Trail 击杀敌人，并在拥有 Overload 时让 Trail 命中 Burning 敌人，观察 OnCrit、OnKill 和 Lightning 事件联动。
-10. 在 Trail 存续期间连续 Dash，观察多个 Area/Cue 生命周期是否各自正确结束。
+9. 第三人称下贴近并穿过普通敌人、远程敌人和 Boss，确认 SpringArm 不因敌人胶囊或模型瞬间收缩；贴近墙体时相机碰撞仍正常。
+10. 让 Trail 击杀敌人，并在拥有 Overload 时让 Trail 命中 Burning 敌人，观察 OnCrit、OnKill 和 Lightning 事件联动。
+11. 在 Trail 存续期间连续 Dash，观察多个 Area/Cue 生命周期是否各自正确结束。
 
 ### 通过标准
 

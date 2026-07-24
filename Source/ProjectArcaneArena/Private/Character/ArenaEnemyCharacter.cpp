@@ -169,10 +169,20 @@ bool AArenaEnemyCharacter::IsAttacking() const
 		&& AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Attacking);
 }
 
-// BeginPlay 阶段初始化敌人 GAS、绑定反馈委托，并由服务端应用默认属性。
+// BeginPlay 阶段固定敌人相机通道响应，再初始化 GAS、反馈委托和服务端默认属性。
 void AArenaEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 第三人称 SpringArm 只应被世界障碍物压缩，敌人 Capsule 与 Mesh 不参与 Camera 探针碰撞。
+	if (UCapsuleComponent* EnemyCapsule = GetCapsuleComponent())
+	{
+		EnemyCapsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
+	if (USkeletalMeshComponent* EnemyMesh = GetMesh())
+	{
+		EnemyMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
 
 	// 初始化顺序先建 ActorInfo，再绑定委托，最后由服务端应用默认属性。
 	InitializeAbilityActorInfo();

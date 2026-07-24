@@ -8,12 +8,15 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Core/ArenaPlayerState.h"
+#include "Engine/World.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GAS/Targeting/ArenaTargetActor_DashDirection.h"
 #include "GAS/Targeting/ArenaTargetData_DashDirection.h"
+#include "EngineUtils.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Pawn.h"
 #include "GameFramework/RootMotionSource.h"
 #include "GameplayEffect.h"
 #include "TimerManager.h"
@@ -115,7 +118,7 @@ void UArenaGameplayAbility_Dash::OnDashTargetDataCancelled(const FGameplayAbilit
 	EndAbility(GetCurrentAbilitySpecHandle(), GetCurrentActorInfo(), GetCurrentActivationInfo(), true, true);
 }
 
-// 使用校验方向创建 RootMotion，并在两端临时允许胶囊穿过 Pawn；服务器额外记录实际起点。
+// 先解析不会穿墙或卡进 Pawn 的合法终点，再以固定速度启动两端一致的连续 RootMotion。
 void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirection)
 {
 	const FGameplayAbilityActorInfo* ActorInfo = GetCurrentActorInfo();
@@ -127,33 +130,46 @@ void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirec
 		return;
 	}
 
+	float ResolvedTravelDistance = 0.0f;
+	if (!ResolveDashTravelDistance(Character, DashDirection, ResolvedTravelDistance)
+		|| ResolvedTravelDistance <= KINDA_SMALL_NUMBER)
+	{
+		EndAbility(GetCurrentAbilitySpecHandle(), ActorInfo, GetCurrentActivationInfo(), true, true);
+		return;
+	}
+
+	const float DashSpeed = DashDistance / DashDuration;
+	ActiveDashDuration = ResolvedTravelDistance / DashSpeed;
 	ActiveDashCharacter = Character;
 	ActiveDashASC = ActorInfo->AbilitySystemComponent.Get();
+	DashCollisionStartLocation = Character->GetActorLocation();
 	EnablePawnPassThrough(Character);
 	bSentDashEndEvent = false;
 	if (ActorInfo->IsNetAuthority())
 	{
-		AuthorityDashStartLocation = Character->GetActorLocation();
+		AuthorityDashStartLocation = DashCollisionStartLocation;
 	}
 	ApplyDashStateTags(ActiveDashASC.Get());
 	PlayDashMontage();
 
 	if (ActorInfo->IsNetAuthority() && ArenaAbilityNetworkDebug::IsAuditEnabled())
 	{
-		UE_LOG(LogArenaAbilityNet, Log, TEXT("[%llu] Dash Key=%d Handle=%s Direction=%s"),
+		UE_LOG(LogArenaAbilityNet, Log,
+			TEXT("[%llu] Dash Key=%d Handle=%s Direction=%s Distance=%.2f Duration=%.3f"),
 			ArenaAbilityNetworkDebug::NextServerExecutionSequence(),
 			GetCurrentActivationInfo().GetActivationPredictionKey().Current,
 			*GetCurrentAbilitySpecHandle().ToString(),
-			*DashDirection.ToCompactString());
+			*DashDirection.ToCompactString(),
+			ResolvedTravelDistance,
+			ActiveDashDuration);
 	}
 
-	const float DashSpeed = DashDistance / DashDuration;
 	UAbilityTask_ApplyRootMotionConstantForce* DashMovementTask = UAbilityTask_ApplyRootMotionConstantForce::ApplyRootMotionConstantForce(
 		this,
 		FName(TEXT("DashMovement")),
 		DashDirection,
 		DashSpeed,
-		DashDuration,
+		ActiveDashDuration,
 		false,
 		nullptr,
 		ERootMotionFinishVelocityMode::SetVelocity,
@@ -167,7 +183,12 @@ void UArenaGameplayAbility_Dash::StartDashWithDirection(const FVector& DashDirec
 	}
 
 	DashMovementTask->ReadyForActivation();
-	World->GetTimerManager().SetTimer(DashTimerHandle, this, &UArenaGameplayAbility_Dash::FinishDash, DashDuration, false);
+	World->GetTimerManager().SetTimer(
+		DashTimerHandle,
+		this,
+		&UArenaGameplayAbility_Dash::FinishDash,
+		ActiveDashDuration,
+		false);
 }
 
 // 清理位移与无敌计时器、RootMotion、临时碰撞、状态与 Cue；取消路径不会补发 Dash 完成事件。
@@ -193,6 +214,8 @@ void UArenaGameplayAbility_Dash::EndAbility(
 	ActiveTargetDataTask = nullptr;
 	bConsumedTargetData = false;
 	AuthorityDashStartLocation = FVector::ZeroVector;
+	DashCollisionStartLocation = FVector::ZeroVector;
+	ActiveDashDuration = 0.0f;
 	bSentDashEndEvent = false;
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -367,8 +390,11 @@ void UArenaGameplayAbility_Dash::ApplyDashInvincibility(UAbilitySystemComponent*
 	}
 	bAppliedDashInvincibilityTag = true;
 
-	const float EffectiveDuration = FMath::Min(InvincibilityDuration, DashDuration);
-	if (EffectiveDuration + KINDA_SMALL_NUMBER < DashDuration)
+	const float CurrentDashDuration = ActiveDashDuration > KINDA_SMALL_NUMBER
+		? ActiveDashDuration
+		: DashDuration;
+	const float EffectiveDuration = FMath::Min(InvincibilityDuration, CurrentDashDuration);
+	if (EffectiveDuration + KINDA_SMALL_NUMBER < CurrentDashDuration)
 	{
 		if (UWorld* World = GetWorld())
 		{
@@ -468,6 +494,150 @@ void UArenaGameplayAbility_Dash::StopDashMovement(ACharacter* Character) const
 	}
 }
 
+// 使用世界障碍扫描和终点胶囊检查，在冲刺开始前决定唯一的合法移动距离。
+bool UArenaGameplayAbility_Dash::ResolveDashTravelDistance(
+	const ACharacter* Character,
+	const FVector& DashDirection,
+	float& OutTravelDistance) const
+{
+	OutTravelDistance = 0.0f;
+	const UCapsuleComponent* CapsuleComponent = Character ? Character->GetCapsuleComponent() : nullptr;
+	const FVector HorizontalDirection = DashDirection.GetSafeNormal2D();
+	if (!Character || !CapsuleComponent || HorizontalDirection.IsNearlyZero()
+		|| DashDistance <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const float SearchExtension = FMath::Max(EndpointPawnPassThroughSearchDistance, 0.0f);
+	const float ProbeDistance = DashDistance + SearchExtension;
+	const float MaximumWorldDistance = FindWorldLimitedDashDistance(
+		Character,
+		CapsuleComponent,
+		HorizontalDirection,
+		ProbeDistance);
+	const float PreferredDistance = FMath::Min(DashDistance, MaximumWorldDistance);
+	if (PreferredDistance <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	return FindSafeDashEndpointDistance(
+		Character,
+		CapsuleComponent,
+		HorizontalDirection,
+		PreferredDistance,
+		MaximumWorldDistance,
+		OutTravelDistance);
+}
+
+// 忽略所有 Pawn 后扫描角色胶囊，使墙体在 RootMotion 启动前直接缩短本次冲刺。
+float UArenaGameplayAbility_Dash::FindWorldLimitedDashDistance(
+	const ACharacter* Character,
+	const UCapsuleComponent* CapsuleComponent,
+	const FVector& DashDirection,
+	float ProbeDistance) const
+{
+	UWorld* World = Character ? Character->GetWorld() : nullptr;
+	if (!World || !CapsuleComponent || ProbeDistance <= KINDA_SMALL_NUMBER)
+	{
+		return 0.0f;
+	}
+
+	const float CapsuleRadius = FMath::Max(CapsuleComponent->GetScaledCapsuleRadius() - 1.0f, 1.0f);
+	const float CapsuleHalfHeight = FMath::Max(
+		CapsuleComponent->GetScaledCapsuleHalfHeight() - 1.0f,
+		CapsuleRadius);
+	const FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight);
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ArenaDashWorldPrecompute), false, Character);
+	QueryParams.bFindInitialOverlaps = false;
+	for (TActorIterator<APawn> PawnIt(World); PawnIt; ++PawnIt)
+	{
+		QueryParams.AddIgnoredActor(*PawnIt);
+	}
+	FCollisionResponseParams ResponseParams(CapsuleComponent->GetCollisionResponseToChannels());
+	ResponseParams.CollisionResponse.SetResponse(ECC_Pawn, ECR_Ignore);
+
+	const FVector StartLocation = Character->GetActorLocation();
+	const FVector EndLocation = StartLocation + DashDirection * ProbeDistance;
+	FHitResult BlockingHit;
+	if (!World->SweepSingleByChannel(
+		BlockingHit,
+		StartLocation,
+		EndLocation,
+		CapsuleComponent->GetComponentQuat(),
+		CapsuleComponent->GetCollisionObjectType(),
+		CapsuleShape,
+		QueryParams,
+		ResponseParams))
+	{
+		return ProbeDistance;
+	}
+
+	const float HitDistance = ProbeDistance * FMath::Clamp(BlockingHit.Time, 0.0f, 1.0f);
+	return FMath::Max(HitDistance - FMath::Max(ObstacleClearance, 0.0f), 0.0f);
+}
+
+// 优先在理想终点前方寻找穿敌后的安全位置，空间不足时才选择敌人前方的最近合法位置。
+bool UArenaGameplayAbility_Dash::FindSafeDashEndpointDistance(
+	const ACharacter* Character,
+	const UCapsuleComponent* CapsuleComponent,
+	const FVector& DashDirection,
+	float PreferredDistance,
+	float MaximumDistance,
+	float& OutSafeDistance) const
+{
+	OutSafeDistance = 0.0f;
+	if (!Character || !CapsuleComponent || PreferredDistance <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const FVector StartLocation = Character->GetActorLocation();
+	const auto IsDistanceSafe = [this, Character, CapsuleComponent, &StartLocation, &DashDirection](float Distance)
+	{
+		return !IsDashCapsuleBlockedAt(
+			Character,
+			CapsuleComponent,
+			StartLocation + DashDirection * Distance);
+	};
+
+	if (IsDistanceSafe(PreferredDistance))
+	{
+		OutSafeDistance = PreferredDistance;
+		return true;
+	}
+
+	const float SearchStep = FMath::Max(CapsuleComponent->GetScaledCapsuleRadius() * 0.25f, 5.0f);
+	const float ForwardSearchDistance = FMath::Max(MaximumDistance - PreferredDistance, 0.0f);
+	const int32 ForwardSteps = FMath::CeilToInt(ForwardSearchDistance / SearchStep);
+	for (int32 StepIndex = 1; StepIndex <= ForwardSteps; ++StepIndex)
+	{
+		const float CandidateDistance = FMath::Min(
+			PreferredDistance + SearchStep * StepIndex,
+			MaximumDistance);
+		if (IsDistanceSafe(CandidateDistance))
+		{
+			OutSafeDistance = CandidateDistance;
+			return true;
+		}
+	}
+
+	const int32 BackwardSteps = FMath::CeilToInt(PreferredDistance / SearchStep);
+	for (int32 StepIndex = 1; StepIndex < BackwardSteps; ++StepIndex)
+	{
+		const float CandidateDistance = PreferredDistance - SearchStep * StepIndex;
+		if (CandidateDistance > KINDA_SMALL_NUMBER && IsDistanceSafe(CandidateDistance))
+		{
+			OutSafeDistance = CandidateDistance;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 // 保存原始 Pawn 响应后切换为重叠，使预测端和服务器都能穿过敌人且不影响墙体阻挡。
 void UArenaGameplayAbility_Dash::EnablePawnPassThrough(ACharacter* Character)
 {
@@ -482,9 +652,70 @@ void UArenaGameplayAbility_Dash::EnablePawnPassThrough(ACharacter* Character)
 	bPawnCollisionChanged = true;
 }
 
-// 在所有结束路径恢复冲刺前的 Pawn 响应，避免角色在技能结束后继续穿透其他 Pawn。
+// 处理冲刺期间动态物体闯入或客户端预测差异，正常路径不应依赖这里产生位置回退。
+void UArenaGameplayAbility_Dash::ResolveDashEndOverlap()
+{
+	ACharacter* Character = ActiveDashCharacter.Get();
+	UCapsuleComponent* CapsuleComponent = Character ? Character->GetCapsuleComponent() : nullptr;
+	if (!Character || !CapsuleComponent || !bPawnCollisionChanged || PreviousPawnCollisionResponse != ECR_Block
+		|| DashCollisionStartLocation.ContainsNaN())
+	{
+		return;
+	}
+
+	const FVector CurrentLocation = Character->GetActorLocation();
+	if (!IsDashCapsuleBlockedAt(Character, CapsuleComponent, CurrentLocation))
+	{
+		return;
+	}
+
+	const float SearchDistance = FVector::Dist(CurrentLocation, DashCollisionStartLocation);
+	const float SearchStep = FMath::Max(CapsuleComponent->GetScaledCapsuleRadius() * 0.5f, 10.0f);
+	const int32 SearchSteps = FMath::Clamp(FMath::CeilToInt(SearchDistance / SearchStep), 1, 64);
+	for (int32 StepIndex = 1; StepIndex <= SearchSteps; ++StepIndex)
+	{
+		const float Alpha = static_cast<float>(StepIndex) / static_cast<float>(SearchSteps);
+		const FVector CandidateLocation = FMath::Lerp(CurrentLocation, DashCollisionStartLocation, Alpha);
+		if (!IsDashCapsuleBlockedAt(Character, CapsuleComponent, CandidateLocation))
+		{
+			Character->SetActorLocation(CandidateLocation, false, nullptr, ETeleportType::TeleportPhysics);
+			return;
+		}
+	}
+
+	UE_LOG(LogArenaAbilityNet, Warning, TEXT("Dash could not find a safe collision restore location for %s."),
+		*GetNameSafe(Character));
+}
+
+// 使用角色对象通道查询收缩后的完整胶囊，既检查 Pawn，也检查会阻挡角色的世界几何体。
+bool UArenaGameplayAbility_Dash::IsDashCapsuleBlockedAt(
+	const ACharacter* Character,
+	const UCapsuleComponent* CapsuleComponent,
+	const FVector& CandidateLocation) const
+{
+	const UWorld* World = Character ? Character->GetWorld() : nullptr;
+	if (!World || !CapsuleComponent)
+	{
+		return true;
+	}
+
+	const float CapsuleRadius = FMath::Max(CapsuleComponent->GetScaledCapsuleRadius() - 1.0f, 1.0f);
+	const float CapsuleHalfHeight = FMath::Max(CapsuleComponent->GetScaledCapsuleHalfHeight() - 1.0f, CapsuleRadius);
+	const FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(CapsuleRadius, CapsuleHalfHeight);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ArenaDashCollisionRestore), false, Character);
+	return World->OverlapBlockingTestByChannel(
+		CandidateLocation,
+		CapsuleComponent->GetComponentQuat(),
+		CapsuleComponent->GetCollisionObjectType(),
+		CapsuleShape,
+		QueryParams);
+}
+
+// 恢复 Pawn 响应前执行一次异常保险检查，正常终点已在 RootMotion 启动前解析完成。
 void UArenaGameplayAbility_Dash::RestorePawnCollision()
 {
+	ResolveDashEndOverlap();
+
 	ACharacter* Character = ActiveDashCharacter.Get();
 	UCapsuleComponent* CapsuleComponent = Character ? Character->GetCapsuleComponent() : nullptr;
 	if (CapsuleComponent && bPawnCollisionChanged)
