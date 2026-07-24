@@ -186,3 +186,23 @@ FireZone Decorator 从 Ability CDO 读取 `600` 最小距离和 `1200` 最大距
 ## 资产边界
 
 脚本只复制 Boss 直接引用的资源。Skeleton、PhysicsAsset、材质、贴图以及 Niagara 内部依赖继续引用项目现有资产，避免递归复制完整资源包。
+
+## 阶段三 A：Boss 阶段系统
+
+完整编译并重启编辑器后执行：
+
+```text
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_phase_system.py"
+```
+
+脚本会幂等创建并连接：
+
+- `/Game/Boss/GAS/GameplayEffect/GE_Boss_Enrage`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossPhase_Transition`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossEnraged_Active`
+- `/Game/Boss/VFX/NS_BossPhase_Transition`
+- `/Game/Boss/VFX/NS_BossEnraged_Active`
+
+同时把 `BP_ArenaBossCharacter` 的 `PhaseTwoHealthRatio`、`PhaseThreeHealthRatio` 和 `EnrageEffectClass` 配置为 `0.70`、`0.35` 与 `GE_Boss_Enrage`。脚本不会修改 `BT_ArenaBoss`，现有 `GroundSlam -> Charge -> FireZone -> Chase -> Wait` 顺序保持不变。
+
+`WBP_PlayerHUD` 可以添加一个勾选 `Is Variable` 的 `TextBlock`，命名为 `BossPhaseText`。若不添加，C++ 会把阶段文本合并到 `BossNameText`；完全没有 Boss 控件时，运行时备用 Boss 面板会自动包含阶段文本。

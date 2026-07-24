@@ -29,10 +29,12 @@ namespace
 	}
 }
 
-// Charge 由服务器执行并使用独立冷却，BT 通过精确 Ability AssetTag 激活它。
+// Charge 由服务器执行并使用独立冷却，Phase 1 通过 GAS 阻断后由 BT 回退其他分支。
 UArenaGameplayAbility_BossCharge::UArenaGameplayAbility_BossCharge()
 {
 	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Enemy_Boss_Charge));
+	ActivationRequiredTags.AddTag(ArenaGameplayTags::Boss_Phase);
+	ActivationBlockedTags.AddTag(ArenaGameplayTags::Boss_Phase_One);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Enemy_Boss_Charge);
 	CooldownGameplayEffectClass = UArenaGameplayEffect_BossChargeCooldown::StaticClass();
 }

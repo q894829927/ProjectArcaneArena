@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前开发阶段为“阶段二 C：Boss FireZone”，状态为 `Partial`。阶段一已完成关键双人闭环验收，阶段二 A 的单人核心追击/攻击循环已通过，Charge 分支已完成首轮单人核心验收；FireZone 已完成编译、资产幂等、Behavior Tree 接线和单人核心验收，当前已把开场技能缓冲提高到 `3.0s` 并为持续火区补充伤害边界圈，仍需完成资产同步及多人/异常生命周期验证。
+当前开发阶段为“阶段三 A：Boss 阶段系统”，状态为 `Partial`。阶段二的 GroundSlam、Charge、FireZone 与 Behavior Tree 主循环已具备可用实现，但仍保留多人和异常生命周期验证项；阶段三 A 已完成实现、资产幂等和主要单人 PIE 验收，包括阶段门控、阈值跨越、技能不中断、Enrage 属性/实例唯一性、直接致死保护以及死亡/Victory 清理，当前仅保留少量异常清理与多人一致性验收。阶段三 B 的多人 Boss 属性缩放尚未开始。
 
 ---
 
@@ -212,6 +212,33 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - Boss 生成时由服务器统计参战 `AArenaPlayerState`，快照人数并应用一次初始化缩放 GE。
 - 默认 Health 缩放为一名玩家 `1.0x`、两名玩家 `1.75x`；同时正确更新 MaxHealth 和当前 Health。
 - Boss 生成后的玩家死亡或暂时丢失 Pawn 不触发重新缩放，避免当前生命比例跳变。
+
+### 当前实现进度
+
+状态：`Partial`，最后更新：2026-07-24。
+
+已完成实现：
+
+- 已新增 `Boss.Phase`、三个阶段叶标签、`Boss.State.Enraged` 以及 Transition/Enraged GameplayCue 原生标签。
+- `AArenaBossCharacter` 在服务器监听 Health Attribute，初始化 `Boss.Phase.One`，按 `70%/35%` 阈值单向推进；治疗不回退，跨越多个阈值只进入最终到达阶段，零生命不会触发临死 Phase 3。
+- 阶段切换先添加新叶标签再移除旧叶标签；死亡、销毁或 GameState 离开 `Combat` 时移除阶段标签和保存 Handle 对应的 Enrage GE。
+- GroundSlam 要求父标签 `Boss.Phase`；Charge 与 FireZone 额外被 `Boss.Phase.One` 阻断。现有 Behavior Tree 无需改图，通过 Decorator 的 GAS `CanActivateAbility()` 自动获得阶段资格。
+- 已新增 Infinite `UArenaGameplayEffect_BossEnrage`，以复合乘算提供 AttackPower `1.30x`、MoveSpeed `1.20x`，授予 `Boss.State.Enraged` 并携带持续 Enraged Cue。
+- Phase 2/3 转换由服务器各执行一次 Transition Cue，`RawMagnitude` 携带最终阶段编号；Phase 1 初始化不播放转换 Cue。
+- 已新增可附着 Boss 并兼容非循环 Niagara 重播的 `AArenaGameplayCueNotify_BossEnraged`。
+- `UArenaPlayerHUDWidget` 已观察三个阶段 Tag，可使用可选 `BossPhaseText`；旧 HUD 未添加控件时把阶段合并到 `BossNameText`。
+- 已新增幂等 `Content/Python/boss/setup_boss_phase_system.py`，负责创建 Enrage GE、Boss 专属 Niagara/Cue 并配置 Boss 阈值与 Effect，不修改 Behavior Tree 图。
+- 编辑器已加载本轮新增原生类型；脚本连续执行两次均保存相同的 `GE_Boss_Enrage`、两个 Niagara、两个 GameplayCue 和 `BP_ArenaBossCharacter`，未生成 `_1/_2` 资产，也未修改 `BT_ArenaBoss`。
+- 单人 PIE 已验证主路径：Phase 1 只允许 GroundSlam，Health 到 `70%` 后解锁 Charge/FireZone，Health 到 `35%` 后进入 Phase 3 并显示 Enraged 表现；单次高伤害跨过 Phase 2 时会直接进入 Phase 3。
+- 已验证 GroundSlam、Charge、FireZone 执行期间跨阶段不会中断当前技能；Phase 3 的 AttackPower `10 -> 13`、MoveSpeed `300 -> 360`，且 Enrage GE、Tag、Cue 各只有一份。
+- 已验证 Boss 死亡和进入 Victory 后不会残留阶段 Tag 或 Enrage 表现。
+- 已验证 Boss 在 Phase 1/2 被单次致死伤害直接击杀时不会短暂进入 Phase 3，也不会触发 Enrage。
+
+尚未完成或尚未验证：
+
+- 尚未验证 Stun、Defeat 和 Actor 直接销毁路径的阶段/Cue 清理；治疗不回退测试延期到 Boss 具备实际回血来源后执行，不阻塞阶段三 A。
+- 尚未完成阶段门控后的 Behavior Tree 单人回归和两人 Listen Server 标签、HUD、属性、Cue、技能解锁一致性。
+- 阶段三 B 的一人 `1.0x`、两人 `1.75x` 初始化 Health 缩放尚未实现。
 
 ### 阶段边界
 

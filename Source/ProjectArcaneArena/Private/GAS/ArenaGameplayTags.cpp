@@ -9,6 +9,12 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Casting, "State.Casting", "Character is currently casting.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(State_Attacking, "State.Attacking", "Character is performing an attack and cannot start another one.");
 
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Boss_Phase, "Boss.Phase", "Parent tag for the current authoritative Boss combat phase.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Boss_Phase_One, "Boss.Phase.One", "Boss is in the opening GroundSlam-only phase.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Boss_Phase_Two, "Boss.Phase.Two", "Boss has unlocked Charge and FireZone.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Boss_Phase_Three, "Boss.Phase.Three", "Boss is in the final enraged phase.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Boss_State_Enraged, "Boss.State.Enraged", "Boss has the final-phase enrage GameplayEffect.");
+
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_BasicAttack, "Ability.BasicAttack", "Basic attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Fireball, "Ability.Fireball", "Fireball ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Dash, "Ability.Dash", "Dash ability.");
@@ -61,6 +67,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Charge_Impact, "GameplayCue.Ability.Boss.Charge.Impact", "Boss charge contact or wall impact presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_FireZone_Telegraph, "GameplayCue.Ability.Boss.FireZone.Telegraph", "Boss fire zone warning at the committed world location.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_FireZone_Active, "GameplayCue.Ability.Boss.FireZone.Active", "Boss persistent fire zone presentation owned by each replicated area.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Phase_Transition, "GameplayCue.Boss.Phase.Transition", "One-shot presentation for a Boss phase transition.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Enraged_Active, "GameplayCue.Boss.Enraged.Active", "Looping presentation for the final Boss enrage phase.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Fire, "GameplayCue.Hit.Fire", "Confirmed fire damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Lightning, "GameplayCue.Hit.Lightning", "Confirmed lightning damage hit presentation.");

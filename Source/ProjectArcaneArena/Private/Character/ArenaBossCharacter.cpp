@@ -1,9 +1,15 @@
 #include "Character/ArenaBossCharacter.h"
 
 #include "AI/ArenaBossAIController.h"
+#include "Core/ArenaLogCategories.h"
+#include "GAS/ArenaAbilitySystemComponent.h"
+#include "GAS/ArenaAttributeSet.h"
+#include "GAS/ArenaGameplayEffect_BossEnrage.h"
+#include "GAS/ArenaGameplayTags.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "GameplayEffect.h"
 
-// Boss 沿用敌人 ASC 与死亡链路，移动时面向路径速度，攻击时再由 Ability Task 面向目标。
+// Boss 沿用敌人 ASC 与死亡链路，配置路径朝向和原生 Enrage GE 作为阶段三资产缺失时的安全默认。
 AArenaBossCharacter::AArenaBossCharacter()
 	: BossDisplayName(NSLOCTEXT("ArenaBossCharacter", "DefaultBossName", "悟空战将"))
 {
@@ -16,4 +22,347 @@ AArenaBossCharacter::AArenaBossCharacter()
 	GetCharacterMovement()->bOrientRotationToMovement = true;
 	GetCharacterMovement()->bUseControllerDesiredRotation = false;
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
+	EnrageEffectClass = UArenaGameplayEffect_BossEnrage::StaticClass();
+}
+
+// 从复制的 ASC 阶段标签解析当前阶段，客户端和 HUD 不依赖服务器私有变量。
+FGameplayTag AArenaBossCharacter::GetCurrentBossPhaseTag() const
+{
+	const UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
+	if (!BossASC)
+	{
+		return FGameplayTag();
+	}
+
+	if (BossASC->HasMatchingGameplayTag(ArenaGameplayTags::Boss_Phase_Three))
+	{
+		return ArenaGameplayTags::Boss_Phase_Three;
+	}
+	if (BossASC->HasMatchingGameplayTag(ArenaGameplayTags::Boss_Phase_Two))
+	{
+		return ArenaGameplayTags::Boss_Phase_Two;
+	}
+	if (BossASC->HasMatchingGameplayTag(ArenaGameplayTags::Boss_Phase_One))
+	{
+		return ArenaGameplayTags::Boss_Phase_One;
+	}
+	return FGameplayTag();
+}
+
+// 等待敌人基类完成 ASC、属性和 StartupAbilities 初始化后，再建立阶段状态机。
+void AArenaBossCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	BindBossPhaseDelegates();
+	const AArenaGameState* ArenaGameState = BoundBossGameState.Get();
+	if (!ArenaGameState || ArenaGameState->GetGamePhase() == EArenaGamePhase::Combat)
+	{
+		InitializeBossPhaseState();
+	}
+}
+
+// 销毁路径先清理 GAS 阶段状态，再解除委托，确保持续 Cue 不会遗留到下一张地图。
+void AArenaBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (HasAuthority())
+	{
+		CleanupBossPhaseState();
+		UnbindBossPhaseDelegates();
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+// 注册 Boss 专属 Health、死亡和 GameState 阶段观察，避免复用敌人私有死亡实现。
+void AArenaBossCharacter::BindBossPhaseDelegates()
+{
+	UnbindBossPhaseDelegates();
+
+	if (UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent())
+	{
+		BossPhaseHealthChangedDelegateHandle = BossASC->GetGameplayAttributeValueChangeDelegate(
+			UArenaAttributeSet::GetHealthAttribute()).AddUObject(
+				this,
+				&AArenaBossCharacter::HandleBossPhaseHealthChanged);
+	}
+
+	OnEnemyDeath.AddUniqueDynamic(this, &AArenaBossCharacter::HandleBossPhaseDeath);
+
+	if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
+	{
+		BoundBossGameState = ArenaGameState;
+		ArenaGameState->OnGamePhaseChanged.AddUniqueDynamic(
+			this,
+			&AArenaBossCharacter::HandleBossGamePhaseChanged);
+	}
+}
+
+// 使用保存的 ASC 和 GameState 引用对称解除委托，防止 Actor 销毁后的迟到回调。
+void AArenaBossCharacter::UnbindBossPhaseDelegates()
+{
+	if (UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent())
+	{
+		if (BossPhaseHealthChangedDelegateHandle.IsValid())
+		{
+			BossASC->GetGameplayAttributeValueChangeDelegate(
+				UArenaAttributeSet::GetHealthAttribute()).Remove(BossPhaseHealthChangedDelegateHandle);
+		}
+	}
+	BossPhaseHealthChangedDelegateHandle.Reset();
+
+	OnEnemyDeath.RemoveDynamic(this, &AArenaBossCharacter::HandleBossPhaseDeath);
+	if (AArenaGameState* ArenaGameState = BoundBossGameState.Get())
+	{
+		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(
+			this,
+			&AArenaBossCharacter::HandleBossGamePhaseChanged);
+	}
+	BoundBossGameState.Reset();
+}
+
+// 初始化只添加 Phase 1，不播放转换 Cue；重复调用不会叠加标签计数。
+void AArenaBossCharacter::InitializeBossPhaseState()
+{
+	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
+	if (!BossASC
+		|| BossASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+		|| GetCurrentBossPhaseTag().IsValid())
+	{
+		return;
+	}
+
+	BossASC->AddLooseGameplayTag(ArenaGameplayTags::Boss_Phase_One);
+	BossASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::Boss_Phase_One);
+}
+
+// 使用当前 MaxHealth 计算目标阶段，并保持阶段只向前推进。
+void AArenaBossCharacter::EvaluateBossPhase(float NewHealth)
+{
+	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
+	const UArenaAttributeSet* BossAttributes = GetArenaAttributeSet();
+	if (!BossASC || !BossAttributes || NewHealth <= 0.0f
+		|| BossASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		return;
+	}
+
+	const float MaxHealth = BossAttributes->GetMaxHealth();
+	if (MaxHealth <= 0.0f)
+	{
+		return;
+	}
+
+	const float SafePhaseThreeRatio = FMath::Clamp(PhaseThreeHealthRatio, 0.0f, 1.0f);
+	const float SafePhaseTwoRatio = FMath::Clamp(
+		FMath::Max(PhaseTwoHealthRatio, SafePhaseThreeRatio),
+		0.0f,
+		1.0f);
+	const float HealthRatio = FMath::Clamp(NewHealth / MaxHealth, 0.0f, 1.0f);
+
+	FGameplayTag DesiredPhaseTag = ArenaGameplayTags::Boss_Phase_One;
+	int32 DesiredPhaseNumber = 1;
+	if (HealthRatio <= SafePhaseThreeRatio)
+	{
+		DesiredPhaseTag = ArenaGameplayTags::Boss_Phase_Three;
+		DesiredPhaseNumber = 3;
+	}
+	else if (HealthRatio <= SafePhaseTwoRatio)
+	{
+		DesiredPhaseTag = ArenaGameplayTags::Boss_Phase_Two;
+		DesiredPhaseNumber = 2;
+	}
+
+	const int32 CurrentPhaseNumber = GetBossPhaseNumber(GetCurrentBossPhaseTag());
+	if (DesiredPhaseNumber > CurrentPhaseNumber)
+	{
+		AdvanceToBossPhase(DesiredPhaseTag, DesiredPhaseNumber);
+	}
+}
+
+// 新阶段先到达 ASC，再移除旧阶段，避免父标签 Boss.Phase 在客户端短暂归零。
+void AArenaBossCharacter::AdvanceToBossPhase(const FGameplayTag& NewPhaseTag, int32 NewPhaseNumber)
+{
+	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
+	if (!BossASC || !NewPhaseTag.IsValid())
+	{
+		return;
+	}
+
+	const FGameplayTag OldPhaseTag = GetCurrentBossPhaseTag();
+	if (OldPhaseTag == NewPhaseTag)
+	{
+		return;
+	}
+
+	BossASC->AddLooseGameplayTag(NewPhaseTag);
+	BossASC->AddReplicatedLooseGameplayTag(NewPhaseTag);
+	if (OldPhaseTag.IsValid())
+	{
+		BossASC->RemoveLooseGameplayTag(OldPhaseTag);
+		BossASC->RemoveReplicatedLooseGameplayTag(OldPhaseTag);
+	}
+
+	if (NewPhaseNumber == 3)
+	{
+		ApplyEnrageEffect();
+	}
+	ExecutePhaseTransitionCue(NewPhaseNumber);
+
+	UE_LOG(
+		LogArenaBoss,
+		Log,
+		TEXT("Boss %s advanced directly to Phase %d at %.1f / %.1f Health."),
+		*GetNameSafe(this),
+		NewPhaseNumber,
+		GetArenaAttributeSet() ? GetArenaAttributeSet()->GetHealth() : 0.0f,
+		GetArenaAttributeSet() ? GetArenaAttributeSet()->GetMaxHealth() : 0.0f);
+}
+
+// Phase 3 仅应用一次 Infinite GE，属性倍率、Enraged 标签与持续 Cue 共享同一生命周期。
+void AArenaBossCharacter::ApplyEnrageEffect()
+{
+	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
+	if (!BossASC || EnrageEffectHandle.IsValid())
+	{
+		return;
+	}
+	if (!EnrageEffectClass)
+	{
+		UE_LOG(LogArenaBoss, Error, TEXT("Boss %s has no EnrageEffectClass."), *GetNameSafe(this));
+		return;
+	}
+
+	FGameplayEffectContextHandle EffectContext = BossASC->MakeEffectContext();
+	EffectContext.AddInstigator(this, this);
+	EffectContext.AddSourceObject(this);
+	const FGameplayEffectSpecHandle SpecHandle = BossASC->MakeOutgoingSpec(
+		EnrageEffectClass,
+		1.0f,
+		EffectContext);
+	if (SpecHandle.IsValid())
+	{
+		EnrageEffectHandle = BossASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+	}
+
+	if (!EnrageEffectHandle.IsValid())
+	{
+		UE_LOG(
+			LogArenaBoss,
+			Error,
+			TEXT("Boss %s failed to apply Enrage effect %s."),
+			*GetNameSafe(this),
+			*GetNameSafe(EnrageEffectClass.Get()));
+	}
+}
+
+// 清理时先移除 Enrage ActiveGE，再移除阶段叶标签，所有调用均可安全重复。
+void AArenaBossCharacter::CleanupBossPhaseState()
+{
+	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
+	if (!BossASC)
+	{
+		EnrageEffectHandle.Invalidate();
+		return;
+	}
+
+	if (EnrageEffectHandle.IsValid())
+	{
+		BossASC->RemoveActiveGameplayEffect(EnrageEffectHandle);
+		EnrageEffectHandle.Invalidate();
+	}
+
+	const FGameplayTag PhaseTags[] = {
+		ArenaGameplayTags::Boss_Phase_One,
+		ArenaGameplayTags::Boss_Phase_Two,
+		ArenaGameplayTags::Boss_Phase_Three
+	};
+	for (const FGameplayTag& PhaseTag : PhaseTags)
+	{
+		if (BossASC->HasMatchingGameplayTag(PhaseTag))
+		{
+			BossASC->RemoveLooseGameplayTag(PhaseTag);
+			BossASC->RemoveReplicatedLooseGameplayTag(PhaseTag);
+		}
+	}
+}
+
+// 阶段转换为一次性权威 Cue，RawMagnitude 只编码最终阶段而不回放被跨过的阈值。
+void AArenaBossCharacter::ExecutePhaseTransitionCue(int32 NewPhaseNumber)
+{
+	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
+	if (!BossASC || NewPhaseNumber <= 1)
+	{
+		return;
+	}
+
+	FGameplayCueParameters CueParameters;
+	CueParameters.Instigator = this;
+	CueParameters.EffectCauser = this;
+	CueParameters.Location = GetActorLocation();
+	CueParameters.RawMagnitude = static_cast<float>(NewPhaseNumber);
+	BossASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Boss_Phase_Transition, CueParameters);
+}
+
+// 阶段序号只用于服务器单向比较，权威阶段本身仍由 ASC Tag 表示和复制。
+int32 AArenaBossCharacter::GetBossPhaseNumber(const FGameplayTag& PhaseTag)
+{
+	if (PhaseTag == ArenaGameplayTags::Boss_Phase_Three)
+	{
+		return 3;
+	}
+	if (PhaseTag == ArenaGameplayTags::Boss_Phase_Two)
+	{
+		return 2;
+	}
+	if (PhaseTag == ArenaGameplayTags::Boss_Phase_One)
+	{
+		return 1;
+	}
+	return 0;
+}
+
+// Health Delegate 只在服务器推进阶段，治疗导致的更高比例不会回退已有阶段。
+void AArenaBossCharacter::HandleBossPhaseHealthChanged(const FOnAttributeChangeData& Data)
+{
+	if (HasAuthority())
+	{
+		EvaluateBossPhase(Data.NewValue);
+	}
+}
+
+// 死亡广播比 LifeSpan 销毁更早，立即移除 Enrage Cue 和阶段标签。
+void AArenaBossCharacter::HandleBossPhaseDeath(AArenaEnemyCharacter* Enemy)
+{
+	if (HasAuthority() && Enemy == this)
+	{
+		CleanupBossPhaseState();
+	}
+}
+
+// 离开 Combat 后移除所有阶段状态；同一 Boss 若重新进入 Combat，则从 Phase 1 重新初始化。
+void AArenaBossCharacter::HandleBossGamePhaseChanged(
+	EArenaGamePhase OldPhase,
+	EArenaGamePhase NewPhase)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	const UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
+	if (NewPhase == EArenaGamePhase::Combat
+		&& BossASC
+		&& !BossASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		InitializeBossPhaseState();
+	}
+	else if (NewPhase != EArenaGamePhase::Combat)
+	{
+		CleanupBossPhaseState();
+	}
 }

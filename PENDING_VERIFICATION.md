@@ -161,6 +161,32 @@
 - 多个重叠 Area 的 Timer、伤害次数和本地 Cue 生命周期彼此独立，Boss 死亡或离开 Combat 时全部正确清理。
 - GroundSlam、Charge、FireZone 与 Chase 能按距离、冷却和状态切换，不同时激活，也不会永久停滞。
 
+## Boss 阶段三 A 单人、异常与双人闭环
+
+### 资产与静态配置
+
+1. 检查 `BP_ArenaBossCharacter` 的阈值为 `0.70/0.35`，`EnrageEffectClass` 为 `GE_Boss_Enrage`。
+2. 可选地在 `WBP_PlayerHUD` 添加名为 `BossPhaseText` 的 TextBlock；不添加时确认阶段会合并显示在 `BossNameText`。
+
+### 单人 PIE
+
+1. 分别测试 Stun、Defeat 和 Actor 直接销毁，确认 Stun 不回退阶段，其他清理路径不残留阶段 Tag、Enrage GE 或 Cue。
+
+治疗后的阶段不回退与 Transition Cue 防重复测试延期到 Boss 具备实际回血来源后执行，不阻塞本阶段验收。
+
+### 双人 Listen Server
+
+1. 只有服务器推进阶段；Host/Client 看到相同的阶段 Tag、HUD 文本、属性倍率和 Transition/Enraged Cue。
+2. Phase 1 两端都只观察到 GroundSlam；Phase 2/3 两端都能观察到 Charge/FireZone 解锁，且每个 Ability 仍只由服务器结算一次。
+3. 回归 `GroundSlam -> Charge -> FireZone -> Chase -> Wait`，确认阶段门控不会使 Behavior Tree 永久停滞。
+
+### 通过标准
+
+- 阶段只能前进，阈值跨越结果确定，Phase 1 初始化和致死伤害不会产生错误转换提示。
+- Enrage 属性只来自一个 Infinite GE，客户端通过复制 Tag/Attribute/Cue 观察，不维护第二份阶段变量。
+- 正在执行的技能不被阶段转换取消，后续 Behavior Tree 决策按新阶段正常运行。
+- Boss 死亡、离开 Combat 或销毁后，阶段标签、ActiveEffectHandle 和持续表现均被清理。
+
 ## 玩家 Dash 预计算终点与网络回归
 
 ### 测试方法

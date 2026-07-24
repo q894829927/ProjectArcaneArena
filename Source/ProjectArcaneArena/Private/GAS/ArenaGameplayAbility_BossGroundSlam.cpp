@@ -12,10 +12,11 @@
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
 
-// GroundSlam 复用敌人攻击基类的 Commit、Montage、State.Attacking 和取消生命周期。
+// GroundSlam 复用敌人攻击生命周期，并要求任一 Boss.Phase 以覆盖三个阶段。
 UArenaGameplayAbility_BossGroundSlam::UArenaGameplayAbility_BossGroundSlam()
 {
 	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Enemy_Boss_GroundSlam));
+	ActivationRequiredTags.AddTag(ArenaGameplayTags::Boss_Phase);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Enemy_Boss_GroundSlam);
 	CooldownGameplayEffectClass = UArenaGameplayEffect_BossGroundSlamCooldown::StaticClass();
 }

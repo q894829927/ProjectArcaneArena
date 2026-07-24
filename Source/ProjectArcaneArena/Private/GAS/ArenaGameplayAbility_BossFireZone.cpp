@@ -12,10 +12,12 @@
 #include "GAS/ArenaGameplayTags.h"
 #include "Kismet/GameplayStatics.h"
 
-// FireZone 复用敌人攻击基类的 Commit、Montage、State.Attacking 和取消生命周期。
+// FireZone 复用敌人攻击生命周期，Phase 1 通过 GAS 阻断且不会误消耗冷却。
 UArenaGameplayAbility_BossFireZone::UArenaGameplayAbility_BossFireZone()
 {
 	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Enemy_Boss_FireZone));
+	ActivationRequiredTags.AddTag(ArenaGameplayTags::Boss_Phase);
+	ActivationBlockedTags.AddTag(ArenaGameplayTags::Boss_Phase_One);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Enemy_Boss_FireZone);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Casting);
 	CooldownGameplayEffectClass = UArenaGameplayEffect_BossFireZoneCooldown::StaticClass();

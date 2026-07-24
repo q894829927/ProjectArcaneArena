@@ -160,6 +160,9 @@ protected:
 	TObjectPtr<UTextBlock> BossNameText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> BossPhaseText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> BossHealthProgressBar;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
@@ -286,10 +289,12 @@ private:
 	void ClearDamageFeedbackPresentation();
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
-	// 解绑当前 Boss 属性和死亡标签委托，避免换 Boss 或切图后残留回调。
+	// 解绑当前 Boss 属性、死亡和阶段标签委托，避免换 Boss 或切图后残留回调。
 	void UnbindFromBoss();
 	// 同步设置 Boss 面板及可选独立控件可见性。
 	void SetBossPanelVisible(bool bVisible);
+	// 从 Boss ASC 阶段标签刷新独立文本或旧 HUD 的名称合并回退。
+	void RefreshBossPhasePresentation();
 
 	// 初次绑定后立即用当前 AttributeSet 值刷新 UI，避免等下一次属性变化。
 	void RefreshAttributeValues();
@@ -364,6 +369,8 @@ private:
 	void HandleBossMaxHealthChanged(const FOnAttributeChangeData& Data);
 	// 死亡标签先隐藏 HUD，ActiveBoss 清空后再完成正式解绑。
 	void HandleBossDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// 任一 Boss 阶段标签变化时重新解析最终阶段并刷新本地表现。
+	void HandleBossPhaseTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
 	TWeakObjectPtr<UArenaAttributeSet> BoundAttributeSet;
@@ -384,6 +391,9 @@ private:
 	FDelegateHandle BossHealthChangedDelegateHandle;
 	FDelegateHandle BossMaxHealthChangedDelegateHandle;
 	FDelegateHandle BossDeadTagDelegateHandle;
+	FDelegateHandle BossPhaseOneTagDelegateHandle;
+	FDelegateHandle BossPhaseTwoTagDelegateHandle;
+	FDelegateHandle BossPhaseThreeTagDelegateHandle;
 
 	FTimerHandle BasicAttackCooldownTimerHandle;
 	FTimerHandle FireballCooldownTimerHandle;

@@ -273,7 +273,7 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 			BossPanelSlot->SetAnchors(FAnchors(0.5f, 0.0f));
 			BossPanelSlot->SetAlignment(FVector2D(0.5f, 0.0f));
 			BossPanelSlot->SetPosition(FVector2D(0.0f, 108.0f));
-			BossPanelSlot->SetSize(FVector2D(520.0f, 72.0f));
+			BossPanelSlot->SetSize(FVector2D(520.0f, 94.0f));
 		}
 
 		BossNameText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BossNameText_Runtime"));
@@ -287,6 +287,19 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 		{
 			NameSlot->SetHorizontalAlignment(HAlign_Fill);
 			NameSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 4.0f));
+		}
+
+		BossPhaseText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("BossPhaseText_Runtime"));
+		BossPhaseText->SetJustification(ETextJustify::Center);
+		BossPhaseText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.85f, 0.45f, 1.0f)));
+		FSlateFontInfo BossPhaseFont = BossPhaseText->GetFont();
+		BossPhaseFont.Size = 15;
+		BossPhaseFont.OutlineSettings.OutlineSize = 1;
+		BossPhaseText->SetFont(BossPhaseFont);
+		if (UVerticalBoxSlot* PhaseSlot = RuntimeBossPanel->AddChildToVerticalBox(BossPhaseText))
+		{
+			PhaseSlot->SetHorizontalAlignment(HAlign_Fill);
+			PhaseSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 3.0f));
 		}
 
 		USizeBox* BossBarSizeBox = WidgetTree->ConstructWidget<USizeBox>(USizeBox::StaticClass(), TEXT("BossHealthSizeBox_Runtime"));
@@ -450,7 +463,7 @@ void UArenaPlayerHUDWidget::BindToAbilitySystem(UArenaAbilitySystemComponent* In
 	RefreshAttributeValues();
 }
 
-// 绑定当前 Boss 的 ASC/AttributeSet，切换 Boss 时先对称解除旧委托。
+// 绑定当前 Boss 的属性、死亡与阶段 Tag 委托，切换 Boss 时先对称解除旧数据源。
 void UArenaPlayerHUDWidget::BindToBoss(AArenaBossCharacter* InBoss)
 {
 	UnbindFromBoss();
@@ -478,9 +491,22 @@ void UArenaPlayerHUDWidget::BindToBoss(AArenaBossCharacter* InBoss)
 		ArenaGameplayTags::State_Dead,
 		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBossDeadTagChanged),
 		EGameplayTagEventType::NewOrRemoved);
+	BossPhaseOneTagDelegateHandle = BossASC->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::Boss_Phase_One,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBossPhaseTagChanged),
+		EGameplayTagEventType::NewOrRemoved);
+	BossPhaseTwoTagDelegateHandle = BossASC->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::Boss_Phase_Two,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBossPhaseTagChanged),
+		EGameplayTagEventType::NewOrRemoved);
+	BossPhaseThreeTagDelegateHandle = BossASC->RegisterAndCallGameplayTagEvent(
+		ArenaGameplayTags::Boss_Phase_Three,
+		FOnGameplayEffectTagCountChanged::FDelegate::CreateUObject(this, &UArenaPlayerHUDWidget::HandleBossPhaseTagChanged),
+		EGameplayTagEventType::NewOrRemoved);
+	RefreshBossPhasePresentation();
 }
 
-// Boss 生命显示严格保留零最大值语义，避免用 1 伪造除零保护后的文本。
+// Boss 生命显示严格保留零最大值语义，并同步刷新由 ASC 阶段标签驱动的名称区域。
 void UArenaPlayerHUDWidget::SetBossHealthValues(const FText& InBossName, float InHealth, float InMaxHealth)
 {
 	const float DisplayHealth = FMath::Max(InHealth, 0.0f);
@@ -500,6 +526,7 @@ void UArenaPlayerHUDWidget::SetBossHealthValues(const FText& InBossName, float I
 			FText::AsNumber(FMath::RoundToInt(DisplayHealth)),
 			FText::AsNumber(FMath::RoundToInt(DisplayMaxHealth))));
 	}
+	RefreshBossPhasePresentation();
 	SetBossPanelVisible(BoundBoss.IsValid());
 }
 
@@ -781,11 +808,35 @@ void UArenaPlayerHUDWidget::UnbindFromBoss()
 				ArenaGameplayTags::State_Dead,
 				EGameplayTagEventType::NewOrRemoved);
 		}
+		if (BossPhaseOneTagDelegateHandle.IsValid())
+		{
+			BossASC->UnregisterGameplayTagEvent(
+				BossPhaseOneTagDelegateHandle,
+				ArenaGameplayTags::Boss_Phase_One,
+				EGameplayTagEventType::NewOrRemoved);
+		}
+		if (BossPhaseTwoTagDelegateHandle.IsValid())
+		{
+			BossASC->UnregisterGameplayTagEvent(
+				BossPhaseTwoTagDelegateHandle,
+				ArenaGameplayTags::Boss_Phase_Two,
+				EGameplayTagEventType::NewOrRemoved);
+		}
+		if (BossPhaseThreeTagDelegateHandle.IsValid())
+		{
+			BossASC->UnregisterGameplayTagEvent(
+				BossPhaseThreeTagDelegateHandle,
+				ArenaGameplayTags::Boss_Phase_Three,
+				EGameplayTagEventType::NewOrRemoved);
+		}
 	}
 
 	BossHealthChangedDelegateHandle.Reset();
 	BossMaxHealthChangedDelegateHandle.Reset();
 	BossDeadTagDelegateHandle.Reset();
+	BossPhaseOneTagDelegateHandle.Reset();
+	BossPhaseTwoTagDelegateHandle.Reset();
+	BossPhaseThreeTagDelegateHandle.Reset();
 	BoundBoss.Reset();
 	BoundBossAbilitySystemComponent.Reset();
 	BoundBossAttributeSet.Reset();
@@ -813,6 +864,65 @@ void UArenaPlayerHUDWidget::SetBossPanelVisible(bool bVisible)
 	if (BossHealthText)
 	{
 		BossHealthText->SetVisibility(BossVisibility);
+	}
+	if (BossPhaseText)
+	{
+		const bool bHasPhase = BoundBoss.IsValid() && BoundBoss->GetCurrentBossPhaseTag().IsValid();
+		BossPhaseText->SetVisibility(
+			bVisible && bHasPhase ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+// 阶段显示完全来自 Boss ASC Tag；缺少独立控件时把文本合并到旧 BossNameText。
+void UArenaPlayerHUDWidget::RefreshBossPhasePresentation()
+{
+	const AArenaBossCharacter* Boss = BoundBoss.Get();
+	if (!Boss)
+	{
+		if (BossPhaseText)
+		{
+			BossPhaseText->SetText(FText::GetEmpty());
+			BossPhaseText->SetVisibility(ESlateVisibility::Collapsed);
+		}
+		return;
+	}
+
+	const FGameplayTag PhaseTag = Boss->GetCurrentBossPhaseTag();
+	FText PhaseLabel = FText::GetEmpty();
+	FLinearColor PhaseColor(1.0f, 0.85f, 0.45f, 1.0f);
+	if (PhaseTag == ArenaGameplayTags::Boss_Phase_Three)
+	{
+		PhaseLabel = NSLOCTEXT("ArenaPlayerHUDWidget", "BossPhaseThree", "Phase 3 · Enraged");
+		PhaseColor = FLinearColor(1.0f, 0.08f, 0.03f, 1.0f);
+	}
+	else if (PhaseTag == ArenaGameplayTags::Boss_Phase_Two)
+	{
+		PhaseLabel = NSLOCTEXT("ArenaPlayerHUDWidget", "BossPhaseTwo", "Phase 2");
+		PhaseColor = FLinearColor(1.0f, 0.45f, 0.08f, 1.0f);
+	}
+	else if (PhaseTag == ArenaGameplayTags::Boss_Phase_One)
+	{
+		PhaseLabel = NSLOCTEXT("ArenaPlayerHUDWidget", "BossPhaseOne", "Phase 1");
+	}
+
+	const bool bHasPhase = !PhaseLabel.IsEmpty();
+	if (BossPhaseText)
+	{
+		BossPhaseText->SetText(PhaseLabel);
+		BossPhaseText->SetColorAndOpacity(FSlateColor(PhaseColor));
+		BossPhaseText->SetVisibility(
+			bHasPhase ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+
+	if (BossNameText)
+	{
+		BossNameText->SetColorAndOpacity(FSlateColor(PhaseColor));
+		BossNameText->SetText(!BossPhaseText && bHasPhase
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "BossNameWithPhaseFormat", "{0}  |  {1}"),
+				Boss->GetBossDisplayName(),
+				PhaseLabel)
+			: Boss->GetBossDisplayName());
 	}
 }
 
@@ -1411,5 +1521,16 @@ void UArenaPlayerHUDWidget::HandleBossDeadTagChanged(const FGameplayTag Callback
 			Boss->GetBossDisplayName(),
 			BossAttributeSet ? BossAttributeSet->GetHealth() : 0.0f,
 			BossAttributeSet ? BossAttributeSet->GetMaxHealth() : 0.0f);
+	}
+}
+
+// 阶段叶标签按“新标签先加、旧标签后删”更新，因此每次回调都重新解析 ASC 最终状态。
+void UArenaPlayerHUDWidget::HandleBossPhaseTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
+{
+	if (CallbackTag == ArenaGameplayTags::Boss_Phase_One
+		|| CallbackTag == ArenaGameplayTags::Boss_Phase_Two
+		|| CallbackTag == ArenaGameplayTags::Boss_Phase_Three)
+	{
+		RefreshBossPhasePresentation();
 	}
 }
