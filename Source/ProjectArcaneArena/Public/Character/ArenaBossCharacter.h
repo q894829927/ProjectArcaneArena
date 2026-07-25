@@ -37,11 +37,35 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Boss|Scaling")
 	float GetAppliedHealthMultiplier() const { return AppliedHealthMultiplier; }
 
+	// 在服务器登记一个由 Boss Ability 生成的敌人，并写入召唤身份及事件资格标签。
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Arena|Boss|Summons")
+	bool RegisterBossSummon(AArenaEnemyCharacter* SummonedEnemy);
+
+	// 从 Boss 活动集合移除召唤物并对称解除死亡、销毁委托和召唤标签。
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Arena|Boss|Summons")
+	void UnregisterBossSummon(AArenaEnemyCharacter* SummonedEnemy);
+
+	// 销毁并解绑当前 Boss 的全部召唤物，供死亡、终局和 Actor 销毁路径复用。
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Arena|Boss|Summons")
+	void DestroyAllBossSummons();
+
+	// 返回服务器当前仍有效且尚未死亡的 Boss 召唤物数量。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss|Summons")
+	int32 GetActiveSummonCount() const;
+
+	// 返回场上召唤数量上限扣除活动数量后的可用容量。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss|Summons")
+	int32 GetRemainingSummonCapacity() const;
+
+	// 检查当前是否至少能接纳请求中的一个召唤物，允许容量不足时进行部分生成。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss|Summons")
+	bool CanAcceptBossSummons(int32 RequestedCount) const;
+
 protected:
 	// 在敌人 GAS 初始化完成后绑定服务器阶段委托，并按当前 Combat 状态初始化 Phase 1。
 	virtual void BeginPlay() override;
 
-	// 销毁前对称解除阶段委托并移除 Enrage GE、Cue 与阶段标签。
+	// 销毁前清理全部召唤物，再对称解除阶段委托并移除 Enrage GE、Cue 与阶段标签。
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss")
@@ -64,6 +88,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Scaling")
 	TSubclassOf<UGameplayEffect> PlayerCountScalingEffectClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Summons", meta = (ClampMin = "1"))
+	int32 MaxActiveSummons = 4;
 
 private:
 	// 使用指定的 SetByCaller Instant GE 写入 MaxHealth 增量，原生 Effect Class 也可用于失败回滚。
@@ -104,15 +131,30 @@ private:
 	// Health Attribute 变化时在服务器重新计算阶段，零生命不会触发临死狂暴。
 	void HandleBossPhaseHealthChanged(const FOnAttributeChangeData& Data);
 
-	// Boss 死亡广播到达时立即清除阶段状态和持续表现。
+	// Boss 死亡广播到达时立即清除召唤物、阶段状态和持续表现。
 	UFUNCTION()
 	void HandleBossPhaseDeath(AArenaEnemyCharacter* Enemy);
 
-	// GameState 离开 Combat 时清理阶段；重新进入时仅为仍存活 Boss 初始化 Phase 1。
+	// GameState 离开 Combat 时清理召唤物和阶段；重新进入时仅为仍存活 Boss 初始化 Phase 1。
 	UFUNCTION()
 	void HandleBossGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase);
 
+	// 召唤物死亡广播到达时立即释放 Boss 容量，但不介入 WaveManager 的剩余数量。
+	UFUNCTION()
+	void HandleBossSummonDeath(AArenaEnemyCharacter* Enemy);
+
+	// 召唤物被外部直接销毁时清理弱引用和委托，避免活动集合保留失效条目。
+	UFUNCTION()
+	void HandleBossSummonDestroyed(AActor* DestroyedActor);
+
+	// 给召唤物 ASC 添加身份、OnKill 和 OnCrit 资格标签，并通过 replicated loose tag 同步。
+	void AddBossSummonGameplayTags(AArenaEnemyCharacter* SummonedEnemy) const;
+
+	// 对称移除本 Boss 添加的召唤身份和事件资格标签。
+	void RemoveBossSummonGameplayTags(AArenaEnemyCharacter* SummonedEnemy) const;
+
 	TWeakObjectPtr<AArenaGameState> BoundBossGameState;
+	TSet<TWeakObjectPtr<AArenaEnemyCharacter>> ActiveBossSummons;
 	FDelegateHandle BossPhaseHealthChangedDelegateHandle;
 	FActiveGameplayEffectHandle EnrageEffectHandle;
 	int32 ScalingPlayerCountSnapshot = 0;

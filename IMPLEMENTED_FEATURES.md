@@ -298,7 +298,15 @@ Status meanings:
 * Initial scaling suppresses the Boss Health phase callback while MaxHealth and Health are changing, preventing the transient `1200/2100` state from entering Phase 2. Repeated initialization attempts are rejected to prevent stacked scaling.
 * Initial wave startup now waits for `PostLogin` and resets its grace timer when another player joins during `Waiting`. This prevents Dedicated/Listen PIE from spawning and snapshotting the Boss before the configured local clients have registered their PlayerStates.
 * `Content/Python/boss/setup_boss_player_scaling.py` provides idempotent creation and linking for `GE_Boss_PlayerCountScaling` and the Boss multiplier settings without modifying Behavior Tree, StartupAbilities or wave data.
-* Verification pending: Phase 3B compilation, setup-script execution, one/two-player MaxHealth checks and snapshot immutability; Phase 3A Stun/Defeat/destruction cleanup, full Behavior Tree regression and two-player Listen Server replication also remain pending. Healing regression is deferred until the Boss has a real healing source.
+* Phase 3B compilation, asset setup and the two-player core path are verified: the initial wave starts after both clients register, the server snapshots two valid PlayerStates, and Host/Client observe `2100/2100` Boss Health/MaxHealth. Single-player counting, duplicate-call rejection, snapshot immutability and scaled phase thresholds remain pending; Phase 3A Stun/Defeat/destruction cleanup and the full two-player Boss regression also remain pending.
+
+### Boss Summon Minions — Partial
+
+* `UArenaGameplayAbility_BossSummonMinions` is a Phase 3-only `ServerOnly` Boss attack. It checks target/path, remaining capacity and NavMesh/capsule-valid spawn points before Commit, then locks up to two positions, plays a `0.9s` casting window and spawns configured melee/ranged enemies in fixed order.
+* `AArenaBossCharacter` owns a non-replicated weak summon registry with a default live limit of four. Death and destruction callbacks release capacity; Boss death, destruction or leaving Combat destroys every remaining summon and removes delegates/tags.
+* Summons are spawned directly by the Boss and never enter `AArenaWaveManager::AliveEnemies`, so they do not change `RemainingEnemyCount`, block Boss Victory or use the normal-wave pickup path. Clients observe the existing replicated enemy Actors and server AI.
+* `Enemy.Summoned`, `Enemy.Summoned.Trigger.OnKill` and `Enemy.Summoned.Trigger.OnCrit` make passive-event eligibility explicit. The authoritative damage route leaves ordinary targets unchanged and only emits summon OnKill/OnCrit events when the corresponding leaf tag is present; elemental/status and typed damage events remain unchanged.
+* Native cooldown and Cast/Spawn GameplayCue tags plus `setup_boss_summon_minions.py` and manual BT instructions exist. Compilation, editor asset generation, `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait` connection, PIE lifecycle and multiplayer verification remain pending.
 
 ### Gameplay State Control — Partial
 

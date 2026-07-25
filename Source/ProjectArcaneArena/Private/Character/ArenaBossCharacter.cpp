@@ -52,6 +52,132 @@ FGameplayTag AArenaBossCharacter::GetCurrentBossPhaseTag() const
 	return FGameplayTag();
 }
 
+// 服务器登记召唤物并添加明确的构筑事件资格；未进入集合的 Actor 不会被 Boss 生命周期接管。
+bool AArenaBossCharacter::RegisterBossSummon(AArenaEnemyCharacter* SummonedEnemy)
+{
+	if (!HasAuthority() || !IsValid(SummonedEnemy) || SummonedEnemy == this)
+	{
+		return false;
+	}
+
+	const TWeakObjectPtr<AArenaEnemyCharacter> SummonKey(SummonedEnemy);
+	if (ActiveBossSummons.Contains(SummonKey))
+	{
+		return true;
+	}
+	if (!CanAcceptBossSummons(1))
+	{
+		UE_LOG(
+			LogArenaBoss,
+			Warning,
+			TEXT("Boss %s rejected summon %s because the active limit %d was reached."),
+			*GetNameSafe(this),
+			*GetNameSafe(SummonedEnemy),
+			FMath::Max(MaxActiveSummons, 1));
+		return false;
+	}
+
+	UArenaAbilitySystemComponent* SummonedASC = SummonedEnemy->GetArenaAbilitySystemComponent();
+	if (!SummonedASC || SummonedASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		UE_LOG(
+			LogArenaBoss,
+			Warning,
+			TEXT("Boss %s rejected summon %s because it has no living ASC."),
+			*GetNameSafe(this),
+			*GetNameSafe(SummonedEnemy));
+		return false;
+	}
+
+	ActiveBossSummons.Add(SummonKey);
+	SummonedEnemy->OnEnemyDeath.AddUniqueDynamic(this, &AArenaBossCharacter::HandleBossSummonDeath);
+	SummonedEnemy->OnDestroyed.AddUniqueDynamic(this, &AArenaBossCharacter::HandleBossSummonDestroyed);
+	AddBossSummonGameplayTags(SummonedEnemy);
+	return true;
+}
+
+// 召唤物离开活动集合时先解绑回调再移除身份标签，重复调用不会修改其他 Boss 的状态。
+void AArenaBossCharacter::UnregisterBossSummon(AArenaEnemyCharacter* SummonedEnemy)
+{
+	if (!HasAuthority() || !SummonedEnemy)
+	{
+		return;
+	}
+
+	const TWeakObjectPtr<AArenaEnemyCharacter> SummonKey(SummonedEnemy);
+	if (ActiveBossSummons.Remove(SummonKey) == 0)
+	{
+		return;
+	}
+
+	SummonedEnemy->OnEnemyDeath.RemoveDynamic(this, &AArenaBossCharacter::HandleBossSummonDeath);
+	SummonedEnemy->OnDestroyed.RemoveDynamic(this, &AArenaBossCharacter::HandleBossSummonDestroyed);
+	RemoveBossSummonGameplayTags(SummonedEnemy);
+}
+
+// Boss 生命周期结束时先清空集合和委托，再销毁召唤 Actor，避免销毁回调重入当前迭代。
+void AArenaBossCharacter::DestroyAllBossSummons()
+{
+	if (!HasAuthority() || ActiveBossSummons.IsEmpty())
+	{
+		return;
+	}
+
+	TArray<TWeakObjectPtr<AArenaEnemyCharacter>> SummonsToDestroy;
+	SummonsToDestroy.Reserve(ActiveBossSummons.Num());
+	for (const TWeakObjectPtr<AArenaEnemyCharacter>& Summon : ActiveBossSummons)
+	{
+		SummonsToDestroy.Add(Summon);
+	}
+	ActiveBossSummons.Reset();
+
+	for (const TWeakObjectPtr<AArenaEnemyCharacter>& Summon : SummonsToDestroy)
+	{
+		AArenaEnemyCharacter* SummonedEnemy = Summon.Get();
+		if (!IsValid(SummonedEnemy))
+		{
+			continue;
+		}
+
+		SummonedEnemy->OnEnemyDeath.RemoveDynamic(this, &AArenaBossCharacter::HandleBossSummonDeath);
+		SummonedEnemy->OnDestroyed.RemoveDynamic(this, &AArenaBossCharacter::HandleBossSummonDestroyed);
+		RemoveBossSummonGameplayTags(SummonedEnemy);
+		SummonedEnemy->Destroy();
+	}
+}
+
+// 只统计仍有效且 ASC 未死亡的召唤物，死亡广播会在同一服务器帧进一步清理集合。
+int32 AArenaBossCharacter::GetActiveSummonCount() const
+{
+	int32 ActiveCount = 0;
+	for (const TWeakObjectPtr<AArenaEnemyCharacter>& Summon : ActiveBossSummons)
+	{
+		const AArenaEnemyCharacter* SummonedEnemy = Summon.Get();
+		const UArenaAbilitySystemComponent* SummonedASC = SummonedEnemy
+			? SummonedEnemy->GetArenaAbilitySystemComponent()
+			: nullptr;
+		if (IsValid(SummonedEnemy)
+			&& SummonedASC
+			&& !SummonedASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+		{
+			++ActiveCount;
+		}
+	}
+	return ActiveCount;
+}
+
+// 上限始终至少按一个处理，避免错误蓝图值让召唤能力永久失去可恢复状态。
+int32 AArenaBossCharacter::GetRemainingSummonCapacity() const
+{
+	return FMath::Max(FMath::Max(MaxActiveSummons, 1) - GetActiveSummonCount(), 0);
+}
+
+// 部分生成是合法结果，因此只要请求为正且仍有一个空位就允许进入召唤流程。
+bool AArenaBossCharacter::CanAcceptBossSummons(int32 RequestedCount) const
+{
+	return RequestedCount > 0 && GetRemainingSummonCapacity() > 0;
+}
+
 // 服务器冻结生成时人数并经由两个 Instant GE 依次扩大 MaxHealth、补满 Health，任何重复调用都不会叠加。
 bool AArenaBossCharacter::InitializePlayerCountScaling(int32 ParticipatingPlayerCount)
 {
@@ -263,11 +389,12 @@ void AArenaBossCharacter::BeginPlay()
 	}
 }
 
-// 销毁路径先清理 GAS 阶段状态，再解除委托，确保持续 Cue 不会遗留到下一张地图。
+// 销毁路径先清理召唤物与 GAS 阶段状态，再解除委托，避免子 Actor、Cue 或回调遗留到下一张地图。
 void AArenaBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (HasAuthority())
 	{
+		DestroyAllBossSummons();
 		CleanupBossPhaseState();
 		UnbindBossPhaseDelegates();
 	}
@@ -532,16 +659,17 @@ void AArenaBossCharacter::HandleBossPhaseHealthChanged(const FOnAttributeChangeD
 	}
 }
 
-// 死亡广播比 LifeSpan 销毁更早，立即移除 Enrage Cue 和阶段标签。
+// 死亡广播比 LifeSpan 销毁更早，立即清除召唤物、Enrage Cue 和阶段标签。
 void AArenaBossCharacter::HandleBossPhaseDeath(AArenaEnemyCharacter* Enemy)
 {
 	if (HasAuthority() && Enemy == this)
 	{
+		DestroyAllBossSummons();
 		CleanupBossPhaseState();
 	}
 }
 
-// 离开 Combat 后移除所有阶段状态；同一 Boss 若重新进入 Combat，则从 Phase 1 重新初始化。
+// 离开 Combat 后清除召唤物和阶段状态；同一 Boss 若重新进入 Combat，则从 Phase 1 重新初始化。
 void AArenaBossCharacter::HandleBossGamePhaseChanged(
 	EArenaGamePhase OldPhase,
 	EArenaGamePhase NewPhase)
@@ -560,6 +688,68 @@ void AArenaBossCharacter::HandleBossGamePhaseChanged(
 	}
 	else if (NewPhase != EArenaGamePhase::Combat)
 	{
+		DestroyAllBossSummons();
 		CleanupBossPhaseState();
+	}
+}
+
+// 召唤物死亡不通知 WaveManager，只从 Boss 私有集合移除并立即释放一个召唤容量。
+void AArenaBossCharacter::HandleBossSummonDeath(AArenaEnemyCharacter* Enemy)
+{
+	UnregisterBossSummon(Enemy);
+}
+
+// 外部 Destroy 路径与正常死亡共用同一注销入口，保证委托和资格标签不会残留。
+void AArenaBossCharacter::HandleBossSummonDestroyed(AActor* DestroyedActor)
+{
+	UnregisterBossSummon(Cast<AArenaEnemyCharacter>(DestroyedActor));
+}
+
+// 默认召唤物显式允许 OnKill 与 OnCrit，后续变体可通过移除资格叶标签改变奖励规则。
+void AArenaBossCharacter::AddBossSummonGameplayTags(AArenaEnemyCharacter* SummonedEnemy) const
+{
+	UArenaAbilitySystemComponent* SummonedASC = SummonedEnemy
+		? SummonedEnemy->GetArenaAbilitySystemComponent()
+		: nullptr;
+	if (!HasAuthority() || !SummonedASC)
+	{
+		return;
+	}
+
+	const FGameplayTag SummonTags[] = {
+		ArenaGameplayTags::Enemy_Summoned,
+		ArenaGameplayTags::Enemy_Summoned_Trigger_OnKill,
+		ArenaGameplayTags::Enemy_Summoned_Trigger_OnCrit
+	};
+	for (const FGameplayTag& SummonTag : SummonTags)
+	{
+		SummonedASC->AddLooseGameplayTag(SummonTag);
+		SummonedASC->AddReplicatedLooseGameplayTag(SummonTag);
+	}
+}
+
+// 仅移除本 Boss 注册时添加的三项 loose tag，敌人自身其他构筑和状态标签保持不变。
+void AArenaBossCharacter::RemoveBossSummonGameplayTags(AArenaEnemyCharacter* SummonedEnemy) const
+{
+	UArenaAbilitySystemComponent* SummonedASC = SummonedEnemy
+		? SummonedEnemy->GetArenaAbilitySystemComponent()
+		: nullptr;
+	if (!HasAuthority() || !SummonedASC)
+	{
+		return;
+	}
+
+	const FGameplayTag SummonTags[] = {
+		ArenaGameplayTags::Enemy_Summoned,
+		ArenaGameplayTags::Enemy_Summoned_Trigger_OnKill,
+		ArenaGameplayTags::Enemy_Summoned_Trigger_OnCrit
+	};
+	for (const FGameplayTag& SummonTag : SummonTags)
+	{
+		if (SummonedASC->HasMatchingGameplayTag(SummonTag))
+		{
+			SummonedASC->RemoveLooseGameplayTag(SummonTag);
+			SummonedASC->RemoveReplicatedLooseGameplayTag(SummonTag);
+		}
 	}
 }

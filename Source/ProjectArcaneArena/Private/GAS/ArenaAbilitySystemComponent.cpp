@@ -197,7 +197,7 @@ void UArenaAbilitySystemComponent::MulticastExecuteGameplayCueBatch_Implementati
 	}
 }
 
-// 由权威来源派发实际伤害、暴击与首次击杀结果事件。
+// 由权威来源派发实际伤害、暴击与首次击杀，并按召唤物显式资格标签过滤结果事件。
 void UArenaAbilitySystemComponent::RouteAuthoritativeDamageEvent(
 	const FGameplayEffectSpec& DamageSpec,
 	UAbilitySystemComponent* TargetAbilitySystemComponent,
@@ -248,21 +248,26 @@ void UArenaAbilitySystemComponent::RouteAuthoritativeDamageEvent(
 	EventPayload.InstigatorTags.AppendTags(DamageAssetTags);
 	EventPayload.TargetTags = TargetTagsBeforeDamage;
 	const bool bCriticalHit = DamageAssetTags.HasTagExact(ArenaGameplayTags::Damage_Critical);
+	const bool bTargetIsBossSummon = TargetTagsBeforeDamage.HasTag(ArenaGameplayTags::Enemy_Summoned);
+	const bool bSummonAllowsOnCrit = TargetTagsBeforeDamage.HasTagExact(
+		ArenaGameplayTags::Enemy_Summoned_Trigger_OnCrit);
+	const bool bSummonAllowsOnKill = TargetTagsBeforeDamage.HasTagExact(
+		ArenaGameplayTags::Enemy_Summoned_Trigger_OnKill);
 	// 在任何伤害被动同步执行前锁定本次击杀结果，避免嵌套伤害改变原始事件判定。
 	const bool bKilledTarget = !TargetTagsBeforeDamage.HasTag(ArenaGameplayTags::State_Dead)
 		&& TargetAbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead);
 
 	// 事件发送给来源 ASC，自身拥有的被动 Ability 通过 AbilityTriggers 响应。
 	HandleGameplayEvent(DamageEventTag, &EventPayload);
-	if (bCriticalHit)
+	if (bCriticalHit && (!bTargetIsBossSummon || bSummonAllowsOnCrit))
 	{
-		// OnCrit 沿用实际伤害和命中上下文，不再做第二次随机。
+		// 普通目标保持原行为；召唤物只有显式资格标签才沿用本次权威暴击结果触发 OnCrit。
 		EventPayload.EventTag = ArenaGameplayTags::Trigger_OnCrit;
 		HandleGameplayEvent(ArenaGameplayTags::Trigger_OnCrit, &EventPayload);
 	}
-	if (bKilledTarget)
+	if (bKilledTarget && (!bTargetIsBossSummon || bSummonAllowsOnKill))
 	{
-		// OnKill 复用同一伤害上下文和命中前目标标签，供后续状态击杀协同可靠判断。
+		// 普通目标保持原行为；召唤物通过命中前 TargetTags 明确决定是否授予 OnKill。
 		EventPayload.EventTag = ArenaGameplayTags::Trigger_OnKill;
 		HandleGameplayEvent(ArenaGameplayTags::Trigger_OnKill, &EventPayload);
 	}

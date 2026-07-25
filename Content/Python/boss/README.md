@@ -1,6 +1,6 @@
 # Boss Foundation 资产生成
 
-本目录负责 Boss Foundation、阶段二 A 决策资产、阶段二 B Charge 和阶段二 C FireZone 资产的幂等创建与连接。Behavior Tree 图始终由编辑器手动维护，脚本不会覆盖已经连接的节点。
+本目录负责 Boss Foundation、决策树、多技能、阶段系统、多人缩放和阶段四 A 召唤物资产的幂等创建与连接。Behavior Tree 图始终由编辑器手动维护，脚本不会覆盖已经连接的节点。
 
 ## 使用前提
 
@@ -222,3 +222,34 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_pla
 - `PlayerCountScalingEffectClass = GE_Boss_PlayerCountScaling`
 
 脚本不会修改 `BT_ArenaBoss`、`StartupAbilities` 或波次数据。单人 Boss 默认保持 `1200` MaxHealth；双人 Boss 默认在写入 `ActiveBoss` 前缩放并恢复为 `2100/2100`。
+
+## 阶段四 A：Boss 召唤物
+
+完整编译并重启编辑器后执行：
+
+```text
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_summon_minions.py"
+```
+
+脚本会幂等创建或配置：
+
+- `/Game/Boss/Animation/AS_BossSummonMinions`
+- `/Game/Boss/Animation/AM_BossSummonMinions`
+- `/Game/Boss/GAS/GameplayAbility/GA_BossSummonMinions`
+- `/Game/Boss/GAS/GameplayEffect/GE_Cooldown_BossSummonMinions`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossSummon_Cast`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossSummon_Spawn`
+- `/Game/Boss/VFX/NS_BossSummon_Cast`
+- `/Game/Boss/VFX/NS_BossSummon_Spawn`
+
+`GA_BossSummonMinions.SummonClasses` 按固定顺序配置为一个近战和一个远程敌人，`BP_ArenaBossCharacter.MaxActiveSummons` 配置为 `4`。脚本会向 `StartupAbilities` 追加且只保留一份召唤技能，但不会修改 Behavior Tree 图。
+
+打开 `BT_ArenaBoss`，把优先级调整为 `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait`：
+
+1. 在 `FireZone` 和 `Chase` 之间新建 `Sequence`，命名为 `SummonMinions`。
+2. 添加 Blackboard Decorator：`TargetActor Is Set`，`Observer Aborts=Both`。
+3. 添加 `Arena Boss Can Activate Ability` Decorator：`TargetActorKey=TargetActor`、`AbilityTag=Ability.Enemy.Boss.SummonMinions`、`Observer Aborts=Lower Priority`。不要设置为 `Self` 或 `Both`，否则 `State.Attacking/State.Casting` 会中断当前 Task。
+4. 在 Sequence 内添加 `Arena Boss Activate Ability` Task：`TargetActorKey=TargetActor`、`AbilityTag=Ability.Enemy.Boss.SummonMinions`。
+5. 保存 `BT_ArenaBoss`，打开并 Compile `BP_ArenaBossCharacter`，确认四个 Boss Ability 各只有一份。
+
+召唤分支只在 `Boss.Phase.Three` 可激活。默认施法前摇 `0.9s`、目标距离上限 `1200`、生成半径 `320`、冷却 `14s`；服务器会在 Commit 前确认剩余容量和至少一个 NavMesh 合法生成点。召唤物由 Boss 私有集合管理，不进入 `WaveManager` 的剩余数量或掉落流程；Boss 死亡、Victory、Defeat 或销毁时会立即清理。

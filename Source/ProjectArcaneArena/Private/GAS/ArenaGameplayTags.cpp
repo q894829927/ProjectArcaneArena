@@ -14,6 +14,9 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Boss_Phase_Two, "Boss.Phase.Two", "Boss has unlocked Charge and FireZone.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Boss_Phase_Three, "Boss.Phase.Three", "Boss is in the final enraged phase.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Boss_State_Enraged, "Boss.State.Enraged", "Boss has the final-phase enrage GameplayEffect.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Summoned, "Enemy.Summoned", "Enemy was spawned and is owned by a Boss summon ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Summoned_Trigger_OnKill, "Enemy.Summoned.Trigger.OnKill", "Summoned enemy grants authoritative OnKill events.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Summoned_Trigger_OnCrit, "Enemy.Summoned.Trigger.OnCrit", "Summoned enemy grants authoritative OnCrit events.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_BasicAttack, "Ability.BasicAttack", "Basic attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Fireball, "Ability.Fireball", "Fireball ability.");
@@ -50,6 +53,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_Boss_Charge, "Cooldown.Enemy.Boss.Charge", "Boss charge cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_Boss_FireZone, "Ability.Enemy.Boss.FireZone", "Boss fixed-location periodic fire zone ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_Boss_FireZone, "Cooldown.Enemy.Boss.FireZone", "Boss fire zone cooldown.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_Boss_SummonMinions, "Ability.Enemy.Boss.SummonMinions", "Boss server-authoritative minion summon ability.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_Boss_SummonMinions, "Cooldown.Enemy.Boss.SummonMinions", "Boss summon minions cooldown.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_BasicAttack_Activate, "GameplayCue.Ability.BasicAttack.Activate", "Basic attack activation presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Fireball_Cast, "GameplayCue.Ability.Fireball.Cast", "Confirmed fireball cast presentation.");
@@ -67,6 +72,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Charge_Impact, "GameplayCue.Ability.Boss.Charge.Impact", "Boss charge contact or wall impact presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_FireZone_Telegraph, "GameplayCue.Ability.Boss.FireZone.Telegraph", "Boss fire zone warning at the committed world location.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_FireZone_Active, "GameplayCue.Ability.Boss.FireZone.Active", "Boss persistent fire zone presentation owned by each replicated area.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Summon_Cast, "GameplayCue.Ability.Boss.Summon.Cast", "Boss summon cast presentation attached to the Boss.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Summon_Spawn, "GameplayCue.Ability.Boss.Summon.Spawn", "One-shot presentation for each confirmed summoned enemy.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Phase_Transition, "GameplayCue.Boss.Phase.Transition", "One-shot presentation for a Boss phase transition.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Enraged_Active, "GameplayCue.Boss.Enraged.Active", "Looping presentation for the final Boss enrage phase.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");

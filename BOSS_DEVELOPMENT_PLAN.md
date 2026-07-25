@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前开发阶段为“阶段三 B：Boss 多人血量缩放”，状态为 `Partial`。阶段二的 GroundSlam、Charge、FireZone 与 Behavior Tree 主循环已具备可用实现，但仍保留多人和异常生命周期验证项；阶段三 A 已完成实现、资产幂等和主要单人 PIE 验收，当前仅保留少量异常清理与多人一致性验收。阶段三 B 的服务器人数快照与 GAS MaxHealth 缩放代码已经实现，尚待完整编译、资产脚本执行和单/双人 PIE 验收。
+当前开发阶段为“阶段四 A：Boss 召唤物”，状态为 `Partial`。阶段二的 GroundSlam、Charge、FireZone 与 Behavior Tree 主循环已具备可用实现，但仍保留多人和异常生命周期验证项；阶段三 A 已完成主要单人 PIE 验收，阶段三 B 已完成双人 `2100/2100` 核心路径验证。阶段四 A 已完成原生召唤 Ability、Boss 私有生命周期、构筑事件资格标签和资产脚本实现，尚待编译、资产生成、行为树接线与 PIE 验收。
 
 ---
 
@@ -239,12 +239,13 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 人数缩放应用窗口会临时抑制 Health 阶段回调，避免双人 Boss 在 `1200/2100` 中间状态错误进入 Phase 2；缩放和补满完成后继续以新 MaxHealth 计算 `70%/35%` 阈值。
 - 首轮双人 PIE 暴露出 Dedicated 服务器会在客户端 `PostLogin` 前启动 Boss 波；`AArenaGameMode` 已改为由 Waiting 阶段玩家登录启动并重置首波等待计时器，确保同批客户端 PlayerState 注册后再生成 Boss。
 - 已新增幂等 `Content/Python/boss/setup_boss_player_scaling.py`，用于创建 `GE_Boss_PlayerCountScaling` 并配置 Boss 的 `1.0/1.75` 倍率与 Effect Class；脚本不会修改 Behavior Tree、StartupAbilities 或波次数据。
+- 已完成阶段三 B 编译、资产脚本执行和双人核心复测：两名客户端完成 `PostLogin` 后才启动 Boss 波，服务器快照为两人，Host/Client 观察到 Boss 初始 `Health/MaxHealth = 2100/2100`。
 
 尚未完成或尚未验证：
 
 - 尚未验证 Stun、Defeat 和 Actor 直接销毁路径的阶段/Cue 清理；治疗不回退测试延期到 Boss 具备实际回血来源后执行，不阻塞阶段三 A。
 - 尚未完成阶段门控后的 Behavior Tree 单人回归和两人 Listen Server 标签、HUD、属性、Cue、技能解锁一致性。
-- 阶段三 B 尚未完成 UHT/C++ 编译、资产脚本执行和 PIE 验收；一人应保持 `1200`，两人应得到 `2100`，重复调用、死亡/无 Pawn 快照和阶段阈值仍需实测。
+- 阶段三 B 尚未验证单人有效 PlayerState 的 `1200/1200` 路径、重复调用防重、死亡/无 Pawn 后的快照冻结，以及双人缩放后的 `1470/735` 阶段阈值。
 
 ### 阶段边界
 
@@ -280,6 +281,27 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 验证 Burning、Shocked、Overload、Crit、ShieldBreakBlast 和 Dash 对 Boss 与召唤物的现有规则。
 - 保持 Boss 可被现有元素状态影响；如需抗性，使用明确的 GameplayEffect 或 Tag 规则，不改变通用伤害公式。
 - 如增加 Boss 专属构筑联动，本阶段最多加入一项可解释、可测试且不硬编码 Upgrade ID 的传奇规则。
+
+### 当前实现进度
+
+状态：`Partial`，最后更新：2026-07-25。
+
+已完成实现：
+
+- 已新增 `UArenaGameplayAbility_BossSummonMinions`，仅要求 `Boss.Phase.Three`，默认目标距离上限 `1200`、前摇 `0.9s`、每次最多两个召唤、生成半径 `320`，并使用十四秒 Duration 冷却。
+- Ability 在 Commit 前检查 Boss 剩余容量，并以固定环形候选点执行 NavMesh 投影、NavMesh 直线可达和 Pawn 胶囊占位过滤；没有任何合法点时不 Commit，释放时单点失败不会阻塞 Ability 或 BT。
+- 已扩展 `AArenaBossCharacter` 的服务器私有召唤集合，默认活动上限四个；死亡与销毁回调释放容量，Boss 死亡、销毁或 GameState 离开 Combat 时销毁并解绑全部召唤物。
+- 召唤物由 Boss 直接生成，不注册到 `AArenaWaveManager::AliveEnemies`，因此不参与 `RemainingEnemyCount`、普通拾取物或 Boss Victory 条件。
+- 已新增 `Enemy.Summoned`、`Enemy.Summoned.Trigger.OnKill` 与 `Enemy.Summoned.Trigger.OnCrit`。权威伤害事件路由仅对带对应资格叶标签的召唤物派发 OnKill/OnCrit，普通敌人和其他伤害事件保持原行为。
+- 已新增 Summon Ability、Cooldown、Cast/Spawn GameplayCue 原生标签和 `setup_boss_summon_minions.py`；脚本配置一个近战加一个远程 Class、Boss 上限与 StartupAbility，且不修改手工 Behavior Tree 图。
+
+尚未完成或尚未验证：
+
+- 尚未完成 C++/UHT 编译、编辑器重启和召唤资产脚本执行，当前不能把 Blueprint、Montage、GE、Cue 或 StartupAbilities 记为已保存资产。
+- 尚未手工连接 `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait`，也未验证 Phase 1/2 门控、Phase 3 决策和最大四个活动召唤物。
+- 尚未验证无合法生成点、单点 Spawn 失败、Stun、死亡、Victory/Defeat、Actor 直接销毁和 Delegate 防重清理。
+- 尚未验证召唤物不改变 WaveManager 数量/掉落/Victory，以及 OnKill、OnCrit、Burning、Shocked、Overload、ShieldBreakBlast 和 Dash 的实际兼容。
+- 尚未完成双人 Listen Server 的唯一服务器生成、移动/伤害/死亡复制和 Boss 终局清场验收。
 
 ### 阶段边界
 

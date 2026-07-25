@@ -37,7 +37,7 @@ public:
 	// 在权威端暂存一段完整伤害反馈，并在下一 Tick 与该目标的其他结算一起发送。
 	void QueueAuthoritativeDamageFeedback(const FArenaDamageFeedbackData& DamageFeedback);
 
-	// 在服务端按伤害、暴击、首次击杀顺序向来源 ASC 路由 GameplayEvent。
+	// 在服务端按伤害、暴击、首次击杀顺序路由事件，并按召唤物资格标签过滤结果触发。
 	void RouteAuthoritativeDamageEvent(
 		const FGameplayEffectSpec& DamageSpec,
 		UAbilitySystemComponent* TargetAbilitySystemComponent,
