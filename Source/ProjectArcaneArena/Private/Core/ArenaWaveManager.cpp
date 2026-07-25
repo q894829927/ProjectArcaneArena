@@ -4,6 +4,7 @@
 #include "Character/ArenaEnemyCharacter.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/ArenaGameState.h"
+#include "Core/ArenaPlayerState.h"
 #include "Core/ArenaWaveDataAsset.h"
 #include "Engine/TargetPoint.h"
 #include "EngineUtils.h"
@@ -233,7 +234,7 @@ bool AArenaWaveManager::BuildPendingSpawnList(int32 WaveArrayIndex)
 	return !PendingEnemyClasses.IsEmpty();
 }
 
-// 每次计时器只生成一个敌人，成功后才计入 GameState 剩余数量。
+// 每次计时器只生成一个敌人；Boss 会先完成人数缩放再写入 ActiveBoss 和剩余数量。
 void AArenaWaveManager::SpawnNextEnemy()
 {
 	if (!PendingEnemyClasses.IsValidIndex(NextPendingSpawnIndex) || SpawnPoints.IsEmpty())
@@ -261,6 +262,14 @@ void AArenaWaveManager::SpawnNextEnemy()
 		if (bCurrentWaveIsBossWave)
 		{
 			AArenaBossCharacter* Boss = Cast<AArenaBossCharacter>(Enemy);
+			if (Boss && !Boss->InitializePlayerCountScaling(GetBossScalingPlayerCount()))
+			{
+				UE_LOG(
+					LogArenaWaves,
+					Error,
+					TEXT("Boss %s player-count scaling did not complete; inspect LogArenaBoss for rollback status."),
+					*GetNameSafe(Boss));
+			}
 			if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
 			{
 				ArenaGameState->SetActiveBoss(Boss);
@@ -279,6 +288,36 @@ void AArenaWaveManager::SpawnNextEnemy()
 		GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 		CheckWaveCompletion();
 	}
+}
+
+// 使用 GameState.PlayerArray 的稳定服务器快照统计参与者，不要求 Pawn 存活以避免死亡降低 Boss 初始难度。
+int32 AArenaWaveManager::GetBossScalingPlayerCount() const
+{
+	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	if (!ArenaGameState)
+	{
+		UE_LOG(LogArenaWaves, Warning, TEXT("Boss scaling could not find ArenaGameState; single-player fallback will be used."));
+		return 0;
+	}
+
+	int32 ParticipatingPlayerCount = 0;
+	for (APlayerState* CandidatePlayerState : ArenaGameState->PlayerArray)
+	{
+		const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(CandidatePlayerState);
+		if (ArenaPlayerState && ArenaPlayerState->GetArenaAbilitySystemComponent())
+		{
+			++ParticipatingPlayerCount;
+		}
+	}
+	if (ParticipatingPlayerCount == 0)
+	{
+		UE_LOG(
+			LogArenaWaves,
+			Warning,
+			TEXT("Boss scaling found 0 valid ArenaPlayerState out of %d PlayerArray entries."),
+			ArenaGameState->PlayerArray.Num());
+	}
+	return ParticipatingPlayerCount;
 }
 
 // 死亡广播只处理当前 Alive 集合中的敌人，保证计数扣减和掉落抽取最多各执行一次。

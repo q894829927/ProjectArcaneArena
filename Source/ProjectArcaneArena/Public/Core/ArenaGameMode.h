@@ -56,11 +56,13 @@ protected:
 	virtual void BeginPlay() override;
 	// 玩家完成 Pawn 创建和 GAS 初始化后，编辑器测试模式可按顺序授予起始升级。
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
-	// Upgrade 阶段迟加入时生成候选，并在空候选自动完成后重新检查全员门槛。
+	// Waiting 阶段登录会重置首波等待窗口；Upgrade 阶段迟加入时生成候选并重新检查全员门槛。
 	virtual void PostLogin(APlayerController* NewPlayer) override;
 	virtual void Logout(AController* Exiting) override;
 
 private:
+	// 从最近一次玩家登录重新安排首波，避免 Dedicated PIE 在 PlayerState 到达前生成 Boss。
+	void ScheduleInitialWaveStart();
 	// 由服务器使用可选固定种子或会话随机种子初始化随机流，并同步实际种子供客户端观察。
 	void InitializeUpgradeRandomStream();
 	// 为所有有效玩家生成本轮独立候选，并在全员无奖励可选时继续检查推进条件。

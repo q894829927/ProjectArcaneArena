@@ -206,3 +206,19 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_pha
 同时把 `BP_ArenaBossCharacter` 的 `PhaseTwoHealthRatio`、`PhaseThreeHealthRatio` 和 `EnrageEffectClass` 配置为 `0.70`、`0.35` 与 `GE_Boss_Enrage`。脚本不会修改 `BT_ArenaBoss`，现有 `GroundSlam -> Charge -> FireZone -> Chase -> Wait` 顺序保持不变。
 
 `WBP_PlayerHUD` 可以添加一个勾选 `Is Variable` 的 `TextBlock`，命名为 `BossPhaseText`。若不添加，C++ 会把阶段文本合并到 `BossNameText`；完全没有 Boss 控件时，运行时备用 Boss 面板会自动包含阶段文本。
+
+## 阶段三 B：Boss 多人血量缩放
+
+完整编译并重启编辑器后执行：
+
+```text
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_player_scaling.py"
+```
+
+脚本会幂等创建 `/Game/Boss/GAS/GameplayEffect/GE_Boss_PlayerCountScaling`，并把 `BP_ArenaBossCharacter` 配置为：
+
+- `SinglePlayerHealthMultiplier = 1.0`
+- `TwoPlayerHealthMultiplier = 1.75`
+- `PlayerCountScalingEffectClass = GE_Boss_PlayerCountScaling`
+
+脚本不会修改 `BT_ArenaBoss`、`StartupAbilities` 或波次数据。单人 Boss 默认保持 `1200` MaxHealth；双人 Boss 默认在写入 `ActiveBoss` 前缩放并恢复为 `2100/2100`。

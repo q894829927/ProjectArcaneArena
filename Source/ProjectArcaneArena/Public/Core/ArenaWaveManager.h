@@ -49,6 +49,8 @@ private:
 	bool ValidateWaveConfiguration(int32 WaveArrayIndex) const;
 	bool BuildPendingSpawnList(int32 WaveArrayIndex);
 	void SpawnNextEnemy();
+	// 统计 Boss 生成瞬间所有拥有有效 ASC 的 ArenaPlayerState，死亡或暂时无 Pawn 的玩家仍计入。
+	int32 GetBossScalingPlayerCount() const;
 	// 为当前死亡敌人执行一次服务器掉落抽取，失败不会影响波次推进。
 	void TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy);
 	// 按掉落表有效正权重抽取一个 Pickup Class。

@@ -130,4 +130,5 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Recovery_Energy, "SetByCaller.Recovery.Energy", "Runtime Energy recovery magnitude.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Upgrade_NumericValue, "SetByCaller.Upgrade.NumericValue", "Runtime numeric value supplied by an upgrade DataAsset.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Shield_Amount, "SetByCaller.Shield.Amount", "Runtime Shield grant magnitude.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Boss_MaxHealthDelta, "SetByCaller.Boss.MaxHealthDelta", "Runtime additive MaxHealth delta captured when a Boss spawns.");
 }

@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前开发阶段为“阶段三 A：Boss 阶段系统”，状态为 `Partial`。阶段二的 GroundSlam、Charge、FireZone 与 Behavior Tree 主循环已具备可用实现，但仍保留多人和异常生命周期验证项；阶段三 A 已完成实现、资产幂等和主要单人 PIE 验收，包括阶段门控、阈值跨越、技能不中断、Enrage 属性/实例唯一性、直接致死保护以及死亡/Victory 清理，当前仅保留少量异常清理与多人一致性验收。阶段三 B 的多人 Boss 属性缩放尚未开始。
+当前开发阶段为“阶段三 B：Boss 多人血量缩放”，状态为 `Partial`。阶段二的 GroundSlam、Charge、FireZone 与 Behavior Tree 主循环已具备可用实现，但仍保留多人和异常生命周期验证项；阶段三 A 已完成实现、资产幂等和主要单人 PIE 验收，当前仅保留少量异常清理与多人一致性验收。阶段三 B 的服务器人数快照与 GAS MaxHealth 缩放代码已经实现，尚待完整编译、资产脚本执行和单/双人 PIE 验收。
 
 ---
 
@@ -215,7 +215,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-24。
+状态：`Partial`，最后更新：2026-07-25。
 
 已完成实现：
 
@@ -233,12 +233,18 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已验证 GroundSlam、Charge、FireZone 执行期间跨阶段不会中断当前技能；Phase 3 的 AttackPower `10 -> 13`、MoveSpeed `300 -> 360`，且 Enrage GE、Tag、Cue 各只有一份。
 - 已验证 Boss 死亡和进入 Victory 后不会残留阶段 Tag 或 Enrage 表现。
 - 已验证 Boss 在 Phase 1/2 被单次致死伤害直接击杀时不会短暂进入 Phase 3，也不会触发 Enrage。
+- 已实现阶段三 B 的服务器一次性人数快照：`AArenaWaveManager` 在 Boss 写入 `ActiveBoss` 前统计所有拥有有效 ASC 的 `AArenaPlayerState`；死亡或暂时没有 Pawn 的已连接玩家仍计入，零人回退单人，当前三人及以上按双人倍率封顶。
+- `AArenaBossCharacter::InitializePlayerCountScaling()` 仅允许 Authority 首次执行，保存人数与倍率快照并拒绝重复叠加；默认一人 `1.0x`、两人 `1.75x`，Boss 生成后的死亡、复活、掉线或 Pawn 变化不会重新计算。
+- 已新增 Instant `UArenaGameplayEffect_BossPlayerCountScaling` 与 `SetByCaller.Boss.MaxHealthDelta`，以实际初始 MaxHealth 计算 Additive 增量；随后复用 `UArenaGameplayEffect_HealthRestore` 和 Healing Meta Attribute 补满当前 Health，不直接写属性。
+- 人数缩放应用窗口会临时抑制 Health 阶段回调，避免双人 Boss 在 `1200/2100` 中间状态错误进入 Phase 2；缩放和补满完成后继续以新 MaxHealth 计算 `70%/35%` 阈值。
+- 首轮双人 PIE 暴露出 Dedicated 服务器会在客户端 `PostLogin` 前启动 Boss 波；`AArenaGameMode` 已改为由 Waiting 阶段玩家登录启动并重置首波等待计时器，确保同批客户端 PlayerState 注册后再生成 Boss。
+- 已新增幂等 `Content/Python/boss/setup_boss_player_scaling.py`，用于创建 `GE_Boss_PlayerCountScaling` 并配置 Boss 的 `1.0/1.75` 倍率与 Effect Class；脚本不会修改 Behavior Tree、StartupAbilities 或波次数据。
 
 尚未完成或尚未验证：
 
 - 尚未验证 Stun、Defeat 和 Actor 直接销毁路径的阶段/Cue 清理；治疗不回退测试延期到 Boss 具备实际回血来源后执行，不阻塞阶段三 A。
 - 尚未完成阶段门控后的 Behavior Tree 单人回归和两人 Listen Server 标签、HUD、属性、Cue、技能解锁一致性。
-- 阶段三 B 的一人 `1.0x`、两人 `1.75x` 初始化 Health 缩放尚未实现。
+- 阶段三 B 尚未完成 UHT/C++ 编译、资产脚本执行和 PIE 验收；一人应保持 `1200`，两人应得到 `2100`，重复调用、死亡/无 Pawn 快照和阶段阈值仍需实测。
 
 ### 阶段边界
 

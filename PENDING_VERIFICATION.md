@@ -187,6 +187,35 @@
 - 正在执行的技能不被阶段转换取消，后续 Behavior Tree 决策按新阶段正常运行。
 - Boss 死亡、离开 Combat 或销毁后，阶段标签、ActiveEffectHandle 和持续表现均被清理。
 
+## Boss 阶段三 B 多人血量缩放
+
+### 资产与静态配置
+
+1. 完整编译并重启编辑器后执行 `Content/Python/boss/setup_boss_player_scaling.py`。
+2. 检查 `BP_ArenaBossCharacter`：`SinglePlayerHealthMultiplier = 1.0`、`TwoPlayerHealthMultiplier = 1.75`、`PlayerCountScalingEffectClass = GE_Boss_PlayerCountScaling`。
+3. 连续执行脚本两次，确认没有 `_1/_2` 资产，也没有修改 `BT_ArenaBoss`、`StartupAbilities` 或波次数据。
+
+### 单人 PIE
+
+1. 进入 Boss 波，确认 HUD 首次显示即为 `Health = 1200`、`MaxHealth = 1200`，并仍从 `Boss.Phase.One` 开始。
+2. 在服务器手动重复调用 `InitializePlayerCountScaling(1)`，确认只记录防重警告，MaxHealth 不发生变化。
+3. 回归 Phase 2/3 阈值、Enrage、死亡和 Victory，确认单人属性与阶段行为不回退。
+
+### 双人 Listen Server
+
+1. 两名玩家进入 Boss 波，确认 Host/Client 首次显示即为 `Health = 2100`、`MaxHealth = 2100`，不出现可见的 `1200 -> 2100` 跳变。
+2. 检查服务器日志顺序：两名玩家均完成 `PostLogin` 后才出现 `Starting wave`，随后出现 `initialized for 2 player(s)`；不得再出现 `found no valid ArenaPlayerState`。
+3. 在 Boss 生成前让一名已连接玩家死亡或暂时缺少 Pawn，确认该 `AArenaPlayerState` 仍计入快照并得到 `2100`。
+4. Boss 生成后分别让玩家死亡、复活、掉线或重新拥有 Pawn，确认已经确定的 MaxHealth 不重新缩放。
+5. 确认 Phase 2 在 `1470`、Phase 3 在 `735` 附近触发；两端阶段 Tag、HUD、Enrage 属性和 Cue 一致。
+
+### 通过标准
+
+- 缩放只由服务器在 Boss 初始化时执行一次，客户端只观察复制的 Health/MaxHealth。
+- 单人保持 `1200`，双人得到 `2100`；当前三人及以上按双人倍率封顶并记录警告。
+- 缩放过程不短暂触发 Phase 2/3，不直接写 Health 或 MaxHealth，也不会因重复调用叠加到 `3675`。
+- 缩放失败只记录 `LogArenaBoss`/`LogArenaWaves` 错误并保留基础 Boss，不阻塞 Boss 波和终局流程。
+
 ## 玩家 Dash 预计算终点与网络回归
 
 ### 测试方法

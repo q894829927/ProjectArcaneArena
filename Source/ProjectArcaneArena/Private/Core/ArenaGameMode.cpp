@@ -27,7 +27,7 @@ AArenaGameMode::AArenaGameMode()
 	WaveManagerClass = AArenaWaveManager::StaticClass();
 }
 
-// 服务器生成本局随机种子、创建 WaveManager，并注入波次与全局掉落配置。
+// 服务器生成本局随机种子并创建 WaveManager；首波等待至少一名玩家登录后再安排。
 void AArenaGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -51,9 +51,10 @@ void AArenaGameMode::BeginPlay()
 	WaveManager->SetUpgradeSystemEnabled(true);
 	WaveManager->OnUpgradePhaseStarted.AddUObject(this, &AArenaGameMode::HandleUpgradePhaseStarted);
 	WaveManager->Initialize(WaveData, PickupDropTable, UpgradeRandomSeed);
-	if (WaveData)
+	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (WaveData && ArenaGameState && !ArenaGameState->PlayerArray.IsEmpty())
 	{
-		GetWorldTimerManager().SetTimer(InitialWaveTimerHandle, this, &AArenaGameMode::StartNextWave, InitialWaveDelay, false);
+		ScheduleInitialWaveStart();
 	}
 }
 
@@ -97,13 +98,22 @@ void AArenaGameMode::InitializeUpgradeRandomStream()
 		UpgradeRandomSeedOverride > 0 ? TEXT(" (override)") : TEXT(""));
 }
 
-// 玩家在 Upgrade 阶段加入时补发独立候选，并在其无候选自动完成后重新检查波次推进。
+// Waiting 阶段按最近登录玩家重置首波等待；Upgrade 阶段则补发候选并重新检查波次推进。
 void AArenaGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
 
 	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
-	if (HasAuthority() && ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade)
+	if (!HasAuthority() || !ArenaGameState)
+	{
+		return;
+	}
+
+	if (ArenaGameState->GetGamePhase() == EArenaGamePhase::Waiting)
+	{
+		ScheduleInitialWaveStart();
+	}
+	else if (ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade)
 	{
 		PrepareUpgradeChoicesForPlayer(NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr);
 		TryAdvanceAfterUpgradeSelections();
@@ -124,6 +134,23 @@ void AArenaGameMode::StartNextWave()
 	{
 		WaveManager->StartNextWave();
 	}
+}
+
+// 每次初始登录都重新开始同一计时器，让同批 PIE/Listen 客户端完成 PlayerState 注册后再快照人数。
+void AArenaGameMode::ScheduleInitialWaveStart()
+{
+	if (!HasAuthority() || !WaveManager || !WaveData)
+	{
+		return;
+	}
+
+	GetWorldTimerManager().ClearTimer(InitialWaveTimerHandle);
+	GetWorldTimerManager().SetTimer(
+		InitialWaveTimerHandle,
+		this,
+		&AArenaGameMode::StartNextWave,
+		FMath::Max(InitialWaveDelay, 0.1f),
+		false);
 }
 
 // 为所有 PlayerState 生成独立候选；候选只复制给拥有者，服务器保留同一份用于选择校验。

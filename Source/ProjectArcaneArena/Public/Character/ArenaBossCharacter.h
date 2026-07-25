@@ -25,6 +25,18 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Boss")
 	FGameplayTag GetCurrentBossPhaseTag() const;
 
+	// 根据 Boss 生成时的有效 PlayerState 数量一次性应用 MaxHealth 缩放，重复调用不会叠加。
+	UFUNCTION(BlueprintCallable, BlueprintAuthorityOnly, Category = "Arena|Boss|Scaling")
+	bool InitializePlayerCountScaling(int32 ParticipatingPlayerCount);
+
+	// 返回服务器初始化时冻结的玩家数量；该调试快照不额外复制到客户端。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss|Scaling")
+	int32 GetScalingPlayerCountSnapshot() const { return ScalingPlayerCountSnapshot; }
+
+	// 返回服务器已采用的初始 Health 倍率；客户端以复制的 MaxHealth 作为权威显示来源。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss|Scaling")
+	float GetAppliedHealthMultiplier() const { return AppliedHealthMultiplier; }
+
 protected:
 	// 在敌人 GAS 初始化完成后绑定服务器阶段委托，并按当前 Combat 状态初始化 Phase 1。
 	virtual void BeginPlay() override;
@@ -44,7 +56,24 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Phase")
 	TSubclassOf<UGameplayEffect> EnrageEffectClass;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Scaling", meta = (ClampMin = "0.01"))
+	float SinglePlayerHealthMultiplier = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Scaling", meta = (ClampMin = "0.01"))
+	float TwoPlayerHealthMultiplier = 1.75f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Scaling")
+	TSubclassOf<UGameplayEffect> PlayerCountScalingEffectClass;
+
 private:
+	// 使用指定的 SetByCaller Instant GE 写入 MaxHealth 增量，原生 Effect Class 也可用于失败回滚。
+	bool ApplyPlayerCountMaxHealthDelta(
+		float MaxHealthDelta,
+		TSubclassOf<UGameplayEffect> ScalingEffectClass);
+
+	// 通过 Healing Meta Attribute 把 Boss 当前 Health 恢复到缩放后的 MaxHealth。
+	bool RestoreHealthAfterPlayerCountScaling();
+
 	// 注册 Health、死亡和 GameState 阶段委托，所有阶段写入仅在服务器执行。
 	void BindBossPhaseDelegates();
 
@@ -86,4 +115,8 @@ private:
 	TWeakObjectPtr<AArenaGameState> BoundBossGameState;
 	FDelegateHandle BossPhaseHealthChangedDelegateHandle;
 	FActiveGameplayEffectHandle EnrageEffectHandle;
+	int32 ScalingPlayerCountSnapshot = 0;
+	float AppliedHealthMultiplier = 1.0f;
+	bool bHasAttemptedPlayerCountScaling = false;
+	bool bSuppressBossPhaseEvaluation = false;
 };
