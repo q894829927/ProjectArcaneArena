@@ -341,7 +341,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-26。
+状态：`Partial`，最后更新：2026-07-27。
 
 - 已在 `EArenaGamePhase` 末尾增加 `BossIntro`，`AArenaGameState` 复制 `FArenaBossIntroTiming`，客户端使用同步服务器时间计算剩余时长。
 - Boss 波生成顺序已调整为“生成 Boss → 应用人数缩放 → 发布 `ActiveBoss`/剩余数量 → 进入五秒 Intro → 进入 Combat”；普通波仍直接进入 Combat。
@@ -354,7 +354,8 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 阶段五 A `Boss Intro` 已完成实际验收：正式相机、权威时序、控制与伤害冻结、Space 长按跳过、镜头回切以及进入 Phase 1 Combat 均正常。
 - 阶段五 B 已实现服务器同步的 `BossOutro`：正常 Boss 死亡后保留尸体与 `ActiveBoss`，同步四秒截止时间、`0.6s` 回切窗口和死亡位置，再进入 Victory；直接 Destroy 的异常路径记录警告并安全跳过演出。
 - `AArenaBossCharacter` 已增加可配置死亡 Montage、`5.5s` 尸体寿命和唯一 `GameplayCue.Boss.Death`；各端通过复制的 `State.Dead` 本地播放一次死亡表现。`setup_boss_victory_outro.py` 已在编辑器成功执行一次，创建并保存死亡动画、Montage、Niagara、GameplayCue，并配置 Boss 默认值。
-- 每个本地 `AArenaPlayerController` 独立选择最近的 `BossVictoryCamera`，缺失时回退 `BossIntroCamera`；Space 长按由服务器计满 `1.5s` 后统一缩短 Outro，并保留镜头回切窗口。
+- 每个本地 `AArenaPlayerController` 默认根据复制的 Boss 死亡位置和本机当前观察方向生成不复制的临时 Victory Camera；候选位置经过多角度 Camera Channel 球形扫描，优先选择满足最小距离且无遮挡的构图，并在镜头回切完成后销毁。关卡 `BossVictoryCamera` 仍可通过配置显式覆盖，`BossIntroCamera` 只作为动态创建失败时的最终回退。
+- Space 长按由服务器计满 `1.5s` 后统一缩短 Outro，并保留镜头回切窗口。
 - `BossOutro` 与 `Victory` 已纳入玩家移动、Sprint、主动技能、敌人技能和权威伤害阻断。Victory 使用可聚焦 Restart Button 的 `UIOnly` 模式，不再聚焦不可聚焦 Widget。
 - `AArenaPlayerState` 复制个人 `bVictoryRestartReady`，`AArenaGameState` 复制 Ready/Required 计数；单人一人确认、双人全员确认后由 `AArenaGameMode` 防重执行 `ServerTravel("?Restart")`，掉线会重新计算参与人数。
 - 阶段五整体仍为 `Partial`；阶段五 A 保持 `Verified`，阶段五 B 当前为 `Implemented`，待完成资产脚本二次幂等运行、单人/双人镜头跳过、Ready 重开及异常清理验收后再标记 `Verified`。

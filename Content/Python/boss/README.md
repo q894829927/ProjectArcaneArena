@@ -272,7 +272,9 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_vic
 - `BP_ArenaBossCharacter.DeathMontagePlayRate = 1.0`
 - `BP_ArenaBossCharacter.DeathLifeSpan = 5.5`
 
-脚本不修改关卡、Behavior Tree 或 Widget 图。关卡中手动放置一个 `CameraActor`，关闭自动激活，并在 `Actor -> Tags` 添加 `BossVictoryCamera`；多个候选时客户端选择距离 Boss 死亡位置最近者，缺少时自动回退现有 `BossIntroCamera`。
+脚本不修改关卡、Behavior Tree 或 Widget 图。Victory Outro 默认不再要求关卡相机：每个本地 `AArenaPlayerController` 会根据 Boss 死亡位置和自己的当前视角生成临时 CameraActor，经过多角度球形扫描避开墙体，并在回切后自动销毁。
+
+需要精确手工构图时仍可放置一个关闭自动激活、带 `BossVictoryCamera` Actor Tag 的 `CameraActor`，并在 `BP_ArenaPlayerController` 开启 `bUsePlacedBossVictoryCameraOverride`。多个覆盖候选会选择距离死亡点最近者；动态镜头和覆盖镜头都失败时才回退现有 `BossIntroCamera`。
 
 `WBP_PlayerHUD` 可选增加以下勾选 `Is Variable` 的控件：
 

@@ -222,21 +222,21 @@
 
 1. `Content/Python/boss/setup_boss_victory_outro.py` 已成功执行一次并保存五个目标资产；再执行一次确认不创建 `_1/_2` 资产。
 2. 检查 `BP_ArenaBossCharacter`：`DeathMontage = AM_BossDeath`、`DeathMontagePlayRate = 1.0`、`DeathLifeSpan = 5.5`。
-3. 在 Boss 战区域放置或复用一个关闭自动激活的 `CameraActor`，添加 Actor Tag `BossVictoryCamera`；缺少时确认会回退 `BossIntroCamera`。
+3. 默认无需放置 Victory Camera；保持 `bUsePlacedBossVictoryCameraOverride = false`，确认客户端会按 Boss 死亡点动态生成镜头。若需要手工构图，再放置带 `BossVictoryCamera` Tag 的 `CameraActor` 并开启该覆盖选项。
 4. 可选在 `WBP_PlayerHUD` 添加计划中的 Outro/Victory 控件；不添加时验证原生 fallback 仍可跳过和重开。
 
 ### 单人 PIE
 
 1. 正常击杀最终 Boss，确认阶段依次为 `BossOutro -> Victory`，`RemainingEnemyCount = 0`，尸体和 Boss HUD 在 Outro 中保留，结束后才清空 `ActiveBoss`。
-2. 检查死亡 Montage、`GameplayCue.Boss.Death`、声音和死亡镜头各播放一次；完整演出约四秒，最后 `0.6s` 回切原顶视角或第三人称。
+2. 检查死亡 Montage、`GameplayCue.Boss.Death`、声音和动态死亡镜头各播放一次；让 Boss 分别死在空旷处、墙边和角落，确认镜头不会穿墙、贴墙或落入 Boss/玩家胶囊。完整演出约四秒，最后 `0.6s` 回切原顶视角或第三人称。
 3. Outro/Victory 中尝试移动、Sprint、五个主动技能，并让残留 Projectile、Area、Burning 命中，确认没有移动、施法或权威伤害。
 4. Space 按住不足 `1.5s` 后松开不跳过；持续满 `1.5s` 后把双方截止时间缩短到剩余 `0.6s` 回切窗口。
 5. Victory 点击 Restart 后立即由唯一玩家 Ready 并重载当前关卡；新局从 Waiting/首波开始，不残留 Boss、升级候选、Ready、HUD 或相机状态。
-6. 分别直接 Destroy Boss、在 Outro 中进入 Defeat、结束 PIE 和切换关卡，确认没有迟到 Timer、ViewTarget、输入锁或 Cue。
+6. 分别直接 Destroy Boss、在 Outro 中进入 Defeat、结束 PIE 和切换关卡，确认没有迟到 Timer、临时 CameraActor、ViewTarget、输入锁或 Cue。
 
 ### 双人网络
 
-1. Listen Server 与 Dedicated Server 双客户端分别验证只存在一个权威 Outro 时序，每端只播放一次本地镜头和死亡表现。
+1. Listen Server 与 Dedicated Server 双客户端分别验证只存在一个权威 Outro 时序；两端按各自进入演出前的视角独立生成一个本地镜头，不复制 CameraActor 或 Camera Transform，且死亡表现各播放一次。
 2. 任一玩家完成 Space Hold 后，两端统一保留 `0.6s` 回切再进入 Victory；瞬时 RPC 或提前松开不能绕过服务器 Hold。
 3. 第一名玩家 Ready 时显示 `1/2 Ready` 且不旅行；取消 Ready 恢复 `0/2`；双方 Ready 后只执行一次服务器旅行。
 4. 一名未 Ready 玩家掉线后重新计算 Required；剩余玩家已 Ready 时继续重开，不永久卡住。
