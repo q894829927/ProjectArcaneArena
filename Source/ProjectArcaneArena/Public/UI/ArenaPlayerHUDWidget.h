@@ -69,7 +69,7 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetVictoryPresentation(bool bVisible, bool bLocalReady, int32 ReadyCount, int32 RequiredCount);
 
-	// 返回可聚焦的重开按钮，Controller 切换 UIOnly 时不聚焦不可交互容器。
+	// 返回重开按钮供 Controller 或蓝图检查，不再要求该按钮持有键盘焦点。
 	UButton* GetVictoryRestartButton() const { return VictoryRestartButton; }
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|UI|Victory")
@@ -438,6 +438,8 @@ private:
 	void HandleBossDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	// 任一 Boss 阶段标签变化时重新解析最终阶段并刷新本地表现。
 	void HandleBossPhaseTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// 统一配置 Victory 面板层级和重开按钮的直接鼠标点击行为，避免依赖键盘焦点。
+	void ConfigureVictoryRestartInteraction();
 	// 重开按钮点击后只广播本地 UI 意图，由 Controller 发送服务器 RPC。
 	UFUNCTION()
 	void HandleVictoryRestartButtonClicked();

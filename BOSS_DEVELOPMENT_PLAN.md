@@ -356,9 +356,10 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - `AArenaBossCharacter` 已增加可配置死亡 Montage、`5.5s` 尸体寿命和唯一 `GameplayCue.Boss.Death`；各端通过复制的 `State.Dead` 本地播放一次死亡表现。`setup_boss_victory_outro.py` 已在编辑器成功执行一次，创建并保存死亡动画、Montage、Niagara、GameplayCue，并配置 Boss 默认值。
 - 每个本地 `AArenaPlayerController` 默认根据复制的 Boss 死亡位置和本机当前观察方向生成不复制的临时 Victory Camera；候选位置经过多角度 Camera Channel 球形扫描，优先选择满足最小距离且无遮挡的构图，并在镜头回切完成后销毁。关卡 `BossVictoryCamera` 仍可通过配置显式覆盖，`BossIntroCamera` 只作为动态创建失败时的最终回退。
 - Space 长按由服务器计满 `1.5s` 后统一缩短 Outro，并保留镜头回切窗口。
-- `BossOutro` 与 `Victory` 已纳入玩家移动、Sprint、主动技能、敌人技能和权威伤害阻断。Victory 使用可聚焦 Restart Button 的 `UIOnly` 模式，不再聚焦不可聚焦 Widget。
-- `AArenaPlayerState` 复制个人 `bVictoryRestartReady`，`AArenaGameState` 复制 Ready/Required 计数；单人一人确认、双人全员确认后由 `AArenaGameMode` 防重执行 `ServerTravel("?Restart")`，掉线会重新计算参与人数。
-- 阶段五整体仍为 `Partial`；阶段五 A 的玩法同步保持已验收，但动态 Intro Camera 扩展当前为 `Implemented`；阶段五 B 当前为 `Implemented`，待完成单人/双人镜头、Ready 重开及异常清理验收后再标记 `Verified`。
+- `BossOutro` 与 `Victory` 已纳入玩家移动、Sprint、主动技能、敌人技能和权威伤害阻断。常驻 HUD 平时为 `HitTestInvisible`，进入 Victory 时根 Widget 显式切为 `SelfHitTestInvisible`，使子按钮重新进入鼠标命中路径。Victory 使用不强制键盘焦点的 `GameAndUI`；面板自身不拦截鼠标、Restart Button 位于 HUD 前景并在鼠标按下时直接提交，点击背景后仍可继续点击重开。
+- `AArenaPlayerState` 复制个人 `bVictoryRestartReady`，`AArenaGameState` 复制 Ready/Required 计数；单人只显示 `Restart`，多人显示 `Ready`，且只有本地已确认而其他玩家尚未确认时才显示 `Cancel Ready`。全员确认后按钮立即隐藏并显示 `Starting...`，`AArenaGameMode` 防重执行 `ServerTravel("?Restart")` 且拒绝迟到取消；掉线会重新计算参与人数。
+- 阶段五 B 已完成主路径验收：单人和双人的死亡镜头、视角恢复、Host/Client 唯一 Montage/Cue/Camera、同步 Space 跳过、Ready/Cancel Ready、全员确认后立即旅行、背景点击后的按钮输入、重开状态清理，以及 Boss 直接销毁、Outro 转 Defeat、退出 PIE 的异常清理均已通过。
+- 阶段五整体仍为 `Partial`：阶段五 B 状态为 `Verified`；阶段五 A 的基础同步已验收，但动态 Intro Camera 的墙边、双视角和双客户端专项回归仍保留。Dedicated Server、断线重算、死亡镜头墙角构图和资产脚本二次幂等性也继续记录在 `PENDING_VERIFICATION.md`。
 
 ### 阶段边界
 

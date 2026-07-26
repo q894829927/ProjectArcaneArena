@@ -178,7 +178,7 @@ bool AArenaGameMode::RequestBossOutroSkip(AArenaPlayerController* RequestingCont
 	return HasAuthority() && WaveManager && WaveManager->RequestBossOutroSkip(RequestingController);
 }
 
-// 服务器验证 Victory 参与者后更新个人 Ready，并在满足全员条件时尝试重载。
+// 服务器验证 Victory 参与者后更新个人 Ready，旅行开始后拒绝迟到的状态切换。
 void AArenaGameMode::SetVictoryRestartReady(AArenaPlayerController* RequestingController, bool bReady)
 {
 	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
@@ -186,6 +186,7 @@ void AArenaGameMode::SetVictoryRestartReady(AArenaPlayerController* RequestingCo
 		? RequestingController->GetPlayerState<AArenaPlayerState>()
 		: nullptr;
 	if (!HasAuthority()
+		|| bVictoryRestartTravelStarted
 		|| !ArenaGameState
 		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory
 		|| !ArenaPlayerState

@@ -533,6 +533,7 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 
 	if (VictoryRestartButton)
 	{
+		ConfigureVictoryRestartInteraction();
 		VictoryRestartButton->OnClicked.RemoveDynamic(this, &UArenaPlayerHUDWidget::HandleVictoryRestartButtonClicked);
 		VictoryRestartButton->OnClicked.AddUniqueDynamic(this, &UArenaPlayerHUDWidget::HandleVictoryRestartButtonClicked);
 	}
@@ -677,15 +678,33 @@ void UArenaPlayerHUDWidget::SetBossOutroPresentation(
 	}
 }
 
-// 展示 Victory 和全员 Ready 计数；按钮切换只改变下一次提交意图。
+// 展示 Victory 并根据参与人数切换 Restart、Ready、Cancel Ready 与旅行中状态。
 void UArenaPlayerHUDWidget::SetVictoryPresentation(
 	bool bVisible,
 	bool bLocalReady,
 	int32 ReadyCount,
 	int32 RequiredCount)
 {
+	const int32 SafeReadyCount = FMath::Max(ReadyCount, 0);
+	const int32 SafeRequiredCount = FMath::Max(RequiredCount, 0);
+	const bool bIsMultiplayer = SafeRequiredCount > 1;
+	const bool bAllPlayersReady = SafeRequiredCount > 0 && SafeReadyCount >= SafeRequiredCount;
+	const bool bWaitingForTravel = bVisible
+		&& (bAllPlayersReady || (!bIsMultiplayer && bLocalReady));
+	const bool bCanCancelReady = bVisible
+		&& bIsMultiplayer
+		&& bLocalReady
+		&& !bAllPlayersReady;
+
+	if (WidgetTree && WidgetTree->RootWidget)
+	{
+		WidgetTree->RootWidget->SetIsEnabled(true);
+		WidgetTree->RootWidget->SetVisibility(
+			bVisible ? ESlateVisibility::SelfHitTestInvisible : ESlateVisibility::HitTestInvisible);
+	}
+
 	const ESlateVisibility VictoryVisibility = bVisible
-		? ESlateVisibility::Visible
+		? ESlateVisibility::SelfHitTestInvisible
 		: ESlateVisibility::Collapsed;
 	if (VictoryPanel)
 	{
@@ -700,25 +719,74 @@ void UArenaPlayerHUDWidget::SetVictoryPresentation(
 	}
 	if (VictoryRestartButton)
 	{
-		VictoryRestartButton->SetVisibility(VictoryVisibility);
+		ConfigureVictoryRestartInteraction();
+		VictoryRestartButton->SetIsEnabled(bVisible && !bWaitingForTravel);
+		VictoryRestartButton->SetVisibility(
+			bVisible && !bWaitingForTravel
+				? ESlateVisibility::Visible
+				: ESlateVisibility::Collapsed);
 	}
 	if (VictoryRestartButtonText)
 	{
-		VictoryRestartButtonText->SetText(bLocalReady
-			? NSLOCTEXT("ArenaPlayerHUDWidget", "CancelVictoryReady", "Cancel Ready")
-			: NSLOCTEXT("ArenaPlayerHUDWidget", "ConfirmVictoryReady", "Restart"));
+		if (bCanCancelReady)
+		{
+			VictoryRestartButtonText->SetText(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "CancelVictoryReady", "Cancel Ready"));
+		}
+		else if (bIsMultiplayer)
+		{
+			VictoryRestartButtonText->SetText(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "ConfirmVictoryReadyMultiplayer", "Ready"));
+		}
+		else
+		{
+			VictoryRestartButtonText->SetText(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "ConfirmVictoryReady", "Restart"));
+		}
 	}
 	if (VictoryRestartStatusText)
 	{
-		VictoryRestartStatusText->SetText(bVisible
-			? FText::Format(
+		if (bWaitingForTravel)
+		{
+			VictoryRestartStatusText->SetText(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "VictoryRestartStarting", "Starting..."));
+		}
+		else
+		{
+			VictoryRestartStatusText->SetText(bVisible
+				? FText::Format(
 				NSLOCTEXT("ArenaPlayerHUDWidget", "VictoryReadyStatus", "{0}/{1} Ready"),
-				FText::AsNumber(FMath::Max(ReadyCount, 0)),
-				FText::AsNumber(FMath::Max(RequiredCount, 0)))
-			: FText::GetEmpty());
+				FText::AsNumber(SafeReadyCount),
+				FText::AsNumber(SafeRequiredCount))
+				: FText::GetEmpty());
+		}
 		VictoryRestartStatusText->SetVisibility(
 			bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	}
+}
+
+// 让面板背景不拦截鼠标，并将重开按钮提升到 HUD 前景后按下左键立即触发。
+void UArenaPlayerHUDWidget::ConfigureVictoryRestartInteraction()
+{
+	if (VictoryPanel)
+	{
+		if (UCanvasPanelSlot* VictoryPanelSlot = Cast<UCanvasPanelSlot>(VictoryPanel->Slot))
+		{
+			VictoryPanelSlot->SetZOrder(1000);
+		}
+	}
+	if (!VictoryRestartButton)
+	{
+		return;
+	}
+
+	if (UCanvasPanelSlot* ButtonCanvasSlot = Cast<UCanvasPanelSlot>(VictoryRestartButton->Slot))
+	{
+		ButtonCanvasSlot->SetZOrder(1001);
+	}
+	VictoryRestartButton->SetIsEnabled(true);
+	VictoryRestartButton->SetClickMethod(EButtonClickMethod::MouseDown);
+	VictoryRestartButton->SetTouchMethod(EButtonTouchMethod::Down);
 }
 
 // 把按钮点击转换为 Widget 事件，玩法验证仍由 Controller 和 GameMode 完成。

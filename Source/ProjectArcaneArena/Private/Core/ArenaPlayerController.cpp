@@ -127,7 +127,7 @@ void AArenaPlayerController::OnPossess(APawn* InPawn)
 	BindUpgradeState();
 }
 
-// 仅在本地控制器上创建玩家 HUD，并加入视口。
+// 仅在本地控制器上创建常驻 HUD；普通阶段整体忽略命中测试，Victory 再临时开放子控件点击。
 void AArenaPlayerController::CreatePlayerHUD()
 {
 	if (!IsLocalController() || PlayerHUDWidget || !PlayerHUDWidgetClass)
@@ -139,6 +139,7 @@ void AArenaPlayerController::CreatePlayerHUD()
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->AddToViewport();
+		PlayerHUDWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 		PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
 		PlayerHUDWidget->OnVictoryRestartRequested.AddUniqueDynamic(
 			this,
@@ -1281,7 +1282,6 @@ void AArenaPlayerController::RefreshVictoryPresentation()
 	const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
 	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
 	const bool bVisible = ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::Victory;
-	SetVictoryInputMode(bVisible);
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->SetVictoryPresentation(
@@ -1290,9 +1290,10 @@ void AArenaPlayerController::RefreshVictoryPresentation()
 			ArenaGameState ? ArenaGameState->GetVictoryRestartReadyCount() : 0,
 			ArenaGameState ? ArenaGameState->GetVictoryRestartRequiredCount() : 0);
 	}
+	SetVictoryInputMode(bVisible);
 }
 
-// Victory 使用 UIOnly 并只聚焦可聚焦按钮，退出后恢复原双视角输入模式。
+// Victory 临时开放 HUD 子控件命中并使用无键盘焦点的 GameAndUI，确保鼠标直接点击重开按钮。
 void AArenaPlayerController::SetVictoryInputMode(bool bEnabled)
 {
 	if (!IsLocalController() || bVictoryInputMode == bEnabled)
@@ -1309,21 +1310,22 @@ void AArenaPlayerController::SetVictoryInputMode(bool bEnabled)
 		bShowMouseCursor = true;
 		if (PlayerHUDWidget)
 		{
+			PlayerHUDWidget->SetIsEnabled(true);
+			PlayerHUDWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
 			PlayerHUDWidget->SetThirdPersonReticleVisible(false);
 		}
-		FInputModeUIOnly InputMode;
-		if (PlayerHUDWidget
-			&& PlayerHUDWidget->GetVictoryRestartButton()
-			&& PlayerHUDWidget->GetVictoryRestartButton()->GetIsFocusable())
-		{
-			InputMode.SetWidgetToFocus(PlayerHUDWidget->GetVictoryRestartButton()->TakeWidget());
-		}
+		FInputModeGameAndUI InputMode;
+		InputMode.SetHideCursorDuringCapture(false);
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		SetInputMode(InputMode);
 	}
 	else
 	{
 		FlushPressedKeys();
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+		}
 		SetIgnoreMoveInput(bUpgradeInputMode || bBossIntroInputMode || bBossOutroInputMode);
 		SetIgnoreLookInput(bBossIntroInputMode || bBossOutroInputMode);
 		if (!bUpgradeInputMode && !bBossIntroInputMode && !bBossOutroInputMode)
@@ -1530,7 +1532,7 @@ void AArenaPlayerController::HandleVictoryRestartReadyChanged(bool bIsReady)
 	RefreshVictoryPresentation();
 }
 
-// Victory 按钮在本地切换 Ready 意图，服务器 GameMode 负责最终验证。
+// Victory 按钮提交 Restart/Ready；只有多人尚未全员确认时才允许取消个人 Ready。
 void AArenaPlayerController::HandleVictoryRestartRequested()
 {
 	const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
@@ -1543,7 +1545,17 @@ void AArenaPlayerController::HandleVictoryRestartRequested()
 		return;
 	}
 
-	ServerSetVictoryRestartReady(!ArenaPlayerState->IsVictoryRestartReady());
+	const int32 RequiredCount = ArenaGameState->GetVictoryRestartRequiredCount();
+	const int32 ReadyCount = ArenaGameState->GetVictoryRestartReadyCount();
+	const bool bAllPlayersReady = RequiredCount > 0 && ReadyCount >= RequiredCount;
+	const bool bLocalReady = ArenaPlayerState->IsVictoryRestartReady();
+	const bool bCanCancelReady = RequiredCount > 1 && bLocalReady && !bAllPlayersReady;
+	if (bLocalReady && !bCanCancelReady)
+	{
+		return;
+	}
+
+	ServerSetVictoryRestartReady(!bLocalReady);
 }
 
 // 当客户端 GAS 数据尚未复制完成时，安排短间隔重试绑定 HUD。
