@@ -347,18 +347,18 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - Boss 波生成顺序已调整为“生成 Boss → 应用人数缩放 → 发布 `ActiveBoss`/剩余数量 → 进入五秒 Intro → 进入 Combat”；普通波仍直接进入 Combat。
 - Intro 中玩家 CharacterMovement、Sprint、Look、视角切换和五个主动技能均被冻结；`UArenaGameplayAbility::CanActivateAbility()` 同时阻止 `Ability.Type.PlayerActive` 与 `Ability.Enemy`，永久被动不被取消。Boss 阶段初始化与 Health 阈值评估也显式要求 `Combat`，Intro 不会提前发布 `Boss.Phase.One`。
 - `UExecCalc_Damage` 与 `UArenaAttributeSet` 的最终 Damage Meta 消费入口都拒绝 Intro、Outro 与 Victory 伤害，覆盖残留 Projectile、Area 与 Burning 等旧周期效果。
-- 每个本地 `AArenaPlayerController` 独立选择距离 Boss 最近且带 `BossIntroCamera` Actor Tag 的 `CameraActor`，执行 `0.6s` Blend，并在 Intro 尾段回切当前 Pawn；缺少相机时保持玩家镜头并输出一次安全警告。
+- 每个本地 `AArenaPlayerController` 复用 Outro 的通用动态构图器，根据 Boss 出生位置生成不复制的临时 Intro Camera；Intro 以 Boss Forward Vector 作为首选镜头位置方向，使镜头默认位于 Boss 正面并回看 Boss。注视高度由 Boss 碰撞包围盒自动计算，默认瞄准中心以下 `65%` 的下半身区域，把全身抬到画面中上部并避开底部 HUD；正前方被墙体遮挡时才通过多角度 Camera Channel 球形扫描偏移到侧前方。关卡 `BossIntroCamera` 可通过配置显式覆盖。
 - Space 长按状态通过可靠 Server RPC 提交；服务器独立计满 `2s` 后重新验证参战 PlayerState、阶段和 Boss 存活状态，仅第一次有效请求会把全局截止时间缩短为当前服务器时间加 `0.6s`。
 - `UArenaPlayerHUDWidget` 支持可选 `BossIntroText`、`BossIntroCountdownText`、`BossIntroSkipText` 和 `BossIntroSkipProgressBar`，缺少蓝图控件时由原生运行时布局提供回退显示。
 - `AArenaBossAIController` 在 `BossIntro -> Combat` 后额外等待 `0.5s` 才允许技能 Decorator 通过；Boss 被直接 Destroy 的异常路径也会清除 Intro、`ActiveBoss` 和最终波计数。
-- 阶段五 A `Boss Intro` 已完成实际验收：正式相机、权威时序、控制与伤害冻结、Space 长按跳过、镜头回切以及进入 Phase 1 Combat 均正常。
+- 阶段五 A 的权威时序、控制与伤害冻结、Space 长按跳过、镜头回切以及进入 Phase 1 Combat 已完成验收；新替换的动态 Intro Camera 路径待补充墙边、双视角和双客户端表现回归。
 - 阶段五 B 已实现服务器同步的 `BossOutro`：正常 Boss 死亡后保留尸体与 `ActiveBoss`，同步四秒截止时间、`0.6s` 回切窗口和死亡位置，再进入 Victory；直接 Destroy 的异常路径记录警告并安全跳过演出。
 - `AArenaBossCharacter` 已增加可配置死亡 Montage、`5.5s` 尸体寿命和唯一 `GameplayCue.Boss.Death`；各端通过复制的 `State.Dead` 本地播放一次死亡表现。`setup_boss_victory_outro.py` 已在编辑器成功执行一次，创建并保存死亡动画、Montage、Niagara、GameplayCue，并配置 Boss 默认值。
 - 每个本地 `AArenaPlayerController` 默认根据复制的 Boss 死亡位置和本机当前观察方向生成不复制的临时 Victory Camera；候选位置经过多角度 Camera Channel 球形扫描，优先选择满足最小距离且无遮挡的构图，并在镜头回切完成后销毁。关卡 `BossVictoryCamera` 仍可通过配置显式覆盖，`BossIntroCamera` 只作为动态创建失败时的最终回退。
 - Space 长按由服务器计满 `1.5s` 后统一缩短 Outro，并保留镜头回切窗口。
 - `BossOutro` 与 `Victory` 已纳入玩家移动、Sprint、主动技能、敌人技能和权威伤害阻断。Victory 使用可聚焦 Restart Button 的 `UIOnly` 模式，不再聚焦不可聚焦 Widget。
 - `AArenaPlayerState` 复制个人 `bVictoryRestartReady`，`AArenaGameState` 复制 Ready/Required 计数；单人一人确认、双人全员确认后由 `AArenaGameMode` 防重执行 `ServerTravel("?Restart")`，掉线会重新计算参与人数。
-- 阶段五整体仍为 `Partial`；阶段五 A 保持 `Verified`，阶段五 B 当前为 `Implemented`，待完成资产脚本二次幂等运行、单人/双人镜头跳过、Ready 重开及异常清理验收后再标记 `Verified`。
+- 阶段五整体仍为 `Partial`；阶段五 A 的玩法同步保持已验收，但动态 Intro Camera 扩展当前为 `Implemented`；阶段五 B 当前为 `Implemented`，待完成单人/双人镜头、Ready 重开及异常清理验收后再标记 `Verified`。
 
 ### 阶段边界
 

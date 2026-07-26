@@ -314,9 +314,10 @@ void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 			&AArenaPlayerController::HandleVictoryRestartRequested);
 	}
 	FinishBossIntroPresentation(true);
+	ReleaseDynamicBossPresentationCamera(DynamicBossIntroCamera, 0.0f);
 	ClearBossIntroSkipHold();
 	FinishBossOutroPresentation(true);
-	ReleaseDynamicBossOutroCamera(0.0f);
+	ReleaseDynamicBossPresentationCamera(DynamicBossOutroCamera, 0.0f);
 	ClearBossOutroSkipHold();
 	SetVictoryInputMode(false);
 	UnbindUpgradeState();
@@ -589,7 +590,7 @@ void AArenaPlayerController::RefreshBossIntroPresentation()
 	}
 }
 
-// 启动每个客户端独立的镜头、输入和 HUD 表现，CameraActor 的 Transform 从不参与复制。
+// 启动每个客户端独立的 Boss 出生镜头；默认动态构图，可选使用关卡相机覆盖。
 void AArenaPlayerController::StartBossIntroPresentation(
 	AArenaBossCharacter* Boss,
 	const FArenaBossIntroTiming& Timing)
@@ -612,11 +613,34 @@ void AArenaPlayerController::StartBossIntroPresentation(
 		PlayerHUDWidget->SetThirdPersonReticleVisible(false);
 	}
 
-	ActiveBossIntroCamera = FindBossIntroCamera(Boss);
-	if (ACameraActor* IntroCamera = ActiveBossIntroCamera.Get())
+	ReleaseDynamicBossPresentationCamera(DynamicBossIntroCamera, 0.0f);
+	ACameraActor* IntroCamera = bUsePlacedBossIntroCameraOverride
+		? FindBossIntroCamera(Boss)
+		: nullptr;
+	if (!IntroCamera)
+	{
+		IntroCamera = CreateDynamicBossPresentationCamera(
+			Boss,
+			Boss->GetActorLocation(),
+			Boss->GetActorForwardVector(),
+			BossIntroDynamicCameraDistance,
+			BossIntroDynamicCameraHeight,
+			CalculateBossIntroLookAtHeight(Boss),
+			BossIntroDynamicCameraFieldOfView,
+			BossIntroDynamicCameraCollisionRadius,
+			BossIntroDynamicCameraMinimumDistance);
+		DynamicBossIntroCamera = IntroCamera;
+	}
+	if (!IntroCamera && !bUsePlacedBossIntroCameraOverride)
+	{
+		IntroCamera = FindBossIntroCamera(Boss);
+	}
+
+	ActiveBossIntroCamera = IntroCamera;
+	if (ACameraActor* ActiveIntroCamera = ActiveBossIntroCamera.Get())
 	{
 		SetViewTargetWithBlend(
-			IntroCamera,
+			ActiveIntroCamera,
 			FMath::Max(BossIntroCameraBlendDuration, 0.0f),
 			EViewTargetBlendFunction::VTBlend_Cubic);
 	}
@@ -624,7 +648,7 @@ void AArenaPlayerController::StartBossIntroPresentation(
 	{
 		bWarnedMissingBossIntroCamera = true;
 		UE_LOG(LogArenaBossPresentation, Warning,
-			TEXT("No CameraActor tagged %s was found for Boss %s; Intro will keep the current player camera."),
+			TEXT("Dynamic Boss Intro camera creation failed and no CameraActor tagged %s was found for Boss %s; Intro keeps the player camera."),
 			*BossIntroCameraActorTag.ToString(),
 			*GetNameSafe(Boss));
 	}
@@ -686,7 +710,7 @@ void AArenaPlayerController::UpdateBossIntroPresentation()
 	}
 }
 
-// 尾段只执行一次 ViewTarget 回切，控制仍保持冻结直到服务器阶段真正进入 Combat。
+// 尾段只执行一次 ViewTarget 回切，并在 Blend 完成后释放本地动态 Intro 镜头。
 void AArenaPlayerController::BeginBossIntroCameraBlendOut(float BlendOutDuration)
 {
 	if (!bBossIntroInputMode || bBossIntroCameraBlendingOut)
@@ -697,18 +721,28 @@ void AArenaPlayerController::BeginBossIntroCameraBlendOut(float BlendOutDuration
 	bBossIntroCameraBlendingOut = true;
 	if (APawn* ControlledPawn = GetPawn())
 	{
+		const float SafeBlendOutDuration = FMath::Max(BlendOutDuration, 0.0f);
 		SetViewTargetWithBlend(
 			ControlledPawn,
-			FMath::Max(BlendOutDuration, 0.0f),
+			SafeBlendOutDuration,
 			EViewTargetBlendFunction::VTBlend_Cubic);
+		ReleaseDynamicBossPresentationCamera(
+			DynamicBossIntroCamera,
+			SafeBlendOutDuration + 0.1f);
+	}
+	else
+	{
+		ReleaseDynamicBossPresentationCamera(DynamicBossIntroCamera, 0.0f);
 	}
 }
 
-// 正常 Combat 与异常终局共用恢复入口，保证鼠标、准星、ViewTarget 和 Hold 状态不残留。
+// 正常 Combat 与异常终局共用恢复入口，保证动态镜头、输入、ViewTarget 和 Hold 不残留。
 void AArenaPlayerController::FinishBossIntroPresentation(bool bWasInterrupted)
 {
 	if (!bBossIntroInputMode && !bBossIntroSkipHeldLocally)
 	{
+		ReleaseDynamicBossPresentationCamera(DynamicBossIntroCamera, 0.0f);
+		ActiveBossIntroCamera.Reset();
 		return;
 	}
 
@@ -726,10 +760,18 @@ void AArenaPlayerController::FinishBossIntroPresentation(bool bWasInterrupted)
 	{
 		if (APawn* ControlledPawn = GetPawn())
 		{
+			const float SafeBlendDuration = FMath::Max(BossIntroCameraBlendDuration, 0.0f);
 			SetViewTargetWithBlend(
 				ControlledPawn,
-				FMath::Max(BossIntroCameraBlendDuration, 0.0f),
+				SafeBlendDuration,
 				EViewTargetBlendFunction::VTBlend_Cubic);
+			ReleaseDynamicBossPresentationCamera(
+				DynamicBossIntroCamera,
+				SafeBlendDuration + 0.1f);
+		}
+		else
+		{
+			ReleaseDynamicBossPresentationCamera(DynamicBossIntroCamera, 0.0f);
 		}
 	}
 
@@ -782,6 +824,28 @@ ACameraActor* AArenaPlayerController::FindBossIntroCamera(const AArenaBossCharac
 		}
 	}
 	return BestCamera;
+}
+
+// 使用碰撞包围盒下半部作为注视点，使 Boss 全身位于底部 HUD 上方的安全构图区。
+float AArenaPlayerController::CalculateBossIntroLookAtHeight(
+	const AArenaBossCharacter* Boss) const
+{
+	if (!Boss)
+	{
+		return BossIntroDynamicCameraLookAtHeightOffset;
+	}
+
+	FVector BoundsOrigin = Boss->GetActorLocation();
+	FVector BoundsExtent = FVector::ZeroVector;
+	Boss->GetActorBounds(true, BoundsOrigin, BoundsExtent);
+	const float BoundsCenterOffset = BoundsOrigin.Z - Boss->GetActorLocation().Z;
+	const float SafeFramingBias = FMath::Clamp(
+		BossIntroDynamicCameraVerticalFramingBias,
+		0.0f,
+		1.0f);
+	return BoundsCenterOffset
+		- BoundsExtent.Z * SafeFramingBias
+		+ BossIntroDynamicCameraLookAtHeightOffset;
 }
 
 // 组合复制阶段、死亡 Boss 和 Outro Timing，容忍各字段 OnRep 到达顺序不同。
@@ -842,13 +906,23 @@ void AArenaPlayerController::StartBossOutroPresentation(
 		PlayerHUDWidget->SetThirdPersonReticleVisible(false);
 	}
 
-	ReleaseDynamicBossOutroCamera(0.0f);
+	ReleaseDynamicBossPresentationCamera(DynamicBossOutroCamera, 0.0f);
 	ACameraActor* OutroCamera = bUsePlacedBossVictoryCameraOverride
 		? FindBossOutroCamera(Timing.BossDeathLocation)
 		: nullptr;
 	if (!OutroCamera)
 	{
-		OutroCamera = CreateDynamicBossOutroCamera(Boss, Timing.BossDeathLocation);
+		OutroCamera = CreateDynamicBossPresentationCamera(
+			Boss,
+			Timing.BossDeathLocation,
+			FVector::ZeroVector,
+			BossOutroDynamicCameraDistance,
+			BossOutroDynamicCameraHeight,
+			BossOutroDynamicCameraLookAtHeight,
+			BossOutroDynamicCameraFieldOfView,
+			BossOutroDynamicCameraCollisionRadius,
+			BossOutroDynamicCameraMinimumDistance);
+		DynamicBossOutroCamera = OutroCamera;
 	}
 	if (!OutroCamera && !bUsePlacedBossVictoryCameraOverride)
 	{
@@ -944,11 +1018,13 @@ void AArenaPlayerController::BeginBossOutroCameraBlendOut(float BlendOutDuration
 			ControlledPawn,
 			SafeBlendOutDuration,
 			EViewTargetBlendFunction::VTBlend_Cubic);
-		ReleaseDynamicBossOutroCamera(SafeBlendOutDuration + 0.1f);
+		ReleaseDynamicBossPresentationCamera(
+			DynamicBossOutroCamera,
+			SafeBlendOutDuration + 0.1f);
 	}
 	else
 	{
-		ReleaseDynamicBossOutroCamera(0.0f);
+		ReleaseDynamicBossPresentationCamera(DynamicBossOutroCamera, 0.0f);
 	}
 }
 
@@ -957,7 +1033,7 @@ void AArenaPlayerController::FinishBossOutroPresentation(bool bWasInterrupted)
 {
 	if (!bBossOutroInputMode && !bBossOutroSkipHeldLocally)
 	{
-		ReleaseDynamicBossOutroCamera(0.0f);
+		ReleaseDynamicBossPresentationCamera(DynamicBossOutroCamera, 0.0f);
 		ActiveBossOutroCamera.Reset();
 		return;
 	}
@@ -981,11 +1057,13 @@ void AArenaPlayerController::FinishBossOutroPresentation(bool bWasInterrupted)
 				ControlledPawn,
 				SafeBlendDuration,
 				EViewTargetBlendFunction::VTBlend_Cubic);
-			ReleaseDynamicBossOutroCamera(SafeBlendDuration + 0.1f);
+			ReleaseDynamicBossPresentationCamera(
+				DynamicBossOutroCamera,
+				SafeBlendDuration + 0.1f);
 		}
 		else
 		{
-			ReleaseDynamicBossOutroCamera(0.0f);
+			ReleaseDynamicBossPresentationCamera(DynamicBossOutroCamera, 0.0f);
 		}
 	}
 
@@ -1041,10 +1119,17 @@ ACameraActor* AArenaPlayerController::FindBossOutroCamera(const FVector& BossDea
 	return BestCamera;
 }
 
-// 根据当前玩家观察方向生成临时死亡镜头，并选择无遮挡且尽量靠近原构图方向的位置。
-ACameraActor* AArenaPlayerController::CreateDynamicBossOutroCamera(
+// 为 Intro 与 Outro 生成本地临时镜头，优先采用调用方方向并通过多角度候选避开遮挡。
+ACameraActor* AArenaPlayerController::CreateDynamicBossPresentationCamera(
 	const AArenaBossCharacter* Boss,
-	const FVector& BossDeathLocation)
+	const FVector& FocusLocation,
+	const FVector& PreferredCameraDirection,
+	float CameraDistance,
+	float CameraHeight,
+	float LookAtHeight,
+	float FieldOfView,
+	float CollisionRadius,
+	float MinimumDistance)
 {
 	UWorld* World = GetWorld();
 	if (!World || !IsLocalController())
@@ -1056,29 +1141,34 @@ ACameraActor* AArenaPlayerController::CreateDynamicBossOutroCamera(
 	FRotator CurrentViewRotation = FRotator::ZeroRotator;
 	GetPlayerViewPoint(CurrentViewLocation, CurrentViewRotation);
 
-	FVector BaseDirection = CurrentViewLocation - BossDeathLocation;
+	FVector BaseDirection = PreferredCameraDirection;
 	BaseDirection.Z = 0.0f;
 	if (!BaseDirection.Normalize())
 	{
-		BaseDirection = -CurrentViewRotation.Vector();
+		BaseDirection = CurrentViewLocation - FocusLocation;
 		BaseDirection.Z = 0.0f;
 		if (!BaseDirection.Normalize())
 		{
-			BaseDirection = FVector::BackwardVector;
+			BaseDirection = -CurrentViewRotation.Vector();
+			BaseDirection.Z = 0.0f;
+			if (!BaseDirection.Normalize())
+			{
+				BaseDirection = FVector::BackwardVector;
+			}
 		}
 	}
 
-	const FVector LookAtLocation = BossDeathLocation
-		+ FVector::UpVector * BossOutroDynamicCameraLookAtHeight;
-	const float CameraDistance = FMath::Max(BossOutroDynamicCameraDistance, 100.0f);
-	const float CollisionRadius = FMath::Max(BossOutroDynamicCameraCollisionRadius, 0.0f);
-	const float MinimumDistance = FMath::Clamp(
-		BossOutroDynamicCameraMinimumDistance,
+	const FVector LookAtLocation = FocusLocation
+		+ FVector::UpVector * LookAtHeight;
+	const float SafeCameraDistance = FMath::Max(CameraDistance, 100.0f);
+	const float SafeCollisionRadius = FMath::Max(CollisionRadius, 0.0f);
+	const float SafeMinimumDistance = FMath::Clamp(
+		MinimumDistance,
 		0.0f,
-		CameraDistance);
+		SafeCameraDistance);
 	constexpr float CandidateYawOffsets[] = {0.0f, 35.0f, -35.0f, 70.0f, -70.0f, 180.0f};
 
-	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ArenaBossOutroCamera), false);
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ArenaBossPresentationCamera), false);
 	QueryParams.bFindInitialOverlaps = false;
 	if (Boss)
 	{
@@ -1096,23 +1186,24 @@ ACameraActor* AArenaPlayerController::CreateDynamicBossOutroCamera(
 		const FVector CandidateDirection = FRotator(0.0f, YawOffset, 0.0f)
 			.RotateVector(BaseDirection)
 			.GetSafeNormal2D();
-		const FVector DesiredLocation = BossDeathLocation
-			+ CandidateDirection * CameraDistance
-			+ FVector::UpVector * FMath::Max(BossOutroDynamicCameraHeight, 0.0f);
+		const FVector DesiredLocation = FocusLocation
+			+ CandidateDirection * SafeCameraDistance
+			+ FVector::UpVector * FMath::Max(CameraHeight, 0.0f);
 
 		FHitResult BlockingHit;
-		const bool bBlocked = CollisionRadius > KINDA_SMALL_NUMBER
+		const bool bBlocked = SafeCollisionRadius > KINDA_SMALL_NUMBER
 			&& World->SweepSingleByChannel(
 				BlockingHit,
 				LookAtLocation,
 				DesiredLocation,
 				FQuat::Identity,
 				ECC_Camera,
-				FCollisionShape::MakeSphere(CollisionRadius),
+				FCollisionShape::MakeSphere(SafeCollisionRadius),
 				QueryParams);
 		const FVector ResolvedLocation = bBlocked ? BlockingHit.Location : DesiredLocation;
 		const float ResolvedDistance = FVector::Distance(LookAtLocation, ResolvedLocation);
-		const bool bMeetsMinimumDistance = ResolvedDistance + KINDA_SMALL_NUMBER >= MinimumDistance;
+		const bool bMeetsMinimumDistance =
+			ResolvedDistance + KINDA_SMALL_NUMBER >= SafeMinimumDistance;
 		const float CandidateScore = (bMeetsMinimumDistance ? 100000.0f : 0.0f)
 			+ ResolvedDistance
 			- FMath::Abs(YawOffset) * 1.5f;
@@ -1149,19 +1240,20 @@ ACameraActor* AArenaPlayerController::CreateDynamicBossOutroCamera(
 	if (UCameraComponent* CameraComponent = DynamicCamera->GetCameraComponent())
 	{
 		CameraComponent->SetFieldOfView(FMath::Clamp(
-			BossOutroDynamicCameraFieldOfView,
+			FieldOfView,
 			5.0f,
 			170.0f));
 	}
-	DynamicBossOutroCamera = DynamicCamera;
 	return DynamicCamera;
 }
 
-// 延迟销毁只属于本地客户端的动态镜头，保证 ViewTarget 混合结束前 Actor 始终有效。
-void AArenaPlayerController::ReleaseDynamicBossOutroCamera(float DelaySeconds)
+// 延迟销毁指定的本地动态镜头，保证 ViewTarget 混合结束前 Actor 始终有效。
+void AArenaPlayerController::ReleaseDynamicBossPresentationCamera(
+	TWeakObjectPtr<ACameraActor>& DynamicCameraReference,
+	float DelaySeconds)
 {
-	ACameraActor* DynamicCamera = DynamicBossOutroCamera.Get();
-	DynamicBossOutroCamera.Reset();
+	ACameraActor* DynamicCamera = DynamicCameraReference.Get();
+	DynamicCameraReference.Reset();
 	if (!IsValid(DynamicCamera))
 	{
 		return;

@@ -254,6 +254,12 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_sum
 
 召唤分支只在 `Boss.Phase.Three` 可激活。默认施法前摇 `0.9s`、目标距离上限 `1200`、生成半径 `320`、冷却 `14s`；服务器会在 Commit 前确认剩余容量和至少一个 NavMesh 合法生成点。召唤物由 Boss 私有集合管理，不进入 `WaveManager` 的剩余数量或掉落流程；Boss 死亡、Victory、Defeat 或销毁时会立即清理。
 
+## 阶段五 A：Boss Intro 动态镜头
+
+Boss Intro 与 Outro 现在复用 `AArenaPlayerController::CreateDynamicBossPresentationCamera()`。默认无需在关卡放置 `BossIntroCamera`：每个本地客户端会根据 Boss 出生位置生成临时 CameraActor，Intro 使用 Boss Forward Vector 把镜头优先放在 Boss 正面并回看 Boss；正前方受阻时多角度球形扫描才会选择侧前方位置，镜头在回切后自动销毁。
+
+需要精确手工构图时，可放置关闭自动激活且带 `BossIntroCamera` Actor Tag 的 `CameraActor`，并在 `BP_ArenaPlayerController` 开启 `bUsePlacedBossIntroCameraOverride`。Intro 的 Distance、Height、VerticalFramingBias、LookAtHeightOffset、FOV、CollisionRadius 和 MinimumDistance 可在 `Arena | Boss Intro | Dynamic Camera` 单独调节。默认 `VerticalFramingBias = 0.65`，表示根据 Boss 碰撞包围盒把注视点移向下半身，使全身避开底部 HUD；数值越大，Boss 在画面中越靠上。
+
 ## 阶段五 B：Boss 死亡与 Victory 演出
 
 完整编译并重启编辑器后执行：

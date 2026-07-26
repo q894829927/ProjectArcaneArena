@@ -311,15 +311,15 @@ Status meanings:
 * Boss death removes every surviving summon before the server-owned Boss Outro begins. Stun, Boss death and terminal-phase cancellation during the windup do not produce delayed summons.
 * Burning, Shocked, Overload, OnKill, OnCrit, Dash Trail and ShieldBreakBlast have been verified against summoned enemies.
 
-### Boss Intro Synchronization — Verified
+### Boss Intro Synchronization — Partial
 
 * `EArenaGamePhase::BossIntro` and replicated `FArenaBossIntroTiming` provide one authority-owned five-second Intro clock based on `AGameStateBase::GetServerWorldTimeSeconds()`. Boss waves publish the scaled `ActiveBoss` and enemy count before entering Intro; normal waves still enter Combat directly.
 * Intro freezes player CharacterMovement and Sprint on authority and clients, ignores local move/look/view-toggle input, cancels active `Ability.Type.PlayerActive` abilities, blocks new player-active and `Ability.Enemy` activations in the shared Ability base, and rejects Damage meta-attribute consumption without removing passive upgrades or persistent Shield. Boss phase initialization and Health-threshold evaluation are explicitly limited to Combat, so Intro cannot publish `Boss.Phase.One` early.
-* Each local `AArenaPlayerController` independently selects the closest placed `CameraActor` tagged `BossIntroCamera`, blends in and returns to its current Pawn during the replicated `0.6s` tail. Camera transforms and top-down/third-person state are never replicated; missing cameras retain the player view and log one warning.
+* Each local `AArenaPlayerController` now reuses the Boss presentation camera generator to create a transient, non-replicated Intro camera from the spawned Boss location. Intro supplies the Boss forward vector so the preferred shot faces the Boss from the front; its look-at height is derived from the lower portion of the Boss collision bounds so the full body stays above the bottom HUD. The shared multi-yaw Camera-channel sphere sweep only shifts toward a front-side angle when the direct front is obstructed. A placed `BossIntroCamera` remains an opt-in art-directed override.
 * Holding Space sends only held/released intent. The server owns the two-second timer, revalidates the participating PlayerState, phase and living Boss, then shortens the shared end time while retaining the blend-out window. Duplicate completed requests are idempotent.
 * `UArenaPlayerHUDWidget` exposes optional Intro name/countdown/prompt/progress controls and creates a native fallback when the current WBP omits them. `AArenaBossAIController` applies a `0.5s` post-Intro ability grace before existing BT attack branches can activate.
 * Boss death, direct destruction, Defeat, manager destruction and normal completion clear authority timers; local phase/Boss/timing delegate cleanup restores ViewTarget, cursor, reticle and input.
-* Verification confirmed the tagged level CameraActor, authority Intro clock, movement/ability/damage freeze, Space hold skip with the retained blend-out window, local camera restoration and transition into Phase 1 Combat.
+* Previous verification confirmed the authority Intro clock, movement/ability/damage freeze, Space hold skip with the retained blend-out window, local camera restoration and transition into Phase 1 Combat. The new dynamic Intro camera path remains pending visual and two-client regression verification.
 
 ### Boss Death And Victory Outro — Implemented
 

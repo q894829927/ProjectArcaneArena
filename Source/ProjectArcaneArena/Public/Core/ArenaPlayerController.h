@@ -95,8 +95,10 @@ private:
 	void BeginBossIntroCameraBlendOut(float BlendOutDuration);
 	// 所有正常与异常退出路径恢复原视角输入、HUD 和本地 ViewTarget。
 	void FinishBossIntroPresentation(bool bWasInterrupted);
-	// 在关卡相机中选择距离 Boss 最近的稳定候选，缺失时安全保留玩家原镜头。
+	// 选择可选的关卡 BossIntroCamera 覆盖；动态镜头由启动流程优先创建。
 	ACameraActor* FindBossIntroCamera(const AArenaBossCharacter* Boss) const;
+	// 根据 Boss 碰撞包围盒计算偏向下半身的注视高度，把全身抬离底部 HUD 遮挡区域。
+	float CalculateBossIntroLookAtHeight(const AArenaBossCharacter* Boss) const;
 	// 服务器 Hold Timer 完成后把请求交给 GameMode 重新验证，成功与否都清理本次按住状态。
 	void CompleteBossIntroSkipHold();
 	// 松开、阶段结束或 Controller 销毁时对称清理服务器 Hold Timer。
@@ -107,14 +109,23 @@ private:
 	void UpdateBossOutroPresentation();
 	void BeginBossOutroCameraBlendOut(float BlendOutDuration);
 	void FinishBossOutroPresentation(bool bWasInterrupted);
-	// 选择可选的关卡 BossVictoryCamera 覆盖；动态镜头与 Intro 回退由启动流程负责。
+	// 选择可选的关卡 BossVictoryCamera 覆盖；动态镜头由启动流程优先创建。
 	ACameraActor* FindBossOutroCamera(const FVector& BossDeathLocation) const;
-	// 根据 Boss 死亡点与当前本地视角生成不复制的临时镜头，并通过多方向球形扫描避开遮挡。
-	ACameraActor* CreateDynamicBossOutroCamera(
+	// 为 Boss Intro/Outro 复用同一套本地动态构图与多方向球形避障逻辑。
+	ACameraActor* CreateDynamicBossPresentationCamera(
 		const AArenaBossCharacter* Boss,
-		const FVector& BossDeathLocation);
-	// 回切完成后延迟销毁本地临时镜头，避免 ViewTarget Blend 途中失去相机。
-	void ReleaseDynamicBossOutroCamera(float DelaySeconds);
+		const FVector& FocusLocation,
+		const FVector& PreferredCameraDirection,
+		float CameraDistance,
+		float CameraHeight,
+		float LookAtHeight,
+		float FieldOfView,
+		float CollisionRadius,
+		float MinimumDistance);
+	// 回切完成后延迟销毁指定的本地临时镜头，避免 ViewTarget Blend 途中失去相机。
+	void ReleaseDynamicBossPresentationCamera(
+		TWeakObjectPtr<ACameraActor>& DynamicCamera,
+		float DelaySeconds);
 	void CompleteBossOutroSkipHold();
 	void ClearBossOutroSkipHold();
 	// 根据 Victory 复制状态更新 UIOnly 输入与 Ready 面板。
@@ -177,6 +188,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro")
 	FName BossIntroCameraActorTag = TEXT("BossIntroCamera");
 
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro")
+	bool bUsePlacedBossIntroCameraOverride = false;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro", meta = (ClampMin = "0.0"))
 	float BossIntroCameraBlendDuration = 0.6f;
 
@@ -185,6 +199,27 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro", meta = (ClampMin = "0.01"))
 	float BossIntroPresentationTickInterval = 0.05f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro|Dynamic Camera", meta = (ClampMin = "100.0"))
+	float BossIntroDynamicCameraDistance = 900.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro|Dynamic Camera", meta = (ClampMin = "0.0"))
+	float BossIntroDynamicCameraHeight = 300.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro|Dynamic Camera", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float BossIntroDynamicCameraVerticalFramingBias = 0.65f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro|Dynamic Camera")
+	float BossIntroDynamicCameraLookAtHeightOffset = 0.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro|Dynamic Camera", meta = (ClampMin = "5.0", ClampMax = "170.0"))
+	float BossIntroDynamicCameraFieldOfView = 45.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro|Dynamic Camera", meta = (ClampMin = "0.0"))
+	float BossIntroDynamicCameraCollisionRadius = 24.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro|Dynamic Camera", meta = (ClampMin = "0.0"))
+	float BossIntroDynamicCameraMinimumDistance = 300.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Outro")
 	FName BossVictoryCameraActorTag = TEXT("BossVictoryCamera");
@@ -226,6 +261,7 @@ private:
 	FTimerHandle BossOutroSkipHoldTimerHandle;
 	TWeakObjectPtr<ACameraActor> ActiveBossIntroCamera;
 	TWeakObjectPtr<ACameraActor> ActiveBossOutroCamera;
+	TWeakObjectPtr<ACameraActor> DynamicBossIntroCamera;
 	TWeakObjectPtr<ACameraActor> DynamicBossOutroCamera;
 	float LocalBossIntroSkipHoldStartTime = 0.0f;
 	float LocalBossOutroSkipHoldStartTime = 0.0f;

@@ -216,6 +216,14 @@
 - 缩放过程不短暂触发 Phase 2/3，不直接写 Health 或 MaxHealth，也不会因重复调用叠加到 `3675`。
 - 缩放失败只记录 `LogArenaBoss`/`LogArenaWaves` 错误并保留基础 Boss，不阻塞 Boss 波和终局流程。
 
+## Boss 阶段五 A 动态 Intro Camera 回归
+
+1. 保持 `bUsePlacedBossIntroCameraOverride = false`，移除或禁用关卡 `BossIntroCamera`，确认 Boss 出生后每个本地客户端都生成一个位于 Boss 正面、朝向 Boss 的动态 Intro 镜头；Boss 头顶到脚底均位于画面内且不被底部 HUD 裁切。
+2. 让 Boss 出生点分别位于空旷处、墙边和角落；空旷处应保持正面构图，正前方受阻时共享球形避障才偏移到侧前方，且不穿墙、不贴墙，也不会被 Boss 或玩家胶囊推近。
+3. 分别从顶视角和第三人称进入 Boss 波，确认动态镜头从各自当前观察方向平滑切入，并在最后 `0.6s` 恢复原视角、鼠标和准星。
+4. 提前松开或完成 Space 跳过、直接 Destroy Boss、结束 PIE，确认没有临时 Intro CameraActor、ViewTarget 或输入锁残留。
+5. 双人 Listen Server/Dedicated Server 确认每端只创建自己的本地 CameraActor，不复制相机 Transform，BossIntro 权威时序仍只有一份。
+
 ## Boss 阶段五 B 死亡 Outro 与 Victory 重开
 
 ### 资产与关卡配置
