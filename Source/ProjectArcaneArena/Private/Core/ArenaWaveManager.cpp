@@ -78,6 +78,7 @@ void AArenaWaveManager::StartNextWave()
 {
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
 	ClearBossIntroTimer();
+	ClearBossOutroTimer();
 
 	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
 	if (!HasAuthority() || !WaveData || !ArenaGameState || SpawnPoints.IsEmpty())
@@ -110,6 +111,7 @@ void AArenaWaveManager::StartNextWave()
 	bSpawnFailureInCurrentWave = false;
 	bCurrentWaveIsBossWave = WaveData->Waves[CurrentWaveArrayIndex].bBossWave;
 	ArenaGameState->SetActiveBoss(nullptr);
+	ArenaGameState->SetBossOutroTiming(FArenaBossOutroTiming());
 	ArenaGameState->SetCurrentWaveIndex(CurrentWaveArrayIndex + 1);
 	ArenaGameState->SetRemainingEnemyCount(0);
 	if (!bCurrentWaveIsBossWave)
@@ -136,11 +138,13 @@ void AArenaWaveManager::StopForDefeat()
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
 	ClearBossIntroTimer();
+	ClearBossOutroTimer();
 	PendingEnemyClasses.Reset();
 	NextPendingSpawnIndex = 0;
 	if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
 	{
 		ArenaGameState->SetActiveBoss(nullptr);
+		ArenaGameState->SetBossOutroTiming(FArenaBossOutroTiming());
 	}
 }
 
@@ -160,6 +164,7 @@ void AArenaWaveManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
 	ClearBossIntroTimer();
+	ClearBossOutroTimer();
 	for (AArenaEnemyCharacter* Enemy : AliveEnemies)
 	{
 		if (Enemy)
@@ -173,6 +178,7 @@ void AArenaWaveManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
 		{
 			ArenaGameState->SetActiveBoss(nullptr);
+			ArenaGameState->SetBossOutroTiming(FArenaBossOutroTiming());
 		}
 	}
 	Super::EndPlay(EndPlayReason);
@@ -432,6 +438,130 @@ void AArenaWaveManager::ClearBossIntroTimer()
 	}
 }
 
+// Boss 正常死亡后冻结战斗、保留尸体与 ActiveBoss，并发布统一 Outro 时序。
+void AArenaWaveManager::BeginBossOutro(AArenaBossCharacter* DeadBoss)
+{
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	if (!HasAuthority() || !ArenaGameState || !DeadBoss || !bCurrentWaveIsBossWave)
+	{
+		UE_LOG(LogArenaWaves, Error, TEXT("Boss Outro could not start because the authority Boss wave state is incomplete."));
+		return;
+	}
+
+	ClearBossIntroTimer();
+	ClearBossOutroTimer();
+	DeadBoss->DestroyAllBossSummons();
+
+	FGameplayTagContainer PlayerActiveAbilityTags;
+	PlayerActiveAbilityTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+	{
+		AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
+		if (UArenaAbilitySystemComponent* PlayerASC = ArenaPlayerState
+			? ArenaPlayerState->GetArenaAbilitySystemComponent()
+			: nullptr)
+		{
+			PlayerASC->CancelAbilities(&PlayerActiveAbilityTags);
+		}
+	}
+
+	const float OutroDuration = FMath::Max(BossOutroDuration, 0.1f);
+	FArenaBossOutroTiming OutroTiming;
+	OutroTiming.EndServerTimeSeconds = ArenaGameState->GetServerWorldTimeSeconds() + OutroDuration;
+	OutroTiming.BlendOutDuration = FMath::Clamp(BossOutroBlendDuration, 0.0f, OutroDuration);
+	OutroTiming.BossDeathLocation = DeadBoss->GetActorLocation();
+	ArenaGameState->SetBossOutroTiming(OutroTiming);
+	ArenaGameState->SetGamePhase(EArenaGamePhase::BossOutro);
+
+	GetWorldTimerManager().SetTimer(
+		BossOutroTimerHandle,
+		this,
+		&AArenaWaveManager::FinishBossOutro,
+		OutroDuration,
+		false);
+	UE_LOG(LogArenaWaves, Log, TEXT("Boss Outro started for %s and will run for %.2f seconds."),
+		*GetNameSafe(DeadBoss),
+		OutroDuration);
+}
+
+// Outro 回切完成后清空死亡 Boss 引用和时序，再由服务器进入 Victory。
+void AArenaWaveManager::FinishBossOutro()
+{
+	ClearBossOutroTimer();
+
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	if (!HasAuthority() || !ArenaGameState || ArenaGameState->GetGamePhase() != EArenaGamePhase::BossOutro)
+	{
+		return;
+	}
+
+	ArenaGameState->SetBossOutroTiming(FArenaBossOutroTiming());
+	ArenaGameState->SetActiveBoss(nullptr);
+	ArenaGameState->SetGamePhase(EArenaGamePhase::Victory);
+	UE_LOG(LogArenaWaves, Log, TEXT("Boss Outro finished; entering Victory."));
+}
+
+// 任一参战玩家完成服务器 Hold 后可缩短 Outro，但必须保留镜头回切时长。
+bool AArenaWaveManager::RequestBossOutroSkip(AArenaPlayerController* RequestingController)
+{
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	AArenaPlayerState* RequestingPlayerState = RequestingController
+		? RequestingController->GetPlayerState<AArenaPlayerState>()
+		: nullptr;
+	AArenaBossCharacter* Boss = ArenaGameState ? ArenaGameState->GetActiveBoss() : nullptr;
+	const UAbilitySystemComponent* BossASC = Boss ? Boss->GetAbilitySystemComponent() : nullptr;
+	if (!HasAuthority()
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::BossOutro
+		|| !RequestingPlayerState
+		|| !RequestingPlayerState->GetArenaAbilitySystemComponent()
+		|| !ArenaGameState->PlayerArray.Contains(RequestingPlayerState)
+		|| !Boss
+		|| !BossASC
+		|| !BossASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+	{
+		return false;
+	}
+
+	const float BlendOutDuration = FMath::Max(ArenaGameState->GetBossOutroTiming().BlendOutDuration, 0.0f);
+	if (ArenaGameState->GetBossOutroRemainingTime() <= BlendOutDuration + KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	FArenaBossOutroTiming ShortenedTiming = ArenaGameState->GetBossOutroTiming();
+	ShortenedTiming.EndServerTimeSeconds = ArenaGameState->GetServerWorldTimeSeconds() + BlendOutDuration;
+	ArenaGameState->SetBossOutroTiming(ShortenedTiming);
+	ClearBossOutroTimer();
+	if (BlendOutDuration <= KINDA_SMALL_NUMBER)
+	{
+		FinishBossOutro();
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimer(
+			BossOutroTimerHandle,
+			this,
+			&AArenaWaveManager::FinishBossOutro,
+			BlendOutDuration,
+			false);
+	}
+
+	UE_LOG(LogArenaWaves, Log, TEXT("%s completed the Boss Outro skip hold; Victory begins after %.2f seconds."),
+		*GetNameSafe(RequestingPlayerState),
+		BlendOutDuration);
+	return true;
+}
+
+// 所有 Outro 退出路径复用同一 Timer 清理入口，防止迟到回调覆盖终局阶段。
+void AArenaWaveManager::ClearBossOutroTimer()
+{
+	if (GetWorld())
+	{
+		GetWorldTimerManager().ClearTimer(BossOutroTimerHandle);
+	}
+}
+
 // 使用 GameState.PlayerArray 的稳定服务器快照统计参与者，不要求 Pawn 存活以避免死亡降低 Boss 初始难度。
 int32 AArenaWaveManager::GetBossScalingPlayerCount() const
 {
@@ -462,7 +592,7 @@ int32 AArenaWaveManager::GetBossScalingPlayerCount() const
 	return ParticipatingPlayerCount;
 }
 
-// 死亡广播只处理当前 Alive 集合中的敌人，保证计数扣减和掉落抽取最多各执行一次。
+// 死亡广播只处理当前 Alive 集合；最终 Boss 正常死亡转入 Outro，其余目标维持唯一计数与掉落。
 void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 {
 	if (!HasAuthority() || !Enemy || AliveEnemies.Remove(Enemy) == 0)
@@ -472,12 +602,16 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 
 	Enemy->OnEnemyDeath.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
 	Enemy->OnDestroyed.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDestroyed);
-	if (Cast<AArenaBossCharacter>(Enemy))
+	if (AArenaBossCharacter* DeadBoss = Cast<AArenaBossCharacter>(Enemy))
 	{
 		ClearBossIntroTimer();
-		if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
+		UpdateReplicatedEnemyCount();
+		const bool bIsFinalWave = WaveData && CurrentWaveArrayIndex >= WaveData->Waves.Num() - 1;
+		if (bCurrentWaveIsBossWave && bIsFinalWave && AliveEnemies.IsEmpty())
 		{
-			ArenaGameState->SetActiveBoss(nullptr);
+			PendingEnemyClasses.Reset();
+			BeginBossOutro(DeadBoss);
+			return;
 		}
 	}
 	else
@@ -489,7 +623,7 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 	CheckWaveCompletion();
 }
 
-// 直接销毁受管理敌人时执行无掉落清理；正常死亡已先移出 AliveEnemies，因此不会重复扣减。
+// 直接销毁执行无掉落清理；最终 Boss 未走正常死亡时带警告安全跳过 Outro。
 void AArenaWaveManager::HandleEnemyDestroyed(AActor* DestroyedActor)
 {
 	AArenaEnemyCharacter* Enemy = Cast<AArenaEnemyCharacter>(DestroyedActor);
@@ -503,9 +637,20 @@ void AArenaWaveManager::HandleEnemyDestroyed(AActor* DestroyedActor)
 	if (Cast<AArenaBossCharacter>(Enemy))
 	{
 		ClearBossIntroTimer();
+		ClearBossOutroTimer();
 		if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
 		{
+			UE_LOG(LogArenaWaves, Warning, TEXT("Boss %s was destroyed without the normal death flow; skipping Boss Outro."), *GetNameSafe(Enemy));
+			ArenaGameState->SetBossOutroTiming(FArenaBossOutroTiming());
 			ArenaGameState->SetActiveBoss(nullptr);
+			UpdateReplicatedEnemyCount();
+			const bool bIsFinalWave = WaveData && CurrentWaveArrayIndex >= WaveData->Waves.Num() - 1;
+			if (bCurrentWaveIsBossWave && bIsFinalWave && AliveEnemies.IsEmpty())
+			{
+				PendingEnemyClasses.Reset();
+				ArenaGameState->SetGamePhase(EArenaGamePhase::Victory);
+				return;
+			}
 		}
 	}
 	UpdateReplicatedEnemyCount();
@@ -600,7 +745,7 @@ TSubclassOf<AArenaPickupActor> AArenaWaveManager::DrawWeightedPickupClass()
 	return LastValidClass;
 }
 
-// 全部敌人清空后进入 Victory 或广播正式 Upgrade 入口，生成失败则保留 Combat 供排错。
+// 全部敌人清空后进入直达 Victory 或 Upgrade；正常最终 Boss 的 Outro 由独立路径拥有。
 void AArenaWaveManager::CheckWaveCompletion()
 {
 	if (NextPendingSpawnIndex < PendingEnemyClasses.Num() || !AliveEnemies.IsEmpty() || bSpawnFailureInCurrentWave)
@@ -610,6 +755,11 @@ void AArenaWaveManager::CheckWaveCompletion()
 
 	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
 	if (!ArenaGameState || !WaveData)
+	{
+		return;
+	}
+
+	if (ArenaGameState->GetGamePhase() == EArenaGamePhase::BossOutro)
 	{
 		return;
 	}

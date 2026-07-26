@@ -77,6 +77,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Ability_Boss_Summon_Spawn, "GameplayCue.Ability.Boss.Summon.Spawn", "One-shot presentation for each confirmed summoned enemy.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Phase_Transition, "GameplayCue.Boss.Phase.Transition", "One-shot presentation for a Boss phase transition.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Enraged_Active, "GameplayCue.Boss.Enraged.Active", "Looping presentation for the final Boss enrage phase.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Death, "GameplayCue.Boss.Death", "One-shot presentation for the authoritative Boss death.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Fire, "GameplayCue.Hit.Fire", "Confirmed fire damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Lightning, "GameplayCue.Hit.Lightning", "Confirmed lightning damage hit presentation.");

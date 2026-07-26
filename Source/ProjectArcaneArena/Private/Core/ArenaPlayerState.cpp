@@ -21,7 +21,7 @@ AArenaPlayerState::AArenaPlayerState()
 	AbilitySystemComponent->AddAttributeSetSubobject(AttributeSet.Get());
 }
 
-// 复制 OwnerOnly 候选/持有升级和公共选择完成状态，UI 只观察这些数据。
+// 复制 OwnerOnly 升级数据、公共选择完成状态与 Victory Ready，UI 只观察这些数据。
 void AArenaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -29,6 +29,20 @@ void AArenaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION(AArenaPlayerState, UpgradeCandidates, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(AArenaPlayerState, OwnedUpgrades, COND_OwnerOnly);
 	DOREPLIFETIME(AArenaPlayerState, bHasSelectedUpgrade);
+	DOREPLIFETIME(AArenaPlayerState, bVictoryRestartReady);
+}
+
+// 服务器更新该玩家的 Victory 重开确认状态，并立即同步 Listen Server UI。
+void AArenaPlayerState::SetVictoryRestartReady(bool bNewReady)
+{
+	if (!HasAuthority() || bVictoryRestartReady == bNewReady)
+	{
+		return;
+	}
+
+	bVictoryRestartReady = bNewReady;
+	OnVictoryRestartReadyChanged.Broadcast(bVictoryRestartReady);
+	ForceNetUpdate();
 }
 
 // 返回标准 GAS 接口需要的 AbilitySystemComponent。
@@ -202,4 +216,10 @@ void AArenaPlayerState::OnRep_OwnedUpgrades()
 void AArenaPlayerState::OnRep_HasSelectedUpgrade()
 {
 	OnUpgradeStateChanged.Broadcast();
+}
+
+// Victory Ready 状态复制后刷新本地终局界面。
+void AArenaPlayerState::OnRep_VictoryRestartReady()
+{
+	OnVictoryRestartReadyChanged.Broadcast(bVictoryRestartReady);
 }

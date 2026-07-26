@@ -7,6 +7,7 @@
 #include "ArenaBossCharacter.generated.h"
 
 class UGameplayEffect;
+class UAnimMontage;
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaBossCharacter : public AArenaEnemyCharacter
@@ -71,6 +72,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss")
 	FText BossDisplayName;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Death")
+	TObjectPtr<UAnimMontage> DeathMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Death", meta = (ClampMin = "0.01"))
+	float DeathMontagePlayRate = 1.0f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Phase", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float PhaseTwoHealthRatio = 0.70f;
 
@@ -131,7 +138,7 @@ private:
 	// Health Attribute 变化时在服务器重新计算阶段，零生命不会触发临死狂暴。
 	void HandleBossPhaseHealthChanged(const FOnAttributeChangeData& Data);
 
-	// Boss 死亡广播到达时立即清除召唤物、阶段状态和持续表现。
+	// Boss 死亡广播到达时播放本地 Montage，并由服务器清理状态及执行唯一死亡 Cue。
 	UFUNCTION()
 	void HandleBossPhaseDeath(AArenaEnemyCharacter* Enemy);
 
@@ -161,4 +168,6 @@ private:
 	float AppliedHealthMultiplier = 1.0f;
 	bool bHasAttemptedPlayerCountScaling = false;
 	bool bSuppressBossPhaseEvaluation = false;
+	bool bHasPlayedBossDeathPresentation = false;
+	bool bHasExecutedBossDeathCue = false;
 };

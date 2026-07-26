@@ -798,6 +798,11 @@ Build.bat ProjectArcaneArenaEditor Win64 Development -Project="E:\UE_DEMO\Projec
 
 9. If UBT reports Live Coding is active, do not try unrelated workaround flags. Ask the user to use the editor Compile/Live Coding flow or to close the editor.
 10. If PCH virtual memory errors appear, stop and report the page-file issue. Do not attempt source-engine-wide rebuilds to force progress.
+11. On this computer, when project-file regeneration is actually required after C++ changes, finish writing the code first and then execute the following fixed command yourself instead of asking the user to run it:
+
+```text
+"E:\Unreal engine\UnrealEngine\GenerateProjectFiles.bat" -project="E:\UE_DEMO\ProjectArcaneArena\ProjectArcaneArena.uproject" -game -engine -2022
+```
 
 ---
 

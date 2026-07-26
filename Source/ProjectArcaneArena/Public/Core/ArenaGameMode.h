@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Core/ArenaGameState.h"
 #include "GameFramework/GameModeBase.h"
 #include "TimerManager.h"
 #include "ArenaGameMode.generated.h"
@@ -47,6 +48,12 @@ public:
 	// 服务器接收已完成 Hold 的参战玩家请求，并交给 WaveManager 缩短当前 Boss Intro。
 	bool RequestBossIntroSkip(AArenaPlayerController* RequestingController);
 
+	// 服务器接收已完成 Hold 的参战玩家请求，并交给 WaveManager 缩短当前 Boss Outro。
+	bool RequestBossOutroSkip(AArenaPlayerController* RequestingController);
+
+	// 服务器验证玩家与 Victory 阶段后更新 Ready，并在全员确认时重载当前关卡。
+	void SetVictoryRestartReady(AArenaPlayerController* RequestingController, bool bReady);
+
 	// 接收 Controller 的选择请求，全部规则由服务器重新验证后才应用升级。
 	void SubmitUpgradeSelection(AArenaPlayerController* RequestingController, FName UpgradeID);
 
@@ -57,10 +64,13 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	// 关卡结束或服务器旅行前清理阶段委托与首波计时器，避免旧 GameMode 收到迟到回调。
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	// 玩家完成 Pawn 创建和 GAS 初始化后，编辑器测试模式可按顺序授予起始升级。
 	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
-	// Waiting 阶段登录会重置首波等待窗口；Upgrade 阶段迟加入时生成候选并重新检查全员门槛。
+	// 登录时按 Waiting、Upgrade 或 Victory 阶段分别重排首波、补发候选或刷新重开人数。
 	virtual void PostLogin(APlayerController* NewPlayer) override;
+	// 玩家离开后重新检查升级门槛与 Victory Ready 人数，避免掉线永久阻塞流程。
 	virtual void Logout(AController* Exiting) override;
 
 private:
@@ -92,6 +102,13 @@ private:
 #endif
 	bool HaveAllPlayersCompletedUpgradeSelection() const;
 	void TryAdvanceAfterUpgradeSelections();
+	// Victory 进入和退出时统一重置 Ready，并刷新复制计数。
+	UFUNCTION()
+	void HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase);
+	// 从当前有效 PlayerState 重新计算 Ready/Required，支持玩家掉线后继续重开。
+	void RefreshVictoryRestartCounts();
+	// 满足全员 Ready 后仅执行一次服务器关卡重载。
+	void TryRestartAfterVictoryReady();
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave")
 	TSubclassOf<AArenaWaveManager> WaveManagerClass;
@@ -131,4 +148,5 @@ private:
 	FTimerHandle InitialWaveTimerHandle;
 	int32 UpgradeRandomSeed = 0;
 	FRandomStream UpgradeRandomStream;
+	bool bVictoryRestartTravelStarted = false;
 };

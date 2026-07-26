@@ -27,10 +27,19 @@ public:
 
 	// 本地 Space 输入只提交按住状态，服务器独立计时并验证 BossIntro 跳过资格。
 	void SetBossIntroSkipHeld(bool bHeld);
+	// 本地 Space 输入提交 Outro 按住状态，服务器独立计时验证跳过资格。
+	void SetBossOutroSkipHeld(bool bHeld);
 
 	// 服务器接收按住/松开状态，持续满配置时间后才向 GameMode 请求缩短 Intro。
 	UFUNCTION(Server, Reliable)
 	void ServerSetBossIntroSkipHeld(bool bHeld);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetBossOutroSkipHeld(bool bHeld);
+
+	// Victory 按钮只提交 Ready/Cancel Ready，最终重开由服务器 GameMode 决定。
+	UFUNCTION(Server, Reliable)
+	void ServerSetVictoryRestartReady(bool bReady);
 
 	// 客户端只提交候选 ID，服务器 GameMode 会重新验证阶段、候选和堆叠资格。
 	UFUNCTION(Server, Reliable)
@@ -56,13 +65,19 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Boss Intro")
 	void K2_OnBossIntroEnded(bool bWasInterrupted);
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Boss Outro")
+	void K2_OnBossOutroStarted(AArenaBossCharacter* Boss, float OutroDuration);
+
+	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Boss Outro")
+	void K2_OnBossOutroEnded(bool bWasInterrupted);
+
 private:
 	// 创建本地玩家 HUD，Dedicated Server 和非本地 Controller 不创建 UI。
 	void CreatePlayerHUD();
 
 	// 从 PlayerState 获取 ASC/AttributeSet 并绑定到 HUD，未就绪时短时间重试。
 	void TryBindPlayerHUD();
-	// 本地端绑定 HUD/Intro 数据，Authority 端同时监听阶段以清理服务器 Skip Hold Timer。
+	// 本地端绑定 HUD、Boss 演出与 Victory 数据，Authority 端同时监听阶段以清理服务器 Hold Timer。
 	void BindGameStateHUD();
 	void UnbindGameStateHUD();
 	void CreateUpgradeSelectionWidget();
@@ -86,6 +101,19 @@ private:
 	void CompleteBossIntroSkipHold();
 	// 松开、阶段结束或 Controller 销毁时对称清理服务器 Hold Timer。
 	void ClearBossIntroSkipHold();
+	// 根据复制阶段与 Outro Timing 启动、更新或结束本地死亡演出。
+	void RefreshBossOutroPresentation();
+	void StartBossOutroPresentation(AArenaBossCharacter* Boss, const FArenaBossOutroTiming& Timing);
+	void UpdateBossOutroPresentation();
+	void BeginBossOutroCameraBlendOut(float BlendOutDuration);
+	void FinishBossOutroPresentation(bool bWasInterrupted);
+	// 选择 BossVictoryCamera；缺失时回退 BossIntroCamera，排序保持确定性。
+	ACameraActor* FindBossOutroCamera(const FVector& BossDeathLocation) const;
+	void CompleteBossOutroSkipHold();
+	void ClearBossOutroSkipHold();
+	// 根据 Victory 复制状态更新 UIOnly 输入与 Ready 面板。
+	void RefreshVictoryPresentation();
+	void SetVictoryInputMode(bool bEnabled);
 
 	UFUNCTION()
 	void HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase);
@@ -101,9 +129,17 @@ private:
 	// Intro 截止时间被自然设置或跳过缩短时立即刷新本地镜头与 HUD。
 	UFUNCTION()
 	void HandleBossIntroTimingChanged(FArenaBossIntroTiming OldTiming, FArenaBossIntroTiming NewTiming);
+	UFUNCTION()
+	void HandleBossOutroTimingChanged(FArenaBossOutroTiming OldTiming, FArenaBossOutroTiming NewTiming);
+	UFUNCTION()
+	void HandleVictoryRestartCountChanged(int32 OldValue, int32 NewValue);
 
 	UFUNCTION()
 	void HandleUpgradeStateChanged();
+	UFUNCTION()
+	void HandleVictoryRestartReadyChanged(bool bIsReady);
+	UFUNCTION()
+	void HandleVictoryRestartRequested();
 
 	UFUNCTION()
 	void HandleUpgradeChosen(FName UpgradeID);
@@ -144,16 +180,38 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro", meta = (ClampMin = "0.01"))
 	float BossIntroPresentationTickInterval = 0.05f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Outro")
+	FName BossVictoryCameraActorTag = TEXT("BossVictoryCamera");
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Outro", meta = (ClampMin = "0.0"))
+	float BossOutroCameraBlendDuration = 0.6f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Outro", meta = (ClampMin = "0.1"))
+	float BossOutroSkipHoldDuration = 1.5f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Outro", meta = (ClampMin = "0.01"))
+	float BossOutroPresentationTickInterval = 0.05f;
+
 	FTimerHandle PlayerHUDBindingRetryTimerHandle;
 	FTimerHandle BossIntroPresentationTimerHandle;
 	FTimerHandle BossIntroSkipHoldTimerHandle;
+	FTimerHandle BossOutroPresentationTimerHandle;
+	FTimerHandle BossOutroSkipHoldTimerHandle;
 	TWeakObjectPtr<ACameraActor> ActiveBossIntroCamera;
+	TWeakObjectPtr<ACameraActor> ActiveBossOutroCamera;
 	float LocalBossIntroSkipHoldStartTime = 0.0f;
+	float LocalBossOutroSkipHoldStartTime = 0.0f;
 	bool bThirdPersonInputMode = false;
 	bool bUpgradeInputMode = false;
 	bool bBossIntroInputMode = false;
+	bool bBossOutroInputMode = false;
+	bool bVictoryInputMode = false;
 	bool bBossIntroCameraBlendingOut = false;
 	bool bBossIntroSkipHeldLocally = false;
 	bool bBossIntroSkipHeldOnServer = false;
+	bool bBossOutroCameraBlendingOut = false;
+	bool bBossOutroSkipHeldLocally = false;
+	bool bBossOutroSkipHeldOnServer = false;
 	mutable bool bWarnedMissingBossIntroCamera = false;
+	mutable bool bWarnedMissingBossOutroCamera = false;
 };

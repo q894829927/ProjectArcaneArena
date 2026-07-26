@@ -56,7 +56,7 @@
 - 扩展玩家 HUD，显示 Boss 名称、Health、MaxHealth，并在没有 Boss 或 Boss 死亡时隐藏。
 - 实现 `GA_Boss_GroundSlam`，继续使用服务器权威的 `GE_Damage`，提供固定位置的范围预警和范围伤害。
 - GroundSlam 使用 `State.Attacking` 阻止并行攻击，并在死亡、眩晕或取消时清除尚未兑现的伤害与表现。
-- 最终 Boss 死亡后复用 WaveManager 的完成检测进入 Victory，不建立第二套胜利规则。
+- 最终 Boss 死亡后复用 WaveManager 的完成检测进入 `BossOutro`，演出完成后再进入 Victory，不建立第二套胜利规则。
 
 ### 当前实现进度
 
@@ -94,7 +94,7 @@
 - Boss 可以在服务器选择最近的存活玩家、追击并释放 GroundSlam。
 - GroundSlam 的预警中心、预警半径、实际命中范围和伤害时机一致。
 - Boss Health 通过 GAS 正常变化，Boss HUD 只观察复制状态并及时显示或隐藏。
-- Boss 死亡只处理一次，清理攻击状态，并使最终波进入 Victory。
+- Boss 死亡只处理一次，清理攻击状态，并使最终波依次进入 `BossOutro -> Victory`。
 - Listen Server 中只存在一个权威 Boss，所有客户端看到一致的移动、血量、预警、伤害和销毁结果。
 - GroundSlam 在顶视角和第三人称下均能清楚判断危险范围。
 
@@ -300,7 +300,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - Phase 1/2 不会激活召唤，Phase 3 才会进入召唤分支；每次成功施放生成一个近战和一个远程召唤物。
 - 场上活动召唤物始终不超过四个，任一召唤物死亡后立即释放 Boss 私有容量。
 - 召唤物生成和死亡均不改变 `RemainingEnemyCount`，也不进入普通恢复拾取物掉落流程。
-- Boss 本体死亡后立即完成最终波并进入 Victory，同时销毁全部仍存活召唤物。
+- Boss 本体死亡后立即销毁全部仍存活召唤物；最终波随后进入 `BossOutro`，演出完成后进入 Victory。
 - Boss 在召唤前摇期间被 Stun、击杀或进入终局时不会生成迟到召唤物。
 - Burning、Shocked、Overload、OnKill、OnCrit、Dash Trail 与 ShieldBreakBlast 均已确认可正常作用于召唤物。
 - 召唤资产、四技能 `StartupAbilities` 与 `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait` Behavior Tree 顺序已投入实际 PIE 流程。
@@ -346,13 +346,18 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已在 `EArenaGamePhase` 末尾增加 `BossIntro`，`AArenaGameState` 复制 `FArenaBossIntroTiming`，客户端使用同步服务器时间计算剩余时长。
 - Boss 波生成顺序已调整为“生成 Boss → 应用人数缩放 → 发布 `ActiveBoss`/剩余数量 → 进入五秒 Intro → 进入 Combat”；普通波仍直接进入 Combat。
 - Intro 中玩家 CharacterMovement、Sprint、Look、视角切换和五个主动技能均被冻结；`UArenaGameplayAbility::CanActivateAbility()` 同时阻止 `Ability.Type.PlayerActive` 与 `Ability.Enemy`，永久被动不被取消。Boss 阶段初始化与 Health 阈值评估也显式要求 `Combat`，Intro 不会提前发布 `Boss.Phase.One`。
-- `UExecCalc_Damage` 与 `UArenaAttributeSet` 的最终 Damage Meta 消费入口都拒绝 Intro 伤害，覆盖残留 Projectile、Area 与 Burning 等旧周期效果。
+- `UExecCalc_Damage` 与 `UArenaAttributeSet` 的最终 Damage Meta 消费入口都拒绝 Intro、Outro 与 Victory 伤害，覆盖残留 Projectile、Area 与 Burning 等旧周期效果。
 - 每个本地 `AArenaPlayerController` 独立选择距离 Boss 最近且带 `BossIntroCamera` Actor Tag 的 `CameraActor`，执行 `0.6s` Blend，并在 Intro 尾段回切当前 Pawn；缺少相机时保持玩家镜头并输出一次安全警告。
 - Space 长按状态通过可靠 Server RPC 提交；服务器独立计满 `2s` 后重新验证参战 PlayerState、阶段和 Boss 存活状态，仅第一次有效请求会把全局截止时间缩短为当前服务器时间加 `0.6s`。
 - `UArenaPlayerHUDWidget` 支持可选 `BossIntroText`、`BossIntroCountdownText`、`BossIntroSkipText` 和 `BossIntroSkipProgressBar`，缺少蓝图控件时由原生运行时布局提供回退显示。
 - `AArenaBossAIController` 在 `BossIntro -> Combat` 后额外等待 `0.5s` 才允许技能 Decorator 通过；Boss 被直接 Destroy 的异常路径也会清除 Intro、`ActiveBoss` 和最终波计数。
 - 阶段五 A `Boss Intro` 已完成实际验收：正式相机、权威时序、控制与伤害冻结、Space 长按跳过、镜头回切以及进入 Phase 1 Combat 均正常。
-- 阶段五整体仍为 `Partial`；Boss 专属声音、死亡/Victory 演出及剩余表现打磨留到阶段五 B。
+- 阶段五 B 已实现服务器同步的 `BossOutro`：正常 Boss 死亡后保留尸体与 `ActiveBoss`，同步四秒截止时间、`0.6s` 回切窗口和死亡位置，再进入 Victory；直接 Destroy 的异常路径记录警告并安全跳过演出。
+- `AArenaBossCharacter` 已增加可配置死亡 Montage、`5.5s` 尸体寿命和唯一 `GameplayCue.Boss.Death`；各端通过复制的 `State.Dead` 本地播放一次死亡表现。`setup_boss_victory_outro.py` 已在编辑器成功执行一次，创建并保存死亡动画、Montage、Niagara、GameplayCue，并配置 Boss 默认值。
+- 每个本地 `AArenaPlayerController` 独立选择最近的 `BossVictoryCamera`，缺失时回退 `BossIntroCamera`；Space 长按由服务器计满 `1.5s` 后统一缩短 Outro，并保留镜头回切窗口。
+- `BossOutro` 与 `Victory` 已纳入玩家移动、Sprint、主动技能、敌人技能和权威伤害阻断。Victory 使用可聚焦 Restart Button 的 `UIOnly` 模式，不再聚焦不可聚焦 Widget。
+- `AArenaPlayerState` 复制个人 `bVictoryRestartReady`，`AArenaGameState` 复制 Ready/Required 计数；单人一人确认、双人全员确认后由 `AArenaGameMode` 防重执行 `ServerTravel("?Restart")`，掉线会重新计算参与人数。
+- 阶段五整体仍为 `Partial`；阶段五 A 保持 `Verified`，阶段五 B 当前为 `Implemented`，待完成资产脚本二次幂等运行、单人/双人镜头跳过、Ready 重开及异常清理验收后再标记 `Verified`。
 
 ### 阶段边界
 

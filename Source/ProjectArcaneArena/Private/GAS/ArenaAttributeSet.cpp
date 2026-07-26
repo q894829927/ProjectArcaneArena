@@ -188,7 +188,7 @@ void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attrib
 	ClampAttribute(Attribute, NewValue);
 }
 
-// GE 执行后消费 Damage/Healing 元属性，Intro 中拒绝伤害，其余路径在权威端发送结果事件。
+// GE 执行后消费 Damage/Healing 元属性，演出与 Victory 拒绝伤害，其余路径发送权威结果事件。
 void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -203,9 +203,15 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		const AArenaGameState* ArenaGameState = TargetAvatar && TargetAvatar->GetWorld()
 			? TargetAvatar->GetWorld()->GetGameState<AArenaGameState>()
 			: nullptr;
-		if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossIntro)
+		const EArenaGamePhase GamePhase = ArenaGameState
+			? ArenaGameState->GetGamePhase()
+			: EArenaGamePhase::Waiting;
+		if (ArenaGameState
+			&& (GamePhase == EArenaGamePhase::BossIntro
+				|| GamePhase == EArenaGamePhase::BossOutro
+				|| GamePhase == EArenaGamePhase::Victory))
 		{
-			// 最终消费入口再次阻断 Intro 伤害，覆盖 Burning 等不经过主 ExecCalc_Damage 的旧效果。
+			// 最终消费入口再次阻断演出与 Victory 伤害，覆盖 Burning 等不经过主 ExecCalc_Damage 的旧效果。
 			return;
 		}
 		FGameplayTagContainer TargetTagsBeforeDamage;

@@ -4,6 +4,7 @@
 #include "Character/ArenaBossCharacter.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
+#include "Components/Button.h"
 #include "Components/ProgressBar.h"
 #include "Components/SizeBox.h"
 #include "Components/TextBlock.h"
@@ -135,7 +136,7 @@ namespace
 	}
 }
 
-// 初始化 HUD，并为蓝图未提供的准星、阶段、波次、随机种子和 Boss Intro 控件创建运行时回退显示。
+// 初始化 HUD，并为蓝图未提供的基础状态、Boss Intro/Outro 与 Victory 控件创建运行时回退显示。
 void UArenaPlayerHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -411,12 +412,139 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 		}
 	}
 
+	if (WidgetTree
+		&& RootCanvas
+		&& (!BossDefeatedText || !BossOutroSkipText || !BossOutroSkipProgressBar))
+	{
+		UVerticalBox* RuntimeOutroPanel = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(),
+			TEXT("BossOutroPanel_Runtime"));
+		if (!BossOutroPanel)
+		{
+			BossOutroPanel = RuntimeOutroPanel;
+		}
+		if (UCanvasPanelSlot* OutroPanelSlot = RootCanvas->AddChildToCanvas(RuntimeOutroPanel))
+		{
+			OutroPanelSlot->SetAnchors(FAnchors(0.5f, 0.25f));
+			OutroPanelSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+			OutroPanelSlot->SetSize(FVector2D(520.0f, 130.0f));
+		}
+
+		auto CreateOutroText = [this, RuntimeOutroPanel](FName WidgetName, int32 FontSize) -> UTextBlock*
+		{
+			UTextBlock* RuntimeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
+			RuntimeText->SetJustification(ETextJustify::Center);
+			RuntimeText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			FSlateFontInfo Font = RuntimeText->GetFont();
+			Font.Size = FontSize;
+			Font.OutlineSettings.OutlineSize = 1;
+			RuntimeText->SetFont(Font);
+			if (UVerticalBoxSlot* TextSlot = RuntimeOutroPanel->AddChildToVerticalBox(RuntimeText))
+			{
+				TextSlot->SetHorizontalAlignment(HAlign_Fill);
+			}
+			return RuntimeText;
+		};
+
+		if (!BossDefeatedText)
+		{
+			BossDefeatedText = CreateOutroText(TEXT("BossDefeatedText_Runtime"), 30);
+			BossDefeatedText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.78f, 0.28f, 1.0f)));
+		}
+		if (!BossOutroSkipText)
+		{
+			BossOutroSkipText = CreateOutroText(TEXT("BossOutroSkipText_Runtime"), 15);
+		}
+		if (!BossOutroSkipProgressBar)
+		{
+			USizeBox* SkipBarSizeBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(),
+				TEXT("BossOutroSkipSizeBox_Runtime"));
+			SkipBarSizeBox->SetWidthOverride(280.0f);
+			SkipBarSizeBox->SetHeightOverride(10.0f);
+			BossOutroSkipProgressBar = WidgetTree->ConstructWidget<UProgressBar>(
+				UProgressBar::StaticClass(),
+				TEXT("BossOutroSkipProgressBar_Runtime"));
+			BossOutroSkipProgressBar->SetFillColorAndOpacity(FLinearColor(1.0f, 0.72f, 0.22f, 1.0f));
+			SkipBarSizeBox->AddChild(BossOutroSkipProgressBar);
+			if (UVerticalBoxSlot* SkipBarSlot = RuntimeOutroPanel->AddChildToVerticalBox(SkipBarSizeBox))
+			{
+				SkipBarSlot->SetHorizontalAlignment(HAlign_Center);
+				SkipBarSlot->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 0.0f));
+			}
+		}
+	}
+
+	if (WidgetTree
+		&& RootCanvas
+		&& (!VictoryText || !VictoryRestartButton || !VictoryRestartStatusText))
+	{
+		UVerticalBox* RuntimeVictoryPanel = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(),
+			TEXT("VictoryPanel_Runtime"));
+		if (!VictoryPanel)
+		{
+			VictoryPanel = RuntimeVictoryPanel;
+		}
+		if (UCanvasPanelSlot* VictoryPanelSlot = RootCanvas->AddChildToCanvas(RuntimeVictoryPanel))
+		{
+			VictoryPanelSlot->SetAnchors(FAnchors(0.5f, 0.4f));
+			VictoryPanelSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+			VictoryPanelSlot->SetSize(FVector2D(420.0f, 180.0f));
+		}
+
+		if (!VictoryText)
+		{
+			VictoryText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("VictoryText_Runtime"));
+			VictoryText->SetJustification(ETextJustify::Center);
+			VictoryText->SetColorAndOpacity(FSlateColor(FLinearColor(1.0f, 0.78f, 0.28f, 1.0f)));
+			FSlateFontInfo VictoryFont = VictoryText->GetFont();
+			VictoryFont.Size = 38;
+			VictoryFont.OutlineSettings.OutlineSize = 2;
+			VictoryText->SetFont(VictoryFont);
+			RuntimeVictoryPanel->AddChildToVerticalBox(VictoryText);
+		}
+		if (!VictoryRestartButton)
+		{
+			VictoryRestartButton = WidgetTree->ConstructWidget<UButton>(
+				UButton::StaticClass(),
+				TEXT("VictoryRestartButton_Runtime"));
+			VictoryRestartButtonText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(),
+				TEXT("VictoryRestartButtonText_Runtime"));
+			VictoryRestartButtonText->SetJustification(ETextJustify::Center);
+			VictoryRestartButton->AddChild(VictoryRestartButtonText);
+			if (UVerticalBoxSlot* ButtonSlot = RuntimeVictoryPanel->AddChildToVerticalBox(VictoryRestartButton))
+			{
+				ButtonSlot->SetHorizontalAlignment(HAlign_Center);
+				ButtonSlot->SetPadding(FMargin(0.0f, 12.0f, 0.0f, 6.0f));
+			}
+		}
+		if (!VictoryRestartStatusText)
+		{
+			VictoryRestartStatusText = WidgetTree->ConstructWidget<UTextBlock>(
+				UTextBlock::StaticClass(),
+				TEXT("VictoryRestartStatusText_Runtime"));
+			VictoryRestartStatusText->SetJustification(ETextJustify::Center);
+			VictoryRestartStatusText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+			RuntimeVictoryPanel->AddChildToVerticalBox(VictoryRestartStatusText);
+		}
+	}
+
+	if (VictoryRestartButton)
+	{
+		VictoryRestartButton->OnClicked.RemoveDynamic(this, &UArenaPlayerHUDWidget::HandleVictoryRestartButtonClicked);
+		VictoryRestartButton->OnClicked.AddUniqueDynamic(this, &UArenaPlayerHUDWidget::HandleVictoryRestartButtonClicked);
+	}
+
 	SetThirdPersonReticleVisible(false);
 	SetGamePhase(EArenaGamePhase::Waiting);
 	SetWaveState(0, 0);
 	SetUpgradeRandomSeed(0);
 	SetBossPanelVisible(false);
 	SetBossIntroPresentation(false, FText::GetEmpty(), 0.0f, 0.0f);
+	SetBossOutroPresentation(false, 0.0f, 0.0f);
+	SetVictoryPresentation(false, false, 0, 0);
 	ClearDamageFeedbackPresentation();
 }
 
@@ -449,6 +577,9 @@ void UArenaPlayerHUDWidget::SetGamePhase(EArenaGamePhase NewPhase)
 		break;
 	case EArenaGamePhase::BossIntro:
 		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseBossIntro", "Boss Intro");
+		break;
+	case EArenaGamePhase::BossOutro:
+		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseBossOutro", "Boss Outro");
 		break;
 	default:
 		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseWaiting", "Waiting");
@@ -508,6 +639,92 @@ void UArenaPlayerHUDWidget::SetBossIntroPresentation(
 		BossIntroSkipProgressBar->SetPercent(FMath::Clamp(SkipProgress, 0.0f, 1.0f));
 		BossIntroSkipProgressBar->SetVisibility(IntroVisibility);
 	}
+}
+
+// 仅更新本地 Outro 控件，剩余时间与 Hold 进度由 Controller 的复制快照提供。
+void UArenaPlayerHUDWidget::SetBossOutroPresentation(
+	bool bVisible,
+	float RemainingTime,
+	float SkipProgress)
+{
+	const ESlateVisibility OutroVisibility = bVisible
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed;
+	if (BossOutroPanel)
+	{
+		BossOutroPanel->SetVisibility(OutroVisibility);
+	}
+	if (BossDefeatedText)
+	{
+		BossDefeatedText->SetText(bVisible
+			? NSLOCTEXT("ArenaPlayerHUDWidget", "BossDefeatedMessage", "BOSS DEFEATED")
+			: FText::GetEmpty());
+		BossDefeatedText->SetVisibility(OutroVisibility);
+	}
+	if (BossOutroSkipText)
+	{
+		BossOutroSkipText->SetText(bVisible
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "BossOutroSkipPrompt", "Hold Space to Skip  {0}s"),
+				FText::AsNumber(FMath::CeilToInt(FMath::Max(RemainingTime, 0.0f))))
+			: FText::GetEmpty());
+		BossOutroSkipText->SetVisibility(OutroVisibility);
+	}
+	if (BossOutroSkipProgressBar)
+	{
+		BossOutroSkipProgressBar->SetPercent(FMath::Clamp(SkipProgress, 0.0f, 1.0f));
+		BossOutroSkipProgressBar->SetVisibility(OutroVisibility);
+	}
+}
+
+// 展示 Victory 和全员 Ready 计数；按钮切换只改变下一次提交意图。
+void UArenaPlayerHUDWidget::SetVictoryPresentation(
+	bool bVisible,
+	bool bLocalReady,
+	int32 ReadyCount,
+	int32 RequiredCount)
+{
+	const ESlateVisibility VictoryVisibility = bVisible
+		? ESlateVisibility::Visible
+		: ESlateVisibility::Collapsed;
+	if (VictoryPanel)
+	{
+		VictoryPanel->SetVisibility(VictoryVisibility);
+	}
+	if (VictoryText)
+	{
+		VictoryText->SetText(bVisible
+			? NSLOCTEXT("ArenaPlayerHUDWidget", "VictoryMessage", "VICTORY")
+			: FText::GetEmpty());
+		VictoryText->SetVisibility(bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+	if (VictoryRestartButton)
+	{
+		VictoryRestartButton->SetVisibility(VictoryVisibility);
+	}
+	if (VictoryRestartButtonText)
+	{
+		VictoryRestartButtonText->SetText(bLocalReady
+			? NSLOCTEXT("ArenaPlayerHUDWidget", "CancelVictoryReady", "Cancel Ready")
+			: NSLOCTEXT("ArenaPlayerHUDWidget", "ConfirmVictoryReady", "Restart"));
+	}
+	if (VictoryRestartStatusText)
+	{
+		VictoryRestartStatusText->SetText(bVisible
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "VictoryReadyStatus", "{0}/{1} Ready"),
+				FText::AsNumber(FMath::Max(ReadyCount, 0)),
+				FText::AsNumber(FMath::Max(RequiredCount, 0)))
+			: FText::GetEmpty());
+		VictoryRestartStatusText->SetVisibility(
+			bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+// 把按钮点击转换为 Widget 事件，玩法验证仍由 Controller 和 GameMode 完成。
+void UArenaPlayerHUDWidget::HandleVictoryRestartButtonClicked()
+{
+	OnVictoryRestartRequested.Broadcast();
 }
 
 // 使用 GameState 已复制的整数值刷新波次 HUD。
@@ -889,7 +1106,7 @@ void UArenaPlayerHUDWidget::SetLightningStormCooldownValues(bool bInCooldownActi
 	}
 }
 
-// Widget 销毁时隐藏 Intro 并解绑 GAS 委托，避免表现或 ASC 回调悬挂对象。
+// Widget 销毁时隐藏 Boss 演出与 Victory 面板，并解绑 GAS 委托，避免表现或 ASC 回调悬挂对象。
 void UArenaPlayerHUDWidget::NativeDestruct()
 {
 	if (GetWorld())
@@ -897,6 +1114,12 @@ void UArenaPlayerHUDWidget::NativeDestruct()
 		GetWorld()->GetTimerManager().ClearTimer(DamageFeedbackTimerHandle);
 	}
 	SetBossIntroPresentation(false, FText::GetEmpty(), 0.0f, 0.0f);
+	SetBossOutroPresentation(false, 0.0f, 0.0f);
+	SetVictoryPresentation(false, false, 0, 0);
+	if (VictoryRestartButton)
+	{
+		VictoryRestartButton->OnClicked.RemoveDynamic(this, &UArenaPlayerHUDWidget::HandleVictoryRestartButtonClicked);
+	}
 	ClearDamageFeedbackPresentation();
 	UnbindFromBoss();
 	UnbindFromAbilitySystem();
@@ -1633,7 +1856,7 @@ void UArenaPlayerHUDWidget::HandleBossMaxHealthChanged(const FOnAttributeChangeD
 	}
 }
 
-// Boss 死亡标签出现时立即隐藏面板，服务器随后清空 ActiveBoss 并触发正式解绑。
+// Boss 死亡标签出现时把 Health 刷为零并保留 Outro 面板，ActiveBoss 清空后再正式解绑。
 void UArenaPlayerHUDWidget::HandleBossDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag != ArenaGameplayTags::State_Dead)
@@ -1643,7 +1866,14 @@ void UArenaPlayerHUDWidget::HandleBossDeadTagChanged(const FGameplayTag Callback
 
 	if (NewCount > 0)
 	{
-		SetBossPanelVisible(false);
+		if (const AArenaBossCharacter* Boss = BoundBoss.Get())
+		{
+			const UArenaAttributeSet* BossAttributeSet = BoundBossAttributeSet.Get();
+			SetBossHealthValues(
+				Boss->GetBossDisplayName(),
+				0.0f,
+				BossAttributeSet ? BossAttributeSet->GetMaxHealth() : 0.0f);
+		}
 	}
 	else if (const AArenaBossCharacter* Boss = BoundBoss.Get())
 	{

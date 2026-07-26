@@ -8,7 +8,7 @@ AArenaGameState::AArenaGameState()
 	bReplicates = true;
 }
 
-// 复制波次、Boss 与 Intro 权威快照，客户端仅通过委托观察这些状态。
+// 复制波次、Boss、演出时序与 Victory Ready 快照，客户端仅通过委托观察这些状态。
 void AArenaGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -19,12 +19,21 @@ void AArenaGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(AArenaGameState, UpgradeRandomSeed);
 	DOREPLIFETIME(AArenaGameState, ActiveBoss);
 	DOREPLIFETIME(AArenaGameState, BossIntroTiming);
+	DOREPLIFETIME(AArenaGameState, BossOutroTiming);
+	DOREPLIFETIME(AArenaGameState, VictoryRestartReadyCount);
+	DOREPLIFETIME(AArenaGameState, VictoryRestartRequiredCount);
 }
 
 // 使用 GameState 已同步的服务器时间计算 Intro 剩余秒数，避免客户端本地时钟漂移。
 float AArenaGameState::GetBossIntroRemainingTime() const
 {
 	return FMath::Max(BossIntroTiming.EndServerTimeSeconds - GetServerWorldTimeSeconds(), 0.0f);
+}
+
+// 使用 GameState 已同步的服务器时间计算 Outro 剩余秒数，避免客户端本地时钟漂移。
+float AArenaGameState::GetBossOutroRemainingTime() const
+{
+	return FMath::Max(BossOutroTiming.EndServerTimeSeconds - GetServerWorldTimeSeconds(), 0.0f);
 }
 
 // 服务器更新游戏阶段，并让监听服务器本地 UI 与远端 OnRep 获得一致通知。
@@ -113,6 +122,48 @@ void AArenaGameState::SetBossIntroTiming(const FArenaBossIntroTiming& NewTiming)
 	ForceNetUpdate();
 }
 
+// 服务器更新 Outro 截止时间和死亡位置，并统一通知 Listen Server 与远端客户端。
+void AArenaGameState::SetBossOutroTiming(const FArenaBossOutroTiming& NewTiming)
+{
+	if (!HasAuthority() || BossOutroTiming == NewTiming)
+	{
+		return;
+	}
+
+	const FArenaBossOutroTiming OldTiming = BossOutroTiming;
+	BossOutroTiming = NewTiming;
+	OnBossOutroTimingChanged.Broadcast(OldTiming, BossOutroTiming);
+	ForceNetUpdate();
+}
+
+// 服务器汇总 Victory 重开确认人数，并分别广播 Ready 与 Required 的变化。
+void AArenaGameState::SetVictoryRestartCounts(int32 NewReadyCount, int32 NewRequiredCount)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	NewRequiredCount = FMath::Max(NewRequiredCount, 0);
+	NewReadyCount = FMath::Clamp(NewReadyCount, 0, NewRequiredCount);
+
+	if (VictoryRestartReadyCount != NewReadyCount)
+	{
+		const int32 OldReadyCount = VictoryRestartReadyCount;
+		VictoryRestartReadyCount = NewReadyCount;
+		OnVictoryRestartReadyCountChanged.Broadcast(OldReadyCount, VictoryRestartReadyCount);
+	}
+
+	if (VictoryRestartRequiredCount != NewRequiredCount)
+	{
+		const int32 OldRequiredCount = VictoryRestartRequiredCount;
+		VictoryRestartRequiredCount = NewRequiredCount;
+		OnVictoryRestartRequiredCountChanged.Broadcast(OldRequiredCount, VictoryRestartRequiredCount);
+	}
+
+	ForceNetUpdate();
+}
+
 void AArenaGameState::OnRep_GamePhase(EArenaGamePhase OldPhase)
 {
 	OnGamePhaseChanged.Broadcast(OldPhase, GamePhase);
@@ -144,4 +195,22 @@ void AArenaGameState::OnRep_ActiveBoss(AArenaBossCharacter* OldActiveBoss)
 void AArenaGameState::OnRep_BossIntroTiming(FArenaBossIntroTiming OldTiming)
 {
 	OnBossIntroTimingChanged.Broadcast(OldTiming, BossIntroTiming);
+}
+
+// Outro 时序复制变化后刷新客户端镜头、倒计时和跳过表现。
+void AArenaGameState::OnRep_BossOutroTiming(FArenaBossOutroTiming OldTiming)
+{
+	OnBossOutroTimingChanged.Broadcast(OldTiming, BossOutroTiming);
+}
+
+// Ready 人数复制变化后刷新 Victory 确认状态。
+void AArenaGameState::OnRep_VictoryRestartReadyCount(int32 OldReadyCount)
+{
+	OnVictoryRestartReadyCountChanged.Broadcast(OldReadyCount, VictoryRestartReadyCount);
+}
+
+// Required 人数复制变化后刷新 Victory 确认状态。
+void AArenaGameState::OnRep_VictoryRestartRequiredCount(int32 OldRequiredCount)
+{
+	OnVictoryRestartRequiredCountChanged.Broadcast(OldRequiredCount, VictoryRestartRequiredCount);
 }

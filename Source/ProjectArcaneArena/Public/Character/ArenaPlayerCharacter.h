@@ -37,7 +37,7 @@ public:
 	FVector GetLastMovementInputDirection() const { return LastMovementInputDirection; }
 
 protected:
-	// 绑定复制 GameState 阶段，使 BossIntro 在服务器和所属客户端共用同一移动门控。
+	// 绑定复制 GameState 阶段，使 Intro、Outro 与 Victory 在服务器和所属客户端共用同一移动门控。
 	virtual void BeginPlay() override;
 	// 仅在视角过渡期间更新相机插值，第三人称稳定后由 Look 输入直接刷新。
 	virtual void Tick(float DeltaSeconds) override;
@@ -73,15 +73,15 @@ private:
 	void BindAbilitySystemDelegates(UArenaAbilitySystemComponent* ArenaASC);
 	// 移除当前绑定的 GAS 委托，防止重复初始化和旧角色悬挂回调。
 	void UnbindAbilitySystemDelegates();
-	// 绑定复制 GameState 阶段委托，支持 BossIntro 统一冻结和恢复玩家移动。
+	// 绑定复制 GameState 阶段委托，支持 Boss 演出和 Victory 统一冻结与恢复玩家移动。
 	void BindGameStateDelegates();
 	// 角色销毁或世界切换时解除阶段委托，避免旧 GameState 回调当前 Avatar。
 	void UnbindGameStateDelegates();
-	// 判断当前复制阶段是否为 BossIntro，供移动、视角和技能输入共用。
-	bool IsBossIntroActive() const;
-	// 根据 Dead/Stunned/BossIntro 优先级统一刷新移动组件状态。
+	// 判断当前复制阶段是否锁定玩家控制，供移动、视角、奔跑和技能输入共用。
+	bool IsPlayerControlLockedByPhase() const;
+	// 根据 Dead、Stunned 与终局演出阶段的优先级统一刷新移动组件状态。
 	void RefreshMovementState();
-	// 阶段切换时清理移动意图，并在 Intro 结束后按 GAS 状态恢复移动。
+	// 阶段切换时清理移动意图，并在控制锁定阶段结束后按 GAS 状态恢复移动。
 	UFUNCTION()
 	void HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase);
 	// Dead Tag 增加时执行一次死亡流程，移除时重置死亡门闩并触发复活表现。
@@ -117,9 +117,9 @@ private:
 	void Input_Shield();
 	// LightningStorm 输入入口，只发送 Ability.LightningStorm 标签，具体范围伤害由 GAS 处理。
 	void Input_Ultimate();
-	// BossIntro 中按下 Space 时通知本地 Controller 开始服务器验证的长按计时。
+	// Boss Intro 或 Outro 中按下 Space 时通知本地 Controller 开始服务器验证的长按计时。
 	void Input_BossIntroSkipStarted();
-	// 松开 Space 或输入被取消时结束本地与服务器的 Intro 长按状态。
+	// 松开 Space 或输入被取消时结束本地与服务器的 Intro/Outro 长按状态。
 	void Input_BossIntroSkipStopped();
 	// 切换顶视角和第三人称，并同步本地鼠标/准星输入模式。
 	void Input_ToggleView();

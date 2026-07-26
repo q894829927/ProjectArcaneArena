@@ -7,6 +7,7 @@
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaUpgradeDataAsset.h"
+#include "Components/Button.h"
 #include "Components/Widget.h"
 #include "EngineUtils.h"
 #include "GameFramework/PawnMovementComponent.h"
@@ -136,6 +137,9 @@ void AArenaPlayerController::CreatePlayerHUD()
 	{
 		PlayerHUDWidget->AddToViewport();
 		PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
+		PlayerHUDWidget->OnVictoryRestartRequested.AddUniqueDynamic(
+			this,
+			&AArenaPlayerController::HandleVictoryRestartRequested);
 	}
 }
 
@@ -174,9 +178,13 @@ void AArenaPlayerController::BindUpgradeState()
 		UnbindUpgradeState();
 		BoundUpgradePlayerState = ArenaPlayerState;
 		ArenaPlayerState->OnUpgradeStateChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleUpgradeStateChanged);
+		ArenaPlayerState->OnVictoryRestartReadyChanged.AddUniqueDynamic(
+			this,
+			&AArenaPlayerController::HandleVictoryRestartReadyChanged);
 	}
 
 	RefreshUpgradeSelectionUI();
+	RefreshVictoryPresentation();
 }
 
 // 解除旧 PlayerState 的升级委托，避免重生、旅行或重连后重复回调。
@@ -185,6 +193,9 @@ void AArenaPlayerController::UnbindUpgradeState()
 	if (AArenaPlayerState* ArenaPlayerState = BoundUpgradePlayerState.Get())
 	{
 		ArenaPlayerState->OnUpgradeStateChanged.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeStateChanged);
+		ArenaPlayerState->OnVictoryRestartReadyChanged.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandleVictoryRestartReadyChanged);
 	}
 	BoundUpgradePlayerState.Reset();
 }
@@ -286,22 +297,31 @@ void AArenaPlayerController::ServerSelectUpgrade_Implementation(FName UpgradeID)
 	}
 }
 
-// Controller 销毁前恢复 Intro 本地状态并解除升级、GameState、Widget 与服务器 Hold Timer。
+// Controller 销毁前恢复 Intro/Outro/Victory 本地状态并解除 Widget、GameState 与 Hold Timer。
 void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UpgradeSelectionWidget)
 	{
 		UpgradeSelectionWidget->OnUpgradeChosen.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeChosen);
 	}
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->OnVictoryRestartRequested.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandleVictoryRestartRequested);
+	}
 	FinishBossIntroPresentation(true);
 	ClearBossIntroSkipHold();
+	FinishBossOutroPresentation(true);
+	ClearBossOutroSkipHold();
+	SetVictoryInputMode(false);
 	UnbindUpgradeState();
 	UnbindGameStateHUD();
 	ClearPlayerHUDBindingRetry();
 	Super::EndPlay(EndPlayReason);
 }
 
-// 切换双视角鼠标与准星状态；升级或 Intro 激活时保留其专属输入表现并延后恢复。
+// 切换双视角鼠标与准星状态；升级、演出或 Victory 激活时保留其专属输入表现并延后恢复。
 void AArenaPlayerController::SetThirdPersonInputMode(bool bEnableThirdPerson)
 {
 	if (!IsLocalController())
@@ -310,12 +330,17 @@ void AArenaPlayerController::SetThirdPersonInputMode(bool bEnableThirdPerson)
 	}
 
 	bThirdPersonInputMode = bEnableThirdPerson;
+	if (bVictoryInputMode)
+	{
+		bShowMouseCursor = true;
+		return;
+	}
 	if (bUpgradeInputMode)
 	{
 		bShowMouseCursor = true;
 		return;
 	}
-	if (bBossIntroInputMode)
+	if (bBossIntroInputMode || bBossOutroInputMode)
 	{
 		bShowMouseCursor = false;
 		if (PlayerHUDWidget)
@@ -431,6 +456,100 @@ void AArenaPlayerController::ClearBossIntroSkipHold()
 		GetWorldTimerManager().ClearTimer(BossIntroSkipHoldTimerHandle);
 	}
 	bBossIntroSkipHeldOnServer = false;
+}
+
+// 本地只记录 Outro Hold 进度并提交按住状态，客户端计时不决定是否跳过。
+void AArenaPlayerController::SetBossOutroSkipHeld(bool bHeld)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	const AArenaGameState* ArenaGameState = BoundArenaGameState.IsValid()
+		? BoundArenaGameState.Get()
+		: (GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr);
+	if (bHeld)
+	{
+		if (bBossOutroSkipHeldLocally
+			|| !ArenaGameState
+			|| ArenaGameState->GetGamePhase() != EArenaGamePhase::BossOutro)
+		{
+			return;
+		}
+
+		bBossOutroSkipHeldLocally = true;
+		LocalBossOutroSkipHoldStartTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+		ServerSetBossOutroSkipHeld(true);
+	}
+	else if (bBossOutroSkipHeldLocally)
+	{
+		bBossOutroSkipHeldLocally = false;
+		LocalBossOutroSkipHoldStartTime = 0.0f;
+		ServerSetBossOutroSkipHeld(false);
+	}
+}
+
+// 服务器只接受 BossOutro 中首次按下，重复 RPC 不会重置 1.5 秒验证计时。
+void AArenaPlayerController::ServerSetBossOutroSkipHeld_Implementation(bool bHeld)
+{
+	if (!bHeld)
+	{
+		ClearBossOutroSkipHold();
+		return;
+	}
+
+	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	if (bBossOutroSkipHeldOnServer
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::BossOutro
+		|| !ArenaGameState->GetActiveBoss())
+	{
+		return;
+	}
+
+	bBossOutroSkipHeldOnServer = true;
+	GetWorldTimerManager().SetTimer(
+		BossOutroSkipHoldTimerHandle,
+		this,
+		&AArenaPlayerController::CompleteBossOutroSkipHold,
+		FMath::Max(BossOutroSkipHoldDuration, 0.1f),
+		false);
+}
+
+// Outro Hold 完成后交给 GameMode/WaveManager 重新验证参战者、阶段和死亡 Boss。
+void AArenaPlayerController::CompleteBossOutroSkipHold()
+{
+	const bool bCompletedValidHold = bBossOutroSkipHeldOnServer;
+	ClearBossOutroSkipHold();
+	if (!bCompletedValidHold)
+	{
+		return;
+	}
+
+	if (AArenaGameMode* ArenaGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AArenaGameMode>() : nullptr)
+	{
+		ArenaGameMode->RequestBossOutroSkip(this);
+	}
+}
+
+// 松开、阶段结束或销毁时清理服务器 Outro Hold Timer，防止迟到跳过。
+void AArenaPlayerController::ClearBossOutroSkipHold()
+{
+	if (GetWorld())
+	{
+		GetWorldTimerManager().ClearTimer(BossOutroSkipHoldTimerHandle);
+	}
+	bBossOutroSkipHeldOnServer = false;
+}
+
+// Victory Ready RPC 只转发到服务器 GameMode，由规则层重新验证人数和阶段。
+void AArenaPlayerController::ServerSetVictoryRestartReady_Implementation(bool bReady)
+{
+	if (AArenaGameMode* ArenaGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AArenaGameMode>() : nullptr)
+	{
+		ArenaGameMode->SetVictoryRestartReady(this, bReady);
+	}
 }
 
 // 组合复制阶段、Boss 与时序判断 Intro 是否真正就绪，容忍各属性 OnRep 到达顺序不同。
@@ -661,6 +780,313 @@ ACameraActor* AArenaPlayerController::FindBossIntroCamera(const AArenaBossCharac
 	return BestCamera;
 }
 
+// 组合复制阶段、死亡 Boss 和 Outro Timing，容忍各字段 OnRep 到达顺序不同。
+void AArenaPlayerController::RefreshBossOutroPresentation()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+	AArenaBossCharacter* Boss = ArenaGameState ? ArenaGameState->GetActiveBoss() : nullptr;
+	const FArenaBossOutroTiming Timing = ArenaGameState
+		? ArenaGameState->GetBossOutroTiming()
+		: FArenaBossOutroTiming();
+	const bool bOutroReady = ArenaGameState
+		&& ArenaGameState->GetGamePhase() == EArenaGamePhase::BossOutro
+		&& Boss
+		&& Timing.EndServerTimeSeconds > ArenaGameState->GetServerWorldTimeSeconds();
+
+	if (bOutroReady)
+	{
+		if (!bBossOutroInputMode)
+		{
+			StartBossOutroPresentation(Boss, Timing);
+		}
+		UpdateBossOutroPresentation();
+	}
+	else if (bBossOutroInputMode)
+	{
+		const bool bInterrupted = !ArenaGameState
+			|| (ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory
+				&& ArenaGameState->GetGamePhase() != EArenaGamePhase::BossOutro);
+		FinishBossOutroPresentation(bInterrupted);
+	}
+}
+
+// 启动每个客户端独立的 Boss 死亡镜头、输入冻结和 HUD 表现。
+void AArenaPlayerController::StartBossOutroPresentation(
+	AArenaBossCharacter* Boss,
+	const FArenaBossOutroTiming& Timing)
+{
+	if (!IsLocalController() || bBossOutroInputMode || !Boss)
+	{
+		return;
+	}
+
+	bBossOutroInputMode = true;
+	bBossOutroCameraBlendingOut = false;
+	bBossOutroSkipHeldLocally = false;
+	LocalBossOutroSkipHoldStartTime = 0.0f;
+	SetIgnoreMoveInput(true);
+	SetIgnoreLookInput(true);
+	FlushPressedKeys();
+	bShowMouseCursor = false;
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetThirdPersonReticleVisible(false);
+	}
+
+	ActiveBossOutroCamera = FindBossOutroCamera(Timing.BossDeathLocation);
+	if (ACameraActor* OutroCamera = ActiveBossOutroCamera.Get())
+	{
+		SetViewTargetWithBlend(
+			OutroCamera,
+			FMath::Max(BossOutroCameraBlendDuration, 0.0f),
+			EViewTargetBlendFunction::VTBlend_Cubic);
+	}
+	else if (!bWarnedMissingBossOutroCamera)
+	{
+		bWarnedMissingBossOutroCamera = true;
+		UE_LOG(LogArenaBossIntro, Warning,
+			TEXT("No CameraActor tagged %s or %s was found near the Boss death location; Outro keeps the player camera."),
+			*BossVictoryCameraActorTag.ToString(),
+			*BossIntroCameraActorTag.ToString());
+	}
+
+	GetWorldTimerManager().SetTimer(
+		BossOutroPresentationTimerHandle,
+		this,
+		&AArenaPlayerController::UpdateBossOutroPresentation,
+		FMath::Max(BossOutroPresentationTickInterval, 0.01f),
+		true);
+	K2_OnBossOutroStarted(Boss, FMath::Max(
+		Timing.EndServerTimeSeconds - (BoundArenaGameState.IsValid()
+			? BoundArenaGameState->GetServerWorldTimeSeconds()
+			: 0.0f),
+		0.0f));
+}
+
+// 使用同步服务器时间更新 Outro 回切窗口、Hold 进度和 HUD。
+void AArenaPlayerController::UpdateBossOutroPresentation()
+{
+	if (!bBossOutroInputMode)
+	{
+		return;
+	}
+
+	AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+	if (!ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::BossOutro
+		|| !ArenaGameState->GetActiveBoss())
+	{
+		FinishBossOutroPresentation(true);
+		return;
+	}
+
+	const FArenaBossOutroTiming Timing = ArenaGameState->GetBossOutroTiming();
+	const float RemainingTime = ArenaGameState->GetBossOutroRemainingTime();
+	if (RemainingTime <= Timing.BlendOutDuration + KINDA_SMALL_NUMBER)
+	{
+		BeginBossOutroCameraBlendOut(Timing.BlendOutDuration);
+	}
+
+	float SkipProgress = 0.0f;
+	if (bBossOutroSkipHeldLocally && GetWorld())
+	{
+		SkipProgress = FMath::Clamp(
+			(GetWorld()->GetTimeSeconds() - LocalBossOutroSkipHoldStartTime)
+				/ FMath::Max(BossOutroSkipHoldDuration, 0.1f),
+			0.0f,
+			1.0f);
+	}
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetBossOutroPresentation(true, RemainingTime, SkipProgress);
+	}
+}
+
+// Outro 尾段只执行一次 ViewTarget 回切，玩家控制保持冻结直到 Victory。
+void AArenaPlayerController::BeginBossOutroCameraBlendOut(float BlendOutDuration)
+{
+	if (!bBossOutroInputMode || bBossOutroCameraBlendingOut)
+	{
+		return;
+	}
+
+	bBossOutroCameraBlendingOut = true;
+	if (APawn* ControlledPawn = GetPawn())
+	{
+		SetViewTargetWithBlend(
+			ControlledPawn,
+			FMath::Max(BlendOutDuration, 0.0f),
+			EViewTargetBlendFunction::VTBlend_Cubic);
+	}
+}
+
+// 正常 Victory 与异常退出共用清理入口，确保镜头、Hold 和 HUD 不残留。
+void AArenaPlayerController::FinishBossOutroPresentation(bool bWasInterrupted)
+{
+	if (!bBossOutroInputMode && !bBossOutroSkipHeldLocally)
+	{
+		return;
+	}
+
+	if (GetWorld())
+	{
+		GetWorldTimerManager().ClearTimer(BossOutroPresentationTimerHandle);
+	}
+	if (bBossOutroSkipHeldLocally)
+	{
+		SetBossOutroSkipHeld(false);
+	}
+	ClearBossOutroSkipHold();
+
+	if (!bBossOutroCameraBlendingOut)
+	{
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			SetViewTargetWithBlend(
+				ControlledPawn,
+				FMath::Max(BossOutroCameraBlendDuration, 0.0f),
+				EViewTargetBlendFunction::VTBlend_Cubic);
+		}
+	}
+
+	bBossOutroInputMode = false;
+	bBossOutroCameraBlendingOut = false;
+	bBossOutroSkipHeldLocally = false;
+	LocalBossOutroSkipHoldStartTime = 0.0f;
+	ActiveBossOutroCamera.Reset();
+	SetIgnoreMoveInput(bUpgradeInputMode || bVictoryInputMode);
+	SetIgnoreLookInput(false);
+	if (!bVictoryInputMode)
+	{
+		SetThirdPersonInputMode(bThirdPersonInputMode);
+	}
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetBossOutroPresentation(false, 0.0f, 0.0f);
+	}
+	K2_OnBossOutroEnded(bWasInterrupted);
+}
+
+// 优先选择 BossVictoryCamera，缺失时回退 BossIntroCamera，并以路径名打破同距离平局。
+ACameraActor* AArenaPlayerController::FindBossOutroCamera(const FVector& BossDeathLocation) const
+{
+	if (!GetWorld())
+	{
+		return nullptr;
+	}
+
+	auto FindNearestForTag = [this, &BossDeathLocation](FName CameraTag) -> ACameraActor*
+	{
+		if (CameraTag.IsNone())
+		{
+			return nullptr;
+		}
+
+		ACameraActor* BestCamera = nullptr;
+		double BestDistanceSquared = TNumericLimits<double>::Max();
+		FString BestPath;
+		for (TActorIterator<ACameraActor> It(GetWorld()); It; ++It)
+		{
+			ACameraActor* Candidate = *It;
+			if (!Candidate || !Candidate->ActorHasTag(CameraTag))
+			{
+				continue;
+			}
+
+			const double DistanceSquared = FVector::DistSquared(Candidate->GetActorLocation(), BossDeathLocation);
+			const FString CandidatePath = Candidate->GetPathName();
+			if (!BestCamera
+				|| DistanceSquared < BestDistanceSquared - static_cast<double>(KINDA_SMALL_NUMBER)
+				|| (FMath::IsNearlyEqual(DistanceSquared, BestDistanceSquared)
+					&& CandidatePath.Compare(BestPath, ESearchCase::CaseSensitive) < 0))
+			{
+				BestCamera = Candidate;
+				BestDistanceSquared = DistanceSquared;
+				BestPath = CandidatePath;
+			}
+		}
+		return BestCamera;
+	};
+
+	if (ACameraActor* VictoryCamera = FindNearestForTag(BossVictoryCameraActorTag))
+	{
+		return VictoryCamera;
+	}
+	return FindNearestForTag(BossIntroCameraActorTag);
+}
+
+// 根据复制 Victory 状态切换 UIOnly 输入并刷新本地 Ready 展示。
+void AArenaPlayerController::RefreshVictoryPresentation()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
+	const bool bVisible = ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::Victory;
+	SetVictoryInputMode(bVisible);
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetVictoryPresentation(
+			bVisible,
+			ArenaPlayerState && ArenaPlayerState->IsVictoryRestartReady(),
+			ArenaGameState ? ArenaGameState->GetVictoryRestartReadyCount() : 0,
+			ArenaGameState ? ArenaGameState->GetVictoryRestartRequiredCount() : 0);
+	}
+}
+
+// Victory 使用 UIOnly 并只聚焦可聚焦按钮，退出后恢复原双视角输入模式。
+void AArenaPlayerController::SetVictoryInputMode(bool bEnabled)
+{
+	if (!IsLocalController() || bVictoryInputMode == bEnabled)
+	{
+		return;
+	}
+
+	bVictoryInputMode = bEnabled;
+	if (bVictoryInputMode)
+	{
+		SetIgnoreMoveInput(true);
+		SetIgnoreLookInput(true);
+		FlushPressedKeys();
+		bShowMouseCursor = true;
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetThirdPersonReticleVisible(false);
+		}
+		FInputModeUIOnly InputMode;
+		if (PlayerHUDWidget
+			&& PlayerHUDWidget->GetVictoryRestartButton()
+			&& PlayerHUDWidget->GetVictoryRestartButton()->GetIsFocusable())
+		{
+			InputMode.SetWidgetToFocus(PlayerHUDWidget->GetVictoryRestartButton()->TakeWidget());
+		}
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(InputMode);
+	}
+	else
+	{
+		FlushPressedKeys();
+		SetIgnoreMoveInput(bUpgradeInputMode || bBossIntroInputMode || bBossOutroInputMode);
+		SetIgnoreLookInput(bBossIntroInputMode || bBossOutroInputMode);
+		if (!bUpgradeInputMode && !bBossIntroInputMode && !bBossOutroInputMode)
+		{
+			SetThirdPersonInputMode(bThirdPersonInputMode);
+			if (PlayerHUDWidget)
+			{
+				PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
+			}
+		}
+	}
+}
+
 // 尝试把 HUD 绑定到 PlayerState 上的 ASC 和 AttributeSet。
 void AArenaPlayerController::TryBindPlayerHUD()
 {
@@ -691,7 +1117,7 @@ void AArenaPlayerController::TryBindPlayerHUD()
 	ClearPlayerHUDBindingRetry();
 }
 
-// 本地端绑定 HUD/Intro 快照，Authority 端也绑定阶段变化以立即清理 Skip Hold Timer。
+// 本地端绑定 HUD、Boss 演出和 Victory 快照，Authority 端也监听阶段以清理 Skip Hold Timer。
 void AArenaPlayerController::BindGameStateHUD()
 {
 	if (!IsLocalController() && !HasAuthority())
@@ -715,6 +1141,13 @@ void AArenaPlayerController::BindGameStateHUD()
 		ArenaGameState->OnUpgradeRandomSeedChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleUpgradeRandomSeedChanged);
 		ArenaGameState->OnActiveBossChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleActiveBossChanged);
 		ArenaGameState->OnBossIntroTimingChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleBossIntroTimingChanged);
+		ArenaGameState->OnBossOutroTimingChanged.AddUniqueDynamic(this, &AArenaPlayerController::HandleBossOutroTimingChanged);
+		ArenaGameState->OnVictoryRestartReadyCountChanged.AddUniqueDynamic(
+			this,
+			&AArenaPlayerController::HandleVictoryRestartCountChanged);
+		ArenaGameState->OnVictoryRestartRequiredCountChanged.AddUniqueDynamic(
+			this,
+			&AArenaPlayerController::HandleVictoryRestartCountChanged);
 	}
 
 	if (PlayerHUDWidget)
@@ -725,9 +1158,11 @@ void AArenaPlayerController::BindGameStateHUD()
 		PlayerHUDWidget->BindToBoss(ArenaGameState->GetActiveBoss());
 	}
 	RefreshBossIntroPresentation();
+	RefreshBossOutroPresentation();
+	RefreshVictoryPresentation();
 }
 
-// 解除 GameState 阶段、波次、Boss 与 Intro 委托，并恢复所有本地演出状态。
+// 解除 GameState 阶段、波次、Boss、演出与 Ready 委托，并恢复全部本地输入状态。
 void AArenaPlayerController::UnbindGameStateHUD()
 {
 	if (AArenaGameState* ArenaGameState = BoundArenaGameState.Get())
@@ -738,8 +1173,17 @@ void AArenaPlayerController::UnbindGameStateHUD()
 		ArenaGameState->OnUpgradeRandomSeedChanged.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeRandomSeedChanged);
 		ArenaGameState->OnActiveBossChanged.RemoveDynamic(this, &AArenaPlayerController::HandleActiveBossChanged);
 		ArenaGameState->OnBossIntroTimingChanged.RemoveDynamic(this, &AArenaPlayerController::HandleBossIntroTimingChanged);
+		ArenaGameState->OnBossOutroTimingChanged.RemoveDynamic(this, &AArenaPlayerController::HandleBossOutroTimingChanged);
+		ArenaGameState->OnVictoryRestartReadyCountChanged.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandleVictoryRestartCountChanged);
+		ArenaGameState->OnVictoryRestartRequiredCountChanged.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandleVictoryRestartCountChanged);
 	}
 	FinishBossIntroPresentation(true);
+	FinishBossOutroPresentation(true);
+	SetVictoryInputMode(false);
 	if (PlayerHUDWidget)
 	{
 		PlayerHUDWidget->BindToBoss(nullptr);
@@ -747,12 +1191,16 @@ void AArenaPlayerController::UnbindGameStateHUD()
 	BoundArenaGameState.Reset();
 }
 
-// 阶段变化时先清理 Authority Hold Timer，再同步本地 HUD、Upgrade 与 Intro 表现。
+// 阶段变化时先清理 Authority Hold Timer，再同步本地 HUD、Upgrade、演出与 Victory 表现。
 void AArenaPlayerController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
 {
 	if (OldPhase == EArenaGamePhase::BossIntro && NewPhase != EArenaGamePhase::BossIntro)
 	{
 		ClearBossIntroSkipHold();
+	}
+	if (OldPhase == EArenaGamePhase::BossOutro && NewPhase != EArenaGamePhase::BossOutro)
+	{
+		ClearBossOutroSkipHold();
 	}
 	if (PlayerHUDWidget)
 	{
@@ -760,6 +1208,8 @@ void AArenaPlayerController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EA
 	}
 	RefreshUpgradeSelectionUI();
 	RefreshBossIntroPresentation();
+	RefreshBossOutroPresentation();
+	RefreshVictoryPresentation();
 }
 
 // 当前波次复制变化时使用同一 GameState 快照刷新 HUD。
@@ -791,7 +1241,7 @@ void AArenaPlayerController::HandleUpgradeRandomSeedChanged(int32 OldValue, int3
 	}
 }
 
-// 每个本地 Controller 只把复制 Boss 绑定到自己的 HUD，并在 OnRep 顺序允许后启动本地 Intro。
+// 每个本地 Controller 只绑定自己的 Boss HUD，并在 OnRep 顺序允许后启动 Intro 或 Outro。
 void AArenaPlayerController::HandleActiveBossChanged(AArenaBossCharacter* OldBoss, AArenaBossCharacter* NewBoss)
 {
 	if (PlayerHUDWidget)
@@ -799,6 +1249,7 @@ void AArenaPlayerController::HandleActiveBossChanged(AArenaBossCharacter* OldBos
 		PlayerHUDWidget->BindToBoss(NewBoss);
 	}
 	RefreshBossIntroPresentation();
+	RefreshBossOutroPresentation();
 }
 
 // Intro 时序首次复制或被跳过缩短时立即评估尾段回切，不等待下一次普通阶段复制。
@@ -807,6 +1258,42 @@ void AArenaPlayerController::HandleBossIntroTimingChanged(
 	FArenaBossIntroTiming NewTiming)
 {
 	RefreshBossIntroPresentation();
+}
+
+// Outro Timing 首次复制或被跳过缩短时立即刷新本地镜头和 HUD。
+void AArenaPlayerController::HandleBossOutroTimingChanged(
+	FArenaBossOutroTiming OldTiming,
+	FArenaBossOutroTiming NewTiming)
+{
+	RefreshBossOutroPresentation();
+}
+
+// 任一 Victory Ready 计数变化时刷新本地终局状态。
+void AArenaPlayerController::HandleVictoryRestartCountChanged(int32 OldValue, int32 NewValue)
+{
+	RefreshVictoryPresentation();
+}
+
+// 本地 PlayerState Ready 状态复制后刷新按钮文案。
+void AArenaPlayerController::HandleVictoryRestartReadyChanged(bool bIsReady)
+{
+	RefreshVictoryPresentation();
+}
+
+// Victory 按钮在本地切换 Ready 意图，服务器 GameMode 负责最终验证。
+void AArenaPlayerController::HandleVictoryRestartRequested()
+{
+	const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
+	if (!IsLocalController()
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory
+		|| !ArenaPlayerState)
+	{
+		return;
+	}
+
+	ServerSetVictoryRestartReady(!ArenaPlayerState->IsVictoryRestartReady());
 }
 
 // 当客户端 GAS 数据尚未复制完成时，安排短间隔重试绑定 HUD。

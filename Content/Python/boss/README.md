@@ -253,3 +253,36 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_sum
 5. 保存 `BT_ArenaBoss`，打开并 Compile `BP_ArenaBossCharacter`，确认四个 Boss Ability 各只有一份。
 
 召唤分支只在 `Boss.Phase.Three` 可激活。默认施法前摇 `0.9s`、目标距离上限 `1200`、生成半径 `320`、冷却 `14s`；服务器会在 Commit 前确认剩余容量和至少一个 NavMesh 合法生成点。召唤物由 Boss 私有集合管理，不进入 `WaveManager` 的剩余数量或掉落流程；Boss 死亡、Victory、Defeat 或销毁时会立即清理。
+
+## 阶段五 B：Boss 死亡与 Victory 演出
+
+完整编译并重启编辑器后执行：
+
+```text
+py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_victory_outro.py"
+```
+
+脚本会幂等创建或配置：
+
+- `/Game/Boss/Animation/AS_BossDeath`
+- `/Game/Boss/Animation/AM_BossDeath`
+- `/Game/Boss/VFX/NS_BossDeath`
+- `/Game/Boss/GAS/GameplayCue/GCN_BossDeath`
+- `BP_ArenaBossCharacter.DeathMontage = AM_BossDeath`
+- `BP_ArenaBossCharacter.DeathMontagePlayRate = 1.0`
+- `BP_ArenaBossCharacter.DeathLifeSpan = 5.5`
+
+脚本不修改关卡、Behavior Tree 或 Widget 图。关卡中手动放置一个 `CameraActor`，关闭自动激活，并在 `Actor -> Tags` 添加 `BossVictoryCamera`；多个候选时客户端选择距离 Boss 死亡位置最近者，缺少时自动回退现有 `BossIntroCamera`。
+
+`WBP_PlayerHUD` 可选增加以下勾选 `Is Variable` 的控件：
+
+- `BossOutroPanel`
+- `BossDefeatedText`
+- `BossOutroSkipText`
+- `BossOutroSkipProgressBar`
+- `VictoryPanel`
+- `VictoryText`
+- `VictoryRestartButton`
+- `VictoryRestartStatusText`
+
+不添加这些控件时，原生 HUD 会创建可聚焦 Restart Button 和完整 fallback。正常 Boss 死亡默认播放四秒 Outro，最后 `0.6s` 回切；长按 Space `1.5s` 可统一缩短。Victory 中单人确认立即重开，双人需双方 Ready。

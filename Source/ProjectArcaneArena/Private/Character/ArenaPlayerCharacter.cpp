@@ -54,7 +54,7 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 	CreateDefaultInputMappings();
 }
 
-// 在角色进入世界时绑定复制阶段，确保 BossIntro 冻结不依赖 ASC 初始化先后顺序。
+// 在角色进入世界时绑定复制阶段，确保 Intro、Outro 与 Victory 冻结不依赖 ASC 初始化先后顺序。
 void AArenaPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -215,16 +215,24 @@ void AArenaPlayerCharacter::UnbindGameStateDelegates()
 	BoundArenaGameState.Reset();
 }
 
-// 只读取复制的 GamePhase 作为 Intro 状态源，不额外维护可能失配的角色布尔值或 GameplayTag。
-bool AArenaPlayerCharacter::IsBossIntroActive() const
+// 只读取复制的 GamePhase 作为控制锁定状态源，不额外维护可能失配的角色布尔值或 GameplayTag。
+bool AArenaPlayerCharacter::IsPlayerControlLockedByPhase() const
 {
 	const AArenaGameState* ArenaGameState = BoundArenaGameState.IsValid()
 		? BoundArenaGameState.Get()
 		: (GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr);
-	return ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossIntro;
+	if (!ArenaGameState)
+	{
+		return false;
+	}
+
+	const EArenaGamePhase GamePhase = ArenaGameState->GetGamePhase();
+	return GamePhase == EArenaGamePhase::BossIntro
+		|| GamePhase == EArenaGamePhase::BossOutro
+		|| GamePhase == EArenaGamePhase::Victory;
 }
 
-// Dead、Stunned 和 BossIntro 任一存在时冻结移动；全部解除后才恢复 Walking。
+// Dead、Stunned 或终局演出阶段任一存在时冻结移动；全部解除后才恢复 Walking。
 void AArenaPlayerCharacter::RefreshMovementState()
 {
 	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
@@ -236,7 +244,7 @@ void AArenaPlayerCharacter::RefreshMovementState()
 
 	const bool bIsDead = ArenaASC && ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead);
 	const bool bIsStunned = ArenaASC && ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
-	if (bIsDead || bIsStunned || IsBossIntroActive())
+	if (bIsDead || bIsStunned || IsPlayerControlLockedByPhase())
 	{
 		SetSprinting(false);
 		LastMovementInputDirection = FVector::ZeroVector;
@@ -249,10 +257,12 @@ void AArenaPlayerCharacter::RefreshMovementState()
 	}
 }
 
-// Intro 进入时取消仍活跃的玩家主动技能并清空移动意图，退出时由统一状态函数安全恢复。
+// 进入 Intro、Outro 或 Victory 时取消玩家主动技能并清空移动意图，退出时由统一状态函数安全恢复。
 void AArenaPlayerCharacter::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
 {
-	if (NewPhase == EArenaGamePhase::BossIntro)
+	if (NewPhase == EArenaGamePhase::BossIntro
+		|| NewPhase == EArenaGamePhase::BossOutro
+		|| NewPhase == EArenaGamePhase::Victory)
 	{
 		SetSprinting(false);
 		LastMovementInputDirection = FVector::ZeroVector;
@@ -351,14 +361,14 @@ void AArenaPlayerCharacter::RefreshMaxWalkSpeed()
 	MovementComponent->MaxWalkSpeed = FMath::Max(AttributeSet->GetMoveSpeed(), 0.0f) * SpeedMultiplier;
 }
 
-// 本地与服务器共用同一状态入口，Dead/Stunned/BossIntro 永远覆盖奔跑意图。
+// 本地与服务器共用同一状态入口，Dead、Stunned 与控制锁定阶段永远覆盖奔跑意图。
 void AArenaPlayerCharacter::SetSprinting(bool bNewSprinting)
 {
 	const UAbilitySystemComponent* ArenaASC = GetAbilitySystemComponent();
 	const bool bMovementBlocked = ArenaASC
 		&& (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 			|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned));
-	bIsSprinting = bNewSprinting && !bMovementBlocked && !IsBossIntroActive();
+	bIsSprinting = bNewSprinting && !bMovementBlocked && !IsPlayerControlLockedByPhase();
 	RefreshMaxWalkSpeed();
 }
 
@@ -531,13 +541,13 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	DefaultMappingContext->MapKey(BossIntroSkipAction, EKeys::SpaceBar);
 }
 
-// 将本地技能输入转换为 GameplayTag，Intro 先拒绝输入，其余资格继续由 ASC/GAS 决定。
+// 将本地技能输入转换为 GameplayTag，控制锁定阶段先拒绝输入，其余资格继续由 ASC/GAS 决定。
 void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
 	// Character 只负责把本地输入转成标签，是否能激活由 ASC/GAS 判断。
 	UArenaAbilitySystemComponent* ArenaASC = Cast<UArenaAbilitySystemComponent>(GetAbilitySystemComponent());
 	if (!ArenaASC
-		|| IsBossIntroActive()
+		|| IsPlayerControlLockedByPhase()
 		|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 		|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))
 	{
@@ -553,7 +563,7 @@ void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 	const FVector2D MovementVector = Value.Get<FVector2D>();
 	const UAbilitySystemComponent* ArenaASC = GetAbilitySystemComponent();
 
-	if (!Controller || IsBossIntroActive() || MovementVector.IsNearlyZero()
+	if (!Controller || IsPlayerControlLockedByPhase() || MovementVector.IsNearlyZero()
 		|| (ArenaASC && (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 			|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))))
 	{
@@ -583,10 +593,10 @@ void AArenaPlayerCharacter::Input_MoveStopped(const FInputActionValue& Value)
 	LastMovementInputDirection = FVector::ZeroVector;
 }
 
-// 本地先验证 Intro 与状态并更新速度，再由服务器应用相同的受限奔跑倍率。
+// 本地先验证控制锁定阶段与状态并更新速度，再由服务器应用相同的受限奔跑倍率。
 void AArenaPlayerCharacter::Input_SprintStarted(const FInputActionValue& Value)
 {
-	if (IsBossIntroActive())
+	if (IsPlayerControlLockedByPhase())
 	{
 		return;
 	}
@@ -608,10 +618,10 @@ void AArenaPlayerCharacter::Input_SprintStopped(const FInputActionValue& Value)
 	}
 }
 
-// 服务端重新验证 Intro，最终速度仍由受限倍率和服务器持有的 MoveSpeed 决定。
+// 服务端重新验证控制锁定阶段，最终速度仍由受限倍率和服务器持有的 MoveSpeed 决定。
 void AArenaPlayerCharacter::ServerSetSprinting_Implementation(bool bNewSprinting)
 {
-	SetSprinting(bNewSprinting && !IsBossIntroActive());
+	SetSprinting(bNewSprinting && !IsPlayerControlLockedByPhase());
 }
 
 // 基础攻击输入入口，仅发送 Ability.BasicAttack 标签。
@@ -644,17 +654,27 @@ void AArenaPlayerCharacter::Input_Ultimate()
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_LightningStorm);
 }
 
-// 将 Space 长按开始状态交给本地 Controller，由服务器独立计时并最终验证跳过资格。
+// 将 Space 长按交给当前 Intro 或 Outro 流程，由服务器独立计时并最终验证跳过资格。
 void AArenaPlayerCharacter::Input_BossIntroSkipStarted()
 {
-	if (!IsLocallyControlled() || !IsBossIntroActive())
+	if (!IsLocallyControlled())
 	{
 		return;
 	}
 
 	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
 	{
-		ArenaPlayerController->SetBossIntroSkipHeld(true);
+		const AArenaGameState* ArenaGameState = BoundArenaGameState.IsValid()
+			? BoundArenaGameState.Get()
+			: (GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr);
+		if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossIntro)
+		{
+			ArenaPlayerController->SetBossIntroSkipHeld(true);
+		}
+		else if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossOutro)
+		{
+			ArenaPlayerController->SetBossOutroSkipHeld(true);
+		}
 	}
 }
 
@@ -669,13 +689,14 @@ void AArenaPlayerCharacter::Input_BossIntroSkipStopped()
 	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
 	{
 		ArenaPlayerController->SetBossIntroSkipHeld(false);
+		ArenaPlayerController->SetBossOutroSkipHeld(false);
 	}
 }
 
-// Intro 期间保持原视角选择不变；其余时间正常切换并同步本地鼠标/准星模式。
+// 控制锁定阶段保持原视角选择不变；其余时间正常切换并同步本地鼠标与准星模式。
 void AArenaPlayerCharacter::Input_ToggleView()
 {
-	if (!IsLocallyControlled() || !Controller || IsBossIntroActive())
+	if (!IsLocallyControlled() || !Controller || IsPlayerControlLockedByPhase())
 	{
 		return;
 	}
@@ -696,10 +717,10 @@ void AArenaPlayerCharacter::Input_ToggleView()
 	UpdateCameraTransform();
 }
 
-// 第三人称且非 Intro 时把鼠标增量转换为受限的 ControlRotation，并立即刷新相机。
+// 第三人称且未锁定控制时把鼠标增量转换为受限的 ControlRotation，并立即刷新相机。
 void AArenaPlayerCharacter::Input_Look(const FInputActionValue& Value)
 {
-	if (!bThirdPersonView || !Controller || IsBossIntroActive())
+	if (!bThirdPersonView || !Controller || IsPlayerControlLockedByPhase())
 	{
 		return;
 	}

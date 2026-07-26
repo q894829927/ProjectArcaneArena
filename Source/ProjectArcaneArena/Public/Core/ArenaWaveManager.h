@@ -42,6 +42,9 @@ public:
 	// 服务器验证参战 Controller 后缩短 Boss Intro，并保留统一的镜头回切窗口。
 	bool RequestBossIntroSkip(AArenaPlayerController* RequestingController);
 
+	// 服务器验证参战 Controller 后缩短 Boss Outro，并保留统一的镜头回切窗口。
+	bool RequestBossOutroSkip(AArenaPlayerController* RequestingController);
+
 	FArenaUpgradePhaseStartedSignature OnUpgradePhaseStarted;
 
 protected:
@@ -59,6 +62,12 @@ private:
 	void FinishBossIntro();
 	// 终局、销毁和 Boss 死亡路径统一清理 Intro Timer。
 	void ClearBossIntroTimer();
+	// Boss 正常死亡后保留尸体与 ActiveBoss，并启动服务器同步的 Outro。
+	void BeginBossOutro(AArenaBossCharacter* DeadBoss);
+	// Outro 正常结束或跳过回切完成后清理 Boss 引用并进入 Victory。
+	void FinishBossOutro();
+	// 终局、销毁和关卡退出路径统一清理 Outro Timer。
+	void ClearBossOutroTimer();
 	// 统计 Boss 生成瞬间所有拥有有效 ASC 的 ArenaPlayerState，死亡或暂时无 Pawn 的玩家仍计入。
 	int32 GetBossScalingPlayerCount() const;
 	// 为当前死亡敌人执行一次服务器掉落抽取，失败不会影响波次推进。
@@ -91,6 +100,12 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro", meta = (ClampMin = "0.0"))
 	float BossIntroBlendDuration = 0.6f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Outro", meta = (ClampMin = "0.1"))
+	float BossOutroDuration = 4.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Outro", meta = (ClampMin = "0.0"))
+	float BossOutroBlendDuration = 0.6f;
+
 	UPROPERTY(Transient)
 	TObjectPtr<UArenaWaveDataAsset> WaveData;
 
@@ -107,6 +122,7 @@ private:
 	FTimerHandle SpawnTimerHandle;
 	FTimerHandle AutoStartNextWaveTimerHandle;
 	FTimerHandle BossIntroTimerHandle;
+	FTimerHandle BossOutroTimerHandle;
 	int32 CurrentWaveArrayIndex = INDEX_NONE;
 	int32 NextPendingSpawnIndex = 0;
 	int32 NextSpawnPointIndex = 0;

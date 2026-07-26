@@ -308,7 +308,7 @@ Status meanings:
 * `Enemy.Summoned`, `Enemy.Summoned.Trigger.OnKill` and `Enemy.Summoned.Trigger.OnCrit` make passive-event eligibility explicit. The authoritative damage route leaves ordinary targets unchanged and only emits summon OnKill/OnCrit events when the corresponding leaf tag is present; elemental/status and typed damage events remain unchanged.
 * Native cooldown and Cast/Spawn GameplayCue tags, `setup_boss_summon_minions.py`, the four unique Boss StartupAbilities and the manual `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait` BT order are configured and exercised in PIE.
 * Verification confirmed Phase 3-only activation, one melee plus one ranged summon per cast, a four-summon cap and immediate capacity release on summon death. Summons do not change `RemainingEnemyCount` or drop ordinary recovery pickups.
-* Boss death immediately enters Victory and removes every surviving summon. Stun, Boss death and terminal-phase cancellation during the windup do not produce delayed summons.
+* Boss death removes every surviving summon before the server-owned Boss Outro begins. Stun, Boss death and terminal-phase cancellation during the windup do not produce delayed summons.
 * Burning, Shocked, Overload, OnKill, OnCrit, Dash Trail and ShieldBreakBlast have been verified against summoned enemies.
 
 ### Boss Intro Synchronization — Verified
@@ -320,6 +320,15 @@ Status meanings:
 * `UArenaPlayerHUDWidget` exposes optional Intro name/countdown/prompt/progress controls and creates a native fallback when the current WBP omits them. `AArenaBossAIController` applies a `0.5s` post-Intro ability grace before existing BT attack branches can activate.
 * Boss death, direct destruction, Defeat, manager destruction and normal completion clear authority timers; local phase/Boss/timing delegate cleanup restores ViewTarget, cursor, reticle and input.
 * Verification confirmed the tagged level CameraActor, authority Intro clock, movement/ability/damage freeze, Space hold skip with the retained blend-out window, local camera restoration and transition into Phase 1 Combat.
+
+### Boss Death And Victory Outro — Implemented
+
+* `EArenaGamePhase::BossOutro` and replicated `FArenaBossOutroTiming` replace the former immediate final-Boss Victory transition. A normal final Boss death removes it from the wave count, clears summons, preserves the dead `ActiveBoss`, publishes death location plus a four-second server clock, and enters Victory only after the synchronized `0.6s` camera-return tail. Direct destruction without the normal death event logs a warning and safely skips the Outro.
+* `AArenaBossCharacter` exposes a configurable no-root-motion death Montage, keeps the corpse for `5.5s`, plays the replicated-death presentation once on each instance, and executes one authority `GameplayCue.Boss.Death`. `Content/Python/boss/setup_boss_victory_outro.py` has created and saved `AS_BossDeath`, `AM_BossDeath`, `NS_BossDeath` and `GCN_BossDeath`, and configured the Boss Blueprint defaults.
+* Every local `AArenaPlayerController` selects the nearest `BossVictoryCamera`, falls back to `BossIntroCamera`, and preserves its previous top-down/third-person mode. Holding Space submits only held state; the server validates a `1.5s` hold and shortens the shared Outro while retaining the blend-out window.
+* BossOutro and Victory freeze movement/Sprint, cancel and block player-active/enemy combat Abilities, and reject authority damage at both `UExecCalc_Damage` and final Damage meta consumption. Timers, delegates, ViewTarget, reticle, cursor and input modes use shared cleanup paths.
+* Victory Ready lives on replicated `AArenaPlayerState`; replicated GameState Ready/Required counts drive the HUD. The Restart button uses a focusable `UButton` with `UIOnly` input, and `AArenaGameMode` validates all connected participants before issuing one `ServerTravel("?Restart")`. Disconnects trigger a recount.
+* `UArenaPlayerHUDWidget` supports optional Boss Outro, skip progress, Victory and restart controls and constructs a native fallback when the Blueprint omits them. Single/two-player Outro timing, skip, camera, Ready/restart, travel reset and a second idempotency run of the asset script remain pending verification.
 
 ### Gameplay State Control — Partial
 
@@ -335,7 +344,7 @@ Status meanings:
 
 * `UArenaWaveDataAsset` stores enemy entries/counts, spawn interval, boss marker, and reward count per wave.
 * Server-owned `AArenaWaveManager` discovers `ATargetPoint` actors tagged `EnemySpawn`, spawns configured enemies, tracks successful spawns through enemy death delegates, and writes replicated state to GameState.
-* Clearing a non-final wave enters Upgrade; the production flow waits for explicit `StartNextWave`, while clearing the final configured wave enters Victory.
+* Clearing a non-final wave enters Upgrade; the production flow waits for explicit `StartNextWave`. A normally killed final Boss now completes `BossOutro` before Victory, while non-Boss final waves and abnormal direct Boss destruction retain safe direct-Victory fallbacks.
 * WaveManager retains a configurable three-second prototype fallback, but GameMode now disables it when the formal upgrade-selection system binds to the Upgrade entry.
 * Missing configuration never counts as wave completion; failed spawns keep Combat active and emit `LogArenaWaves` errors.
 * `DA_Waves_Prototype`, its `BP_ArenaGameMode` reference, three tagged EnemySpawn TargetPoints, and a covering NavMeshBoundsVolume are configured in project assets.

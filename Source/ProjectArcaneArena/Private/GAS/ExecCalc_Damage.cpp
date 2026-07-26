@@ -85,7 +85,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(DamageStatics().DefenseDef);
 }
 
-// 服务端在 Combat 中执行最终伤害计算，并把唯一一次暴击抽取结果写回当前 Damage Spec。
+// 服务端执行最终伤害计算；演出与 Victory 早退，其余路径把唯一暴击结果写回 Damage Spec。
 void UExecCalc_Damage::Execute_Implementation(
 	const FGameplayEffectCustomExecutionParameters& ExecutionParams,
 	FGameplayEffectCustomExecutionOutput& OutExecutionOutput) const
@@ -101,9 +101,15 @@ void UExecCalc_Damage::Execute_Implementation(
 	const AArenaGameState* ArenaGameState = TargetAvatar && TargetAvatar->GetWorld()
 		? TargetAvatar->GetWorld()->GetGameState<AArenaGameState>()
 		: nullptr;
-	if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossIntro)
+	const EArenaGamePhase GamePhase = ArenaGameState
+		? ArenaGameState->GetGamePhase()
+		: EArenaGamePhase::Waiting;
+	if (ArenaGameState
+		&& (GamePhase == EArenaGamePhase::BossIntro
+			|| GamePhase == EArenaGamePhase::BossOutro
+			|| GamePhase == EArenaGamePhase::Victory))
 	{
-		// Intro 是服务器权威的无伤害窗口，覆盖残留 Projectile、Area 与周期效果。
+		// Intro、Outro 与 Victory 是服务器权威无伤害窗口，覆盖残留 Projectile、Area 与周期效果。
 		return;
 	}
 

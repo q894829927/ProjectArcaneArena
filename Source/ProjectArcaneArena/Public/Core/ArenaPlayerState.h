@@ -27,6 +27,7 @@ struct FArenaOwnedUpgrade
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FArenaUpgradeStateChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FArenaVictoryRestartReadyChangedSignature, bool, bIsReady);
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaPlayerState : public APlayerState, public IAbilitySystemInterface
@@ -76,6 +77,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
 	bool HasSelectedUpgrade() const { return bHasSelectedUpgrade; }
 
+	// 返回该玩家是否已确认 Victory 重开。
+	UFUNCTION(BlueprintPure, Category = "Arena|Victory")
+	bool IsVictoryRestartReady() const { return bVictoryRestartReady; }
+
+	// 仅由服务器规则层更新该玩家的 Victory 重开确认状态。
+	void SetVictoryRestartReady(bool bNewReady);
+
 	// 以下写接口仅供服务器 GameMode 管理每轮候选、选择状态和永久堆叠。
 	void BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsset*>& InCandidates);
 	void CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade);
@@ -84,6 +92,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")
 	FArenaUpgradeStateChangedSignature OnUpgradeStateChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Victory")
+	FArenaVictoryRestartReadyChangedSignature OnVictoryRestartReadyChanged;
 
 private:
 	UFUNCTION()
@@ -94,6 +105,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_HasSelectedUpgrade();
+
+	UFUNCTION()
+	void OnRep_VictoryRestartReady();
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAbilitySystemComponent> AbilitySystemComponent;
@@ -112,4 +126,7 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_HasSelectedUpgrade)
 	bool bHasSelectedUpgrade = true;
+
+	UPROPERTY(ReplicatedUsing = OnRep_VictoryRestartReady)
+	bool bVictoryRestartReady = false;
 };

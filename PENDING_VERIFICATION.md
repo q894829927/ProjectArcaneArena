@@ -43,7 +43,7 @@
 
 - 最终 Boss 波只生成一个权威 Boss，`ActiveBoss` 指向该实例，Boss HUD 显示“悟空战将”和复制 Health。
 - Boss 头顶普通敌人血条不显示；HUD 不通过 Tick 或本地变量修改 Boss 属性。
-- Boss 死亡只扣减一次敌人数，不生成普通 Health/Energy Pickup，并进入 Victory。
+- Boss 死亡只扣减一次敌人数，不生成普通 Health/Energy Pickup，并依次进入 `BossOutro -> Victory`。
 - 无效 Boss 波在进入 Combat 前记录明确错误，不生成敌人，也不误判 Victory。
 
 ## GroundSlam 权威范围、预警与取消
@@ -215,6 +215,38 @@
 - 单人保持 `1200`，双人得到 `2100`；当前三人及以上按双人倍率封顶并记录警告。
 - 缩放过程不短暂触发 Phase 2/3，不直接写 Health 或 MaxHealth，也不会因重复调用叠加到 `3675`。
 - 缩放失败只记录 `LogArenaBoss`/`LogArenaWaves` 错误并保留基础 Boss，不阻塞 Boss 波和终局流程。
+
+## Boss 阶段五 B 死亡 Outro 与 Victory 重开
+
+### 资产与关卡配置
+
+1. `Content/Python/boss/setup_boss_victory_outro.py` 已成功执行一次并保存五个目标资产；再执行一次确认不创建 `_1/_2` 资产。
+2. 检查 `BP_ArenaBossCharacter`：`DeathMontage = AM_BossDeath`、`DeathMontagePlayRate = 1.0`、`DeathLifeSpan = 5.5`。
+3. 在 Boss 战区域放置或复用一个关闭自动激活的 `CameraActor`，添加 Actor Tag `BossVictoryCamera`；缺少时确认会回退 `BossIntroCamera`。
+4. 可选在 `WBP_PlayerHUD` 添加计划中的 Outro/Victory 控件；不添加时验证原生 fallback 仍可跳过和重开。
+
+### 单人 PIE
+
+1. 正常击杀最终 Boss，确认阶段依次为 `BossOutro -> Victory`，`RemainingEnemyCount = 0`，尸体和 Boss HUD 在 Outro 中保留，结束后才清空 `ActiveBoss`。
+2. 检查死亡 Montage、`GameplayCue.Boss.Death`、声音和死亡镜头各播放一次；完整演出约四秒，最后 `0.6s` 回切原顶视角或第三人称。
+3. Outro/Victory 中尝试移动、Sprint、五个主动技能，并让残留 Projectile、Area、Burning 命中，确认没有移动、施法或权威伤害。
+4. Space 按住不足 `1.5s` 后松开不跳过；持续满 `1.5s` 后把双方截止时间缩短到剩余 `0.6s` 回切窗口。
+5. Victory 点击 Restart 后立即由唯一玩家 Ready 并重载当前关卡；新局从 Waiting/首波开始，不残留 Boss、升级候选、Ready、HUD 或相机状态。
+6. 分别直接 Destroy Boss、在 Outro 中进入 Defeat、结束 PIE 和切换关卡，确认没有迟到 Timer、ViewTarget、输入锁或 Cue。
+
+### 双人网络
+
+1. Listen Server 与 Dedicated Server 双客户端分别验证只存在一个权威 Outro 时序，每端只播放一次本地镜头和死亡表现。
+2. 任一玩家完成 Space Hold 后，两端统一保留 `0.6s` 回切再进入 Victory；瞬时 RPC 或提前松开不能绕过服务器 Hold。
+3. 第一名玩家 Ready 时显示 `1/2 Ready` 且不旅行；取消 Ready 恢复 `0/2`；双方 Ready 后只执行一次服务器旅行。
+4. 一名未 Ready 玩家掉线后重新计算 Required；剩余玩家已 Ready 时继续重开，不永久卡住。
+
+### 通过标准
+
+- 正常 Boss 死亡不会立即 Victory，直接 Destroy 才使用带警告的安全直达路径。
+- Montage、Cue、镜头、死亡和伤害均不重复；客户端只负责表现，阶段、跳过、Ready 与旅行均由服务器决定。
+- UIOnly 只聚焦可聚焦 Restart Button，Output Log 不出现 `Attempting to focus Non-Focusable widget`。
+- 所有完成、跳过、中断、掉线和旅行路径都对称清理 Timer、Delegate、ViewTarget、输入模式、Ready 与持续表现。
 
 ## 玩家 Dash 预计算终点与网络回归
 
@@ -608,7 +640,7 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.
 ### 通过标准
 
 - 四波分别生成 `3M / 3M+2R / 4M+3R / 5M+4R`，总数仍为 `3 / 5 / 7 / 9`。
-- 前三波清理后进入 Upgrade，第四波清理后直接进入 Victory。
+- 四个普通波按奖励配置进入 Upgrade；最终 Boss 死亡后完成 `BossOutro -> Victory`。
 - Overload 在双构筑条件满足后可以进入第三次候选。
 - Overload 达到 MaxStacks 后不再出现。
 - 升级、Build Tags 和被动 Ability 跨波次保留。

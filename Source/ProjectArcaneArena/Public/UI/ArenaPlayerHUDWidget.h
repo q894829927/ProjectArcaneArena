@@ -15,6 +15,9 @@ class AArenaBossCharacter;
 class UProgressBar;
 class UTextBlock;
 class UWidget;
+class UButton;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FArenaVictoryRestartRequestedSignature);
 
 UCLASS()
 class PROJECTARCANEARENA_API UArenaPlayerHUDWidget : public UUserWidget
@@ -57,6 +60,20 @@ public:
 		const FText& InBossName,
 		float RemainingTime,
 		float SkipProgress);
+
+	// 刷新本地 Boss Outro 标题、服务器剩余时间和 Space 长按进度。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetBossOutroPresentation(bool bVisible, float RemainingTime, float SkipProgress);
+
+	// 刷新 Victory 面板和全员重开确认计数，按钮只提交本地意图。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetVictoryPresentation(bool bVisible, bool bLocalReady, int32 ReadyCount, int32 RequiredCount);
+
+	// 返回可聚焦的重开按钮，Controller 切换 UIOnly 时不聚焦不可交互容器。
+	UButton* GetVictoryRestartButton() const { return VictoryRestartButton; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|UI|Victory")
+	FArenaVictoryRestartRequestedSignature OnVictoryRestartRequested;
 
 	// 刷新生命显示，数值来自 GAS Attribute delegate。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
@@ -104,7 +121,7 @@ public:
 protected:
 	// 蓝图未提供准星控件时创建一个轻量居中占位，保证第三人称可直接使用。
 	virtual void NativeConstruct() override;
-	// Widget 销毁时解绑 GAS 委托，避免回调悬挂到已销毁 UI。
+	// Widget 销毁时隐藏演出/终局面板并解绑 GAS 委托，避免回调悬挂到已销毁 UI。
 	virtual void NativeDestruct() override;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
@@ -190,6 +207,33 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
 	TObjectPtr<UProgressBar> BossIntroSkipProgressBar;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Outro")
+	TObjectPtr<UWidget> BossOutroPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Outro")
+	TObjectPtr<UTextBlock> BossDefeatedText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Outro")
+	TObjectPtr<UTextBlock> BossOutroSkipText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Outro")
+	TObjectPtr<UProgressBar> BossOutroSkipProgressBar;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UWidget> VictoryPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UTextBlock> VictoryText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UButton> VictoryRestartButton;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UTextBlock> VictoryRestartButtonText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UTextBlock> VictoryRestartStatusText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Damage Feedback")
 	TObjectPtr<UWidget> DamageDirectionIndicator;
@@ -390,10 +434,13 @@ private:
 	void HandleBossHealthChanged(const FOnAttributeChangeData& Data);
 	// Boss MaxHealth 变化时使用最新 Health 重算比例。
 	void HandleBossMaxHealthChanged(const FOnAttributeChangeData& Data);
-	// 死亡标签先隐藏 HUD，ActiveBoss 清空后再完成正式解绑。
+	// 死亡标签把 Boss Health 刷为零并保留 Outro 面板，ActiveBoss 清空后再正式解绑。
 	void HandleBossDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	// 任一 Boss 阶段标签变化时重新解析最终阶段并刷新本地表现。
 	void HandleBossPhaseTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// 重开按钮点击后只广播本地 UI 意图，由 Controller 发送服务器 RPC。
+	UFUNCTION()
+	void HandleVictoryRestartButtonClicked();
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
 	TWeakObjectPtr<UArenaAttributeSet> BoundAttributeSet;

@@ -1,6 +1,9 @@
 #include "Character/ArenaBossCharacter.h"
 
 #include "AI/ArenaBossAIController.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Core/ArenaLogCategories.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
@@ -11,7 +14,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffect.h"
 
-// Boss 沿用敌人 ASC 与死亡链路，并为 Enrage 和人数缩放 GE 提供资产缺失时的原生安全默认。
+// Boss 沿用敌人 ASC 与死亡链路，并提供 Enrage、人数缩放和 Outro 尸体时长的原生默认。
 AArenaBossCharacter::AArenaBossCharacter()
 	: BossDisplayName(NSLOCTEXT("ArenaBossCharacter", "DefaultBossName", "悟空战将"))
 {
@@ -26,6 +29,7 @@ AArenaBossCharacter::AArenaBossCharacter()
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 720.0f, 0.0f);
 	EnrageEffectClass = UArenaGameplayEffect_BossEnrage::StaticClass();
 	PlayerCountScalingEffectClass = UArenaGameplayEffect_BossPlayerCountScaling::StaticClass();
+	DeathLifeSpan = 5.5f;
 }
 
 // 从复制的 ASC 阶段标签解析当前阶段，客户端和 HUD 不依赖服务器私有变量。
@@ -376,6 +380,7 @@ bool AArenaBossCharacter::RestoreHealthAfterPlayerCountScaling()
 void AArenaBossCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	OnEnemyDeath.AddUniqueDynamic(this, &AArenaBossCharacter::HandleBossPhaseDeath);
 	if (!HasAuthority())
 	{
 		return;
@@ -392,6 +397,7 @@ void AArenaBossCharacter::BeginPlay()
 // 销毁路径先清理召唤物与 GAS 阶段状态，再解除委托，避免子 Actor、Cue 或回调遗留到下一张地图。
 void AArenaBossCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	OnEnemyDeath.RemoveDynamic(this, &AArenaBossCharacter::HandleBossPhaseDeath);
 	if (HasAuthority())
 	{
 		DestroyAllBossSummons();
@@ -415,8 +421,6 @@ void AArenaBossCharacter::BindBossPhaseDelegates()
 				&AArenaBossCharacter::HandleBossPhaseHealthChanged);
 	}
 
-	OnEnemyDeath.AddUniqueDynamic(this, &AArenaBossCharacter::HandleBossPhaseDeath);
-
 	if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
 	{
 		BoundBossGameState = ArenaGameState;
@@ -439,7 +443,6 @@ void AArenaBossCharacter::UnbindBossPhaseDelegates()
 	}
 	BossPhaseHealthChangedDelegateHandle.Reset();
 
-	OnEnemyDeath.RemoveDynamic(this, &AArenaBossCharacter::HandleBossPhaseDeath);
 	if (AArenaGameState* ArenaGameState = BoundBossGameState.Get())
 	{
 		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(
@@ -662,13 +665,43 @@ void AArenaBossCharacter::HandleBossPhaseHealthChanged(const FOnAttributeChangeD
 	}
 }
 
-// 死亡广播比 LifeSpan 销毁更早，立即清除召唤物、Enrage Cue 和阶段标签。
+// 各端死亡广播播放一次 Montage；服务器同时清理阶段/召唤物并执行唯一死亡 Cue。
 void AArenaBossCharacter::HandleBossPhaseDeath(AArenaEnemyCharacter* Enemy)
 {
-	if (HasAuthority() && Enemy == this)
+	if (Enemy != this)
+	{
+		return;
+	}
+
+	if (!bHasPlayedBossDeathPresentation)
+	{
+		bHasPlayedBossDeathPresentation = true;
+		if (DeathMontage)
+		{
+			if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
+			{
+				AnimInstance->Montage_Play(DeathMontage, FMath::Max(DeathMontagePlayRate, 0.01f));
+			}
+		}
+	}
+
+	if (HasAuthority())
 	{
 		DestroyAllBossSummons();
 		CleanupBossPhaseState();
+
+		if (!bHasExecutedBossDeathCue)
+		{
+			bHasExecutedBossDeathCue = true;
+			if (UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent())
+			{
+				FGameplayCueParameters CueParameters;
+				CueParameters.Location = GetActorLocation();
+				CueParameters.Instigator = this;
+				CueParameters.EffectCauser = this;
+				BossASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Boss_Death, CueParameters);
+			}
+		}
 	}
 }
 

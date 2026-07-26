@@ -10,7 +10,7 @@ UArenaGameplayAbility::UArenaGameplayAbility()
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 }
 
-// 先执行 GAS 原生资格判断，再以复制阶段阻止 Intro 战斗技能并保留开发环境的服务器拒绝注入。
+// 先执行 GAS 原生资格判断，再阻止演出/Victory 战斗技能并保留开发环境的服务器拒绝注入。
 bool UArenaGameplayAbility::CanActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
@@ -27,7 +27,13 @@ bool UArenaGameplayAbility::CanActivateAbility(
 	const AArenaGameState* ArenaGameState = AvatarActor && AvatarActor->GetWorld()
 		? AvatarActor->GetWorld()->GetGameState<AArenaGameState>()
 		: nullptr;
-	if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossIntro)
+	const EArenaGamePhase GamePhase = ArenaGameState
+		? ArenaGameState->GetGamePhase()
+		: EArenaGamePhase::Waiting;
+	const bool bBlocksCombatAbilities = GamePhase == EArenaGamePhase::BossIntro
+		|| GamePhase == EArenaGamePhase::BossOutro
+		|| GamePhase == EArenaGamePhase::Victory;
+	if (ArenaGameState && bBlocksCombatAbilities)
 	{
 		const FGameplayTagContainer& AbilityAssetTags = GetAssetTags();
 		const bool bIsPlayerActiveAbility =

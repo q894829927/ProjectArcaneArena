@@ -27,7 +27,7 @@ AArenaGameMode::AArenaGameMode()
 	WaveManagerClass = AArenaWaveManager::StaticClass();
 }
 
-// 服务器生成本局随机种子并创建 WaveManager；首波等待至少一名玩家登录后再安排。
+// 服务器生成随机种子、绑定阶段委托并创建 WaveManager；首波等待至少一名玩家登录后再安排。
 void AArenaGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -37,6 +37,10 @@ void AArenaGameMode::BeginPlay()
 	}
 
 	InitializeUpgradeRandomStream();
+	if (AArenaGameState* MutableArenaGameState = GetGameState<AArenaGameState>())
+	{
+		MutableArenaGameState->OnGamePhaseChanged.AddUniqueDynamic(this, &AArenaGameMode::HandleGamePhaseChanged);
+	}
 	if (!WaveManagerClass)
 	{
 		return;
@@ -56,6 +60,22 @@ void AArenaGameMode::BeginPlay()
 	{
 		ScheduleInitialWaveStart();
 	}
+}
+
+// 关卡结束或服务器旅行前清理阶段委托与首波计时器，避免旧 GameMode 收到迟到回调。
+void AArenaGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(InitialWaveTimerHandle);
+	if (AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>())
+	{
+		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(this, &AArenaGameMode::HandleGamePhaseChanged);
+	}
+	if (WaveManager)
+	{
+		WaveManager->OnUpgradePhaseStarted.RemoveAll(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
 }
 
 // Super 完成 RestartPlayer/Possess 后 ASC 已初始化，此时测试升级可复用正式服务器授予流程。
@@ -98,7 +118,7 @@ void AArenaGameMode::InitializeUpgradeRandomStream()
 		UpgradeRandomSeedOverride > 0 ? TEXT(" (override)") : TEXT(""));
 }
 
-// Waiting 阶段按最近登录玩家重置首波等待；Upgrade 阶段则补发候选并重新检查波次推进。
+// 登录时按 Waiting、Upgrade 或 Victory 阶段分别重排首波、补发候选或刷新重开人数。
 void AArenaGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
@@ -118,13 +138,23 @@ void AArenaGameMode::PostLogin(APlayerController* NewPlayer)
 		PrepareUpgradeChoicesForPlayer(NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr);
 		TryAdvanceAfterUpgradeSelections();
 	}
+	else if (ArenaGameState->GetGamePhase() == EArenaGamePhase::Victory)
+	{
+		if (AArenaPlayerState* ArenaPlayerState = NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr)
+		{
+			ArenaPlayerState->SetVictoryRestartReady(false);
+		}
+		RefreshVictoryRestartCounts();
+	}
 }
 
-// 玩家离开后重新检查剩余参与者的选择状态，避免断线玩家永久阻塞下一波。
+// 玩家离开后重新检查升级选择和 Victory Ready，避免断线玩家永久阻塞下一波或重开。
 void AArenaGameMode::Logout(AController* Exiting)
 {
 	Super::Logout(Exiting);
 	TryAdvanceAfterUpgradeSelections();
+	RefreshVictoryRestartCounts();
+	TryRestartAfterVictoryReady();
 }
 
 // 提供给后续升级选择和当前手动测试的服务器波次推进入口。
@@ -140,6 +170,34 @@ void AArenaGameMode::StartNextWave()
 bool AArenaGameMode::RequestBossIntroSkip(AArenaPlayerController* RequestingController)
 {
 	return HasAuthority() && WaveManager && WaveManager->RequestBossIntroSkip(RequestingController);
+}
+
+// 只在服务器转发有效 Controller 的 Outro 跳过请求，最终阶段和死亡 Boss 由 WaveManager 重验。
+bool AArenaGameMode::RequestBossOutroSkip(AArenaPlayerController* RequestingController)
+{
+	return HasAuthority() && WaveManager && WaveManager->RequestBossOutroSkip(RequestingController);
+}
+
+// 服务器验证 Victory 参与者后更新个人 Ready，并在满足全员条件时尝试重载。
+void AArenaGameMode::SetVictoryRestartReady(AArenaPlayerController* RequestingController, bool bReady)
+{
+	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	AArenaPlayerState* ArenaPlayerState = RequestingController
+		? RequestingController->GetPlayerState<AArenaPlayerState>()
+		: nullptr;
+	if (!HasAuthority()
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory
+		|| !ArenaPlayerState
+		|| !ArenaPlayerState->GetArenaAbilitySystemComponent()
+		|| !ArenaGameState->PlayerArray.Contains(ArenaPlayerState))
+	{
+		return;
+	}
+
+	ArenaPlayerState->SetVictoryRestartReady(bReady);
+	RefreshVictoryRestartCounts();
+	TryRestartAfterVictoryReady();
 }
 
 // 每次初始登录都重新开始同一计时器，让同批 PIE/Listen 客户端完成 PlayerState 注册后再快照人数。
@@ -576,6 +634,7 @@ void AArenaGameMode::NotifyPlayerDeath()
 	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
 	if (!HasAuthority() || !ArenaGameState
 		|| ArenaGameState->GetGamePhase() == EArenaGamePhase::Defeat
+		|| ArenaGameState->GetGamePhase() == EArenaGamePhase::BossOutro
 		|| ArenaGameState->GetGamePhase() == EArenaGamePhase::Victory)
 	{
 		return;
@@ -606,4 +665,90 @@ void AArenaGameMode::NotifyPlayerDeath()
 		}
 		ArenaGameState->SetGamePhase(EArenaGamePhase::Defeat);
 	}
+}
+
+// 进入 Victory 时清空旧确认并建立当前参与人数，退出时移除所有终局 Ready 状态。
+void AArenaGameMode::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (!ArenaGameState)
+	{
+		return;
+	}
+
+	if (NewPhase == EArenaGamePhase::Victory)
+	{
+		bVictoryRestartTravelStarted = false;
+		for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+		{
+			if (AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState))
+			{
+				ArenaPlayerState->SetVictoryRestartReady(false);
+			}
+		}
+		RefreshVictoryRestartCounts();
+	}
+	else if (OldPhase == EArenaGamePhase::Victory)
+	{
+		for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+		{
+			if (AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState))
+			{
+				ArenaPlayerState->SetVictoryRestartReady(false);
+			}
+		}
+		ArenaGameState->SetVictoryRestartCounts(0, 0);
+	}
+}
+
+// 依据当前仍连接且拥有 ASC 的 PlayerState 重新汇总 Victory Ready 计数。
+void AArenaGameMode::RefreshVictoryRestartCounts()
+{
+	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (!HasAuthority() || !ArenaGameState || ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory)
+	{
+		return;
+	}
+
+	int32 ReadyCount = 0;
+	int32 RequiredCount = 0;
+	for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+	{
+		const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
+		if (!ArenaPlayerState || !ArenaPlayerState->GetArenaAbilitySystemComponent())
+		{
+			continue;
+		}
+
+		++RequiredCount;
+		ReadyCount += ArenaPlayerState->IsVictoryRestartReady() ? 1 : 0;
+	}
+	ArenaGameState->SetVictoryRestartCounts(ReadyCount, RequiredCount);
+}
+
+// 全员确认后使用服务器旅行重载当前关卡，并通过防重标记避免重复请求。
+void AArenaGameMode::TryRestartAfterVictoryReady()
+{
+	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (!HasAuthority()
+		|| bVictoryRestartTravelStarted
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory)
+	{
+		return;
+	}
+
+	const int32 RequiredCount = ArenaGameState->GetVictoryRestartRequiredCount();
+	if (RequiredCount <= 0 || ArenaGameState->GetVictoryRestartReadyCount() < RequiredCount)
+	{
+		return;
+	}
+
+	bVictoryRestartTravelStarted = true;
+	GetWorld()->ServerTravel(TEXT("?Restart"), false);
 }
