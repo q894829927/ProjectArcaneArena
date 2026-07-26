@@ -44,6 +44,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|Wave")
 	void StartNextWave();
 
+	// 服务器接收已完成 Hold 的参战玩家请求，并交给 WaveManager 缩短当前 Boss Intro。
+	bool RequestBossIntroSkip(AArenaPlayerController* RequestingController);
+
 	// 接收 Controller 的选择请求，全部规则由服务器重新验证后才应用升级。
 	void SubmitUpgradeSelection(AArenaPlayerController* RequestingController, FName UpgradeID);
 

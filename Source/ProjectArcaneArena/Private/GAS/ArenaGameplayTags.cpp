@@ -25,6 +25,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_LightningStorm, "Ability.LightningStorm", "Lightning storm area ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_PlayerActive, "Ability.Type.PlayerActive", "Player active ability that emits an authoritative cast event after commit.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Type_EnergySkill, "Ability.Type.EnergySkill", "Player active ability whose configured cost consumes Energy.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy, "Ability.Enemy", "Parent tag for enemy combat abilities blocked outside authoritative combat.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_Overload, "Ability.Passive.Overload", "Passive elemental Overload ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnKill, "Ability.Passive.EnergyOnKill", "Passive Energy recovery on enemy kill ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Passive_EnergyOnCrit, "Ability.Passive.EnergyOnCrit", "Passive Energy recovery on critical damage ability.");

@@ -1,6 +1,7 @@
 #include "GAS/ExecCalc_Damage.h"
 
 #include "AbilitySystemComponent.h"
+#include "Core/ArenaGameState.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
@@ -84,7 +85,7 @@ UExecCalc_Damage::UExecCalc_Damage()
 	RelevantAttributesToCapture.Add(DamageStatics().DefenseDef);
 }
 
-// 服务端执行最终伤害计算，并把唯一一次暴击抽取结果写回当前 Damage Spec。
+// 服务端在 Combat 中执行最终伤害计算，并把唯一一次暴击抽取结果写回当前 Damage Spec。
 void UExecCalc_Damage::Execute_Implementation(
 	const FGameplayEffectCustomExecutionParameters& ExecutionParams,
 	FGameplayEffectCustomExecutionOutput& OutExecutionOutput) const
@@ -93,6 +94,16 @@ void UExecCalc_Damage::Execute_Implementation(
 	if (!TargetASC || TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Invincible))
 	{
 		// 无目标或目标无敌时不输出任何 modifier，AttributeSet 不会收到 Damage。
+		return;
+	}
+
+	const AActor* TargetAvatar = TargetASC->GetAvatarActor();
+	const AArenaGameState* ArenaGameState = TargetAvatar && TargetAvatar->GetWorld()
+		? TargetAvatar->GetWorld()->GetGameState<AArenaGameState>()
+		: nullptr;
+	if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossIntro)
+	{
+		// Intro 是服务器权威的无伤害窗口，覆盖残留 Projectile、Area 与周期效果。
 		return;
 	}
 

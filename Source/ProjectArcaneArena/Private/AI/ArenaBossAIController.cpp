@@ -198,8 +198,14 @@ void AArenaBossAIController::HandleBossStateTagChanged(const FGameplayTag Callba
 	RefreshBossLogicState();
 }
 
-// 服务器阶段变化直接控制 Brain，避免 Victory/Defeat 后等待 Service 下一次 Tick。
+// 服务器阶段变化直接控制 Brain，Intro 结束时先设置回切缓冲再恢复 BehaviorTree。
 void AArenaBossAIController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
 {
+	if (OldPhase == EArenaGamePhase::BossIntro && NewPhase == EArenaGamePhase::Combat)
+	{
+		AbilityActivationAllowedTime = GetWorld()
+			? GetWorld()->GetTimeSeconds() + FMath::Max(PostBossIntroAbilityDelay, 0.0f)
+			: 0.0f;
+	}
 	RefreshBossLogicState();
 }

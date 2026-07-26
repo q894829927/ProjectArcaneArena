@@ -300,13 +300,26 @@ Status meanings:
 * `Content/Python/boss/setup_boss_player_scaling.py` provides idempotent creation and linking for `GE_Boss_PlayerCountScaling` and the Boss multiplier settings without modifying Behavior Tree, StartupAbilities or wave data.
 * Phase 3B compilation, asset setup and the two-player core path are verified: the initial wave starts after both clients register, the server snapshots two valid PlayerStates, and Host/Client observe `2100/2100` Boss Health/MaxHealth. Single-player counting, duplicate-call rejection, snapshot immutability and scaled phase thresholds remain pending; Phase 3A Stun/Defeat/destruction cleanup and the full two-player Boss regression also remain pending.
 
-### Boss Summon Minions — Partial
+### Boss Summon Minions — Verified
 
 * `UArenaGameplayAbility_BossSummonMinions` is a Phase 3-only `ServerOnly` Boss attack. It checks target/path, remaining capacity and NavMesh/capsule-valid spawn points before Commit, then locks up to two positions, plays a `0.9s` casting window and spawns configured melee/ranged enemies in fixed order.
 * `AArenaBossCharacter` owns a non-replicated weak summon registry with a default live limit of four. Death and destruction callbacks release capacity; Boss death, destruction or leaving Combat destroys every remaining summon and removes delegates/tags.
 * Summons are spawned directly by the Boss and never enter `AArenaWaveManager::AliveEnemies`, so they do not change `RemainingEnemyCount`, block Boss Victory or use the normal-wave pickup path. Clients observe the existing replicated enemy Actors and server AI.
 * `Enemy.Summoned`, `Enemy.Summoned.Trigger.OnKill` and `Enemy.Summoned.Trigger.OnCrit` make passive-event eligibility explicit. The authoritative damage route leaves ordinary targets unchanged and only emits summon OnKill/OnCrit events when the corresponding leaf tag is present; elemental/status and typed damage events remain unchanged.
-* Native cooldown and Cast/Spawn GameplayCue tags plus `setup_boss_summon_minions.py` and manual BT instructions exist. Compilation, editor asset generation, `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait` connection, PIE lifecycle and multiplayer verification remain pending.
+* Native cooldown and Cast/Spawn GameplayCue tags, `setup_boss_summon_minions.py`, the four unique Boss StartupAbilities and the manual `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait` BT order are configured and exercised in PIE.
+* Verification confirmed Phase 3-only activation, one melee plus one ranged summon per cast, a four-summon cap and immediate capacity release on summon death. Summons do not change `RemainingEnemyCount` or drop ordinary recovery pickups.
+* Boss death immediately enters Victory and removes every surviving summon. Stun, Boss death and terminal-phase cancellation during the windup do not produce delayed summons.
+* Burning, Shocked, Overload, OnKill, OnCrit, Dash Trail and ShieldBreakBlast have been verified against summoned enemies.
+
+### Boss Intro Synchronization — Verified
+
+* `EArenaGamePhase::BossIntro` and replicated `FArenaBossIntroTiming` provide one authority-owned five-second Intro clock based on `AGameStateBase::GetServerWorldTimeSeconds()`. Boss waves publish the scaled `ActiveBoss` and enemy count before entering Intro; normal waves still enter Combat directly.
+* Intro freezes player CharacterMovement and Sprint on authority and clients, ignores local move/look/view-toggle input, cancels active `Ability.Type.PlayerActive` abilities, blocks new player-active and `Ability.Enemy` activations in the shared Ability base, and rejects Damage meta-attribute consumption without removing passive upgrades or persistent Shield. Boss phase initialization and Health-threshold evaluation are explicitly limited to Combat, so Intro cannot publish `Boss.Phase.One` early.
+* Each local `AArenaPlayerController` independently selects the closest placed `CameraActor` tagged `BossIntroCamera`, blends in and returns to its current Pawn during the replicated `0.6s` tail. Camera transforms and top-down/third-person state are never replicated; missing cameras retain the player view and log one warning.
+* Holding Space sends only held/released intent. The server owns the two-second timer, revalidates the participating PlayerState, phase and living Boss, then shortens the shared end time while retaining the blend-out window. Duplicate completed requests are idempotent.
+* `UArenaPlayerHUDWidget` exposes optional Intro name/countdown/prompt/progress controls and creates a native fallback when the current WBP omits them. `AArenaBossAIController` applies a `0.5s` post-Intro ability grace before existing BT attack branches can activate.
+* Boss death, direct destruction, Defeat, manager destruction and normal completion clear authority timers; local phase/Boss/timing delegate cleanup restores ViewTarget, cursor, reticle and input.
+* Verification confirmed the tagged level CameraActor, authority Intro clock, movement/ability/damage freeze, Space hold skip with the retained blend-out window, local camera restoration and transition into Phase 1 Combat.
 
 ### Gameplay State Control — Partial
 

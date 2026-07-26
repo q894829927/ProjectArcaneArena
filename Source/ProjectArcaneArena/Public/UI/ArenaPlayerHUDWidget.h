@@ -50,6 +50,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetBossHealthValues(const FText& InBossName, float InHealth, float InMaxHealth);
 
+	// 刷新本地 Boss Intro 名称、服务器倒计时与 Space 长按进度，不拥有演出时序。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetBossIntroPresentation(
+		bool bVisible,
+		const FText& InBossName,
+		float RemainingTime,
+		float SkipProgress);
+
 	// 刷新生命显示，数值来自 GAS Attribute delegate。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetHealthValues(float InHealth, float InMaxHealth);
@@ -167,6 +175,21 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> BossHealthText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UWidget> BossIntroPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UTextBlock> BossIntroText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UTextBlock> BossIntroCountdownText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UTextBlock> BossIntroSkipText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UProgressBar> BossIntroSkipProgressBar;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Damage Feedback")
 	TObjectPtr<UWidget> DamageDirectionIndicator;

@@ -1,13 +1,17 @@
 #include "Core/ArenaWaveManager.h"
 
+#include "AbilitySystemComponent.h"
 #include "Character/ArenaBossCharacter.h"
 #include "Character/ArenaEnemyCharacter.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/ArenaGameState.h"
+#include "Core/ArenaPlayerController.h"
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaWaveDataAsset.h"
 #include "Engine/TargetPoint.h"
 #include "EngineUtils.h"
+#include "GAS/ArenaAbilitySystemComponent.h"
+#include "GAS/ArenaGameplayTags.h"
 #include "Item/ArenaPickupActor.h"
 #include "Item/ArenaPickupDropTableDataAsset.h"
 #include "TimerManager.h"
@@ -69,10 +73,11 @@ void AArenaWaveManager::Initialize(
 	}
 }
 
-// 从 Waiting/Upgrade 推进一波；Combat、Victory、Defeat 阶段拒绝重复调用。
+// 从 Waiting/Upgrade 推进一波；Boss 波在生成完成后进入 Intro，普通波直接进入 Combat。
 void AArenaWaveManager::StartNextWave()
 {
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
+	ClearBossIntroTimer();
 
 	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
 	if (!HasAuthority() || !WaveData || !ArenaGameState || SpawnPoints.IsEmpty())
@@ -107,7 +112,10 @@ void AArenaWaveManager::StartNextWave()
 	ArenaGameState->SetActiveBoss(nullptr);
 	ArenaGameState->SetCurrentWaveIndex(CurrentWaveArrayIndex + 1);
 	ArenaGameState->SetRemainingEnemyCount(0);
-	ArenaGameState->SetGamePhase(EArenaGamePhase::Combat);
+	if (!bCurrentWaveIsBossWave)
+	{
+		ArenaGameState->SetGamePhase(EArenaGamePhase::Combat);
+	}
 	UE_LOG(LogArenaWaves, Log, TEXT("Starting wave %d with %d pending enemies."), CurrentWaveArrayIndex + 1, PendingEnemyClasses.Num());
 
 	SpawnNextEnemy();
@@ -127,6 +135,7 @@ void AArenaWaveManager::StopForDefeat()
 {
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
+	ClearBossIntroTimer();
 	PendingEnemyClasses.Reset();
 	NextPendingSpawnIndex = 0;
 	if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
@@ -150,11 +159,13 @@ void AArenaWaveManager::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
+	ClearBossIntroTimer();
 	for (AArenaEnemyCharacter* Enemy : AliveEnemies)
 	{
 		if (Enemy)
 		{
 			Enemy->OnEnemyDeath.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
+			Enemy->OnDestroyed.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDestroyed);
 		}
 	}
 	if (HasAuthority())
@@ -234,7 +245,7 @@ bool AArenaWaveManager::BuildPendingSpawnList(int32 WaveArrayIndex)
 	return !PendingEnemyClasses.IsEmpty();
 }
 
-// 每次计时器只生成一个敌人；Boss 会先完成人数缩放再写入 ActiveBoss 和剩余数量。
+// 每次计时器只生成一个敌人；Boss 会先完成人数缩放和复制状态，再启动 Intro。
 void AArenaWaveManager::SpawnNextEnemy()
 {
 	if (!PendingEnemyClasses.IsValidIndex(NextPendingSpawnIndex) || SpawnPoints.IsEmpty())
@@ -257,8 +268,10 @@ void AArenaWaveManager::SpawnNextEnemy()
 		SpawnParameters);
 	if (Enemy)
 	{
+		bool bShouldBeginBossIntro = false;
 		AliveEnemies.Add(Enemy);
 		Enemy->OnEnemyDeath.AddUniqueDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
+		Enemy->OnDestroyed.AddUniqueDynamic(this, &AArenaWaveManager::HandleEnemyDestroyed);
 		if (bCurrentWaveIsBossWave)
 		{
 			AArenaBossCharacter* Boss = Cast<AArenaBossCharacter>(Enemy);
@@ -273,9 +286,14 @@ void AArenaWaveManager::SpawnNextEnemy()
 			if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
 			{
 				ArenaGameState->SetActiveBoss(Boss);
+				bShouldBeginBossIntro = Boss != nullptr;
 			}
 		}
 		UpdateReplicatedEnemyCount();
+		if (bShouldBeginBossIntro)
+		{
+			BeginBossIntro();
+		}
 	}
 	else
 	{
@@ -287,6 +305,130 @@ void AArenaWaveManager::SpawnNextEnemy()
 	{
 		GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 		CheckWaveCompletion();
+	}
+}
+
+// Boss 已完成权威生成与缩放后写入统一时序，并只取消玩家主动技能而保留永久被动。
+void AArenaWaveManager::BeginBossIntro()
+{
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	AArenaBossCharacter* Boss = ArenaGameState ? ArenaGameState->GetActiveBoss() : nullptr;
+	if (!HasAuthority() || !ArenaGameState || !Boss || !bCurrentWaveIsBossWave)
+	{
+		UE_LOG(LogArenaWaves, Error, TEXT("Boss Intro could not start because the authority Boss wave state is incomplete."));
+		return;
+	}
+
+	FGameplayTagContainer PlayerActiveAbilityTags;
+	PlayerActiveAbilityTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+	{
+		AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
+		if (UArenaAbilitySystemComponent* PlayerASC = ArenaPlayerState
+			? ArenaPlayerState->GetArenaAbilitySystemComponent()
+			: nullptr)
+		{
+			PlayerASC->CancelAbilities(&PlayerActiveAbilityTags);
+		}
+	}
+
+	const float IntroDuration = FMath::Max(BossIntroDuration, 0.1f);
+	FArenaBossIntroTiming IntroTiming;
+	IntroTiming.EndServerTimeSeconds = ArenaGameState->GetServerWorldTimeSeconds() + IntroDuration;
+	IntroTiming.BlendOutDuration = FMath::Clamp(BossIntroBlendDuration, 0.0f, IntroDuration);
+	ArenaGameState->SetBossIntroTiming(IntroTiming);
+	ArenaGameState->SetGamePhase(EArenaGamePhase::BossIntro);
+
+	GetWorldTimerManager().SetTimer(
+		BossIntroTimerHandle,
+		this,
+		&AArenaWaveManager::FinishBossIntro,
+		IntroDuration,
+		false);
+	UE_LOG(LogArenaWaves, Log, TEXT("Boss Intro started for %s and will run for %.2f seconds."),
+		*GetNameSafe(Boss),
+		IntroDuration);
+}
+
+// Intro 截止时重新验证 Boss 与阶段，确保死亡或终局不会迟到进入 Combat。
+void AArenaWaveManager::FinishBossIntro()
+{
+	ClearBossIntroTimer();
+
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	AArenaBossCharacter* Boss = ArenaGameState ? ArenaGameState->GetActiveBoss() : nullptr;
+	const UAbilitySystemComponent* BossASC = Boss ? Boss->GetAbilitySystemComponent() : nullptr;
+	if (!HasAuthority()
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::BossIntro
+		|| !Boss
+		|| (BossASC && BossASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)))
+	{
+		return;
+	}
+
+	ArenaGameState->SetGamePhase(EArenaGamePhase::Combat);
+	UE_LOG(LogArenaWaves, Log, TEXT("Boss Intro finished for %s; entering Combat."), *GetNameSafe(Boss));
+}
+
+// 任一有效参战玩家完成服务器 Hold 后都可缩短 Intro，但必须保留复制的回切窗口。
+bool AArenaWaveManager::RequestBossIntroSkip(AArenaPlayerController* RequestingController)
+{
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	AArenaPlayerState* RequestingPlayerState = RequestingController
+		? RequestingController->GetPlayerState<AArenaPlayerState>()
+		: nullptr;
+	AArenaBossCharacter* Boss = ArenaGameState ? ArenaGameState->GetActiveBoss() : nullptr;
+	if (!HasAuthority()
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::BossIntro
+		|| !RequestingPlayerState
+		|| !RequestingPlayerState->GetArenaAbilitySystemComponent()
+		|| !ArenaGameState->PlayerArray.Contains(RequestingPlayerState)
+		|| !Boss
+		|| (Boss->GetAbilitySystemComponent()
+			&& Boss->GetAbilitySystemComponent()->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)))
+	{
+		return false;
+	}
+
+	const float BlendOutDuration = FMath::Max(ArenaGameState->GetBossIntroTiming().BlendOutDuration, 0.0f);
+	const float RemainingTime = ArenaGameState->GetBossIntroRemainingTime();
+	if (RemainingTime <= BlendOutDuration + KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	FArenaBossIntroTiming ShortenedTiming = ArenaGameState->GetBossIntroTiming();
+	ShortenedTiming.EndServerTimeSeconds = ArenaGameState->GetServerWorldTimeSeconds() + BlendOutDuration;
+	ArenaGameState->SetBossIntroTiming(ShortenedTiming);
+	ClearBossIntroTimer();
+	if (BlendOutDuration <= KINDA_SMALL_NUMBER)
+	{
+		FinishBossIntro();
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimer(
+			BossIntroTimerHandle,
+			this,
+			&AArenaWaveManager::FinishBossIntro,
+			BlendOutDuration,
+			false);
+	}
+
+	UE_LOG(LogArenaWaves, Log, TEXT("%s completed the Boss Intro skip hold; Combat begins after %.2f seconds."),
+		*GetNameSafe(RequestingPlayerState),
+		BlendOutDuration);
+	return true;
+}
+
+// 所有退出路径复用同一幂等清理入口，避免迟到的 Intro 完成回调改变终局阶段。
+void AArenaWaveManager::ClearBossIntroTimer()
+{
+	if (GetWorld())
+	{
+		GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
 	}
 }
 
@@ -329,8 +471,10 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 	}
 
 	Enemy->OnEnemyDeath.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
+	Enemy->OnDestroyed.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDestroyed);
 	if (Cast<AArenaBossCharacter>(Enemy))
 	{
+		ClearBossIntroTimer();
 		if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
 		{
 			ArenaGameState->SetActiveBoss(nullptr);
@@ -340,6 +484,29 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 	{
 		// Boss Foundation 明确跳过普通恢复掉落，普通敌人保持既有全局掉落表。
 		TrySpawnPickupDrop(Enemy);
+	}
+	UpdateReplicatedEnemyCount();
+	CheckWaveCompletion();
+}
+
+// 直接销毁受管理敌人时执行无掉落清理；正常死亡已先移出 AliveEnemies，因此不会重复扣减。
+void AArenaWaveManager::HandleEnemyDestroyed(AActor* DestroyedActor)
+{
+	AArenaEnemyCharacter* Enemy = Cast<AArenaEnemyCharacter>(DestroyedActor);
+	if (!HasAuthority() || !Enemy || AliveEnemies.Remove(Enemy) == 0)
+	{
+		return;
+	}
+
+	Enemy->OnEnemyDeath.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
+	Enemy->OnDestroyed.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDestroyed);
+	if (Cast<AArenaBossCharacter>(Enemy))
+	{
+		ClearBossIntroTimer();
+		if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
+		{
+			ArenaGameState->SetActiveBoss(nullptr);
+		}
 	}
 	UpdateReplicatedEnemyCount();
 	CheckWaveCompletion();

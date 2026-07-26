@@ -13,12 +13,44 @@ enum class EArenaGamePhase : uint8
 	Combat,
 	Upgrade,
 	Victory,
-	Defeat
+	Defeat,
+	BossIntro
+};
+
+USTRUCT(BlueprintType)
+struct PROJECTARCANEARENA_API FArenaBossIntroTiming
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Boss Intro")
+	float EndServerTimeSeconds = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Boss Intro")
+	float BlendOutDuration = 0.0f;
+
+	// 使用近似比较判断复制时序是否发生有效变化，避免浮点微差重复广播。
+	bool operator==(const FArenaBossIntroTiming& Other) const
+	{
+		return FMath::IsNearlyEqual(EndServerTimeSeconds, Other.EndServerTimeSeconds)
+			&& FMath::IsNearlyEqual(BlendOutDuration, Other.BlendOutDuration);
+	}
+
+	// 复用相等比较提供服务器 Setter 的幂等更新判断。
+	bool operator!=(const FArenaBossIntroTiming& Other) const
+	{
+		return !(*this == Other);
+	}
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaGamePhaseChangedSignature, EArenaGamePhase, OldPhase, EArenaGamePhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaIntegerStateChangedSignature, int32, OldValue, int32, NewValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaActiveBossChangedSignature, AArenaBossCharacter*, OldBoss, AArenaBossCharacter*, NewBoss);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FArenaBossIntroTimingChangedSignature,
+	FArenaBossIntroTiming,
+	OldTiming,
+	FArenaBossIntroTiming,
+	NewTiming);
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaGameState : public AGameStateBase
@@ -46,6 +78,14 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	AArenaBossCharacter* GetActiveBoss() const { return ActiveBoss; }
 
+	// 返回服务器复制的 Boss Intro 结束时间与镜头回切时长。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss Intro")
+	FArenaBossIntroTiming GetBossIntroTiming() const { return BossIntroTiming; }
+
+	// 使用 GameState 同步服务器时钟计算本地剩余演出时间。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss Intro")
+	float GetBossIntroRemainingTime() const;
+
 	// 仅由服务器规则层更新阶段，并通过复制委托驱动客户端表现。
 	void SetGamePhase(EArenaGamePhase NewPhase);
 	// 仅由服务器波次管理器写入当前波次，索引从 1 开始，0 表示尚未开始。
@@ -56,6 +96,8 @@ public:
 	void SetUpgradeRandomSeed(int32 NewUpgradeRandomSeed);
 	// 仅由服务器波次管理器设置当前 Boss，HUD 通过复制委托观察生命周期。
 	void SetActiveBoss(AArenaBossCharacter* NewActiveBoss);
+	// 仅由服务器写入 Boss Intro 时序，客户端相机与 HUD 共享同一服务器截止时间。
+	void SetBossIntroTiming(const FArenaBossIntroTiming& NewTiming);
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaGamePhaseChangedSignature OnGamePhaseChanged;
@@ -71,6 +113,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaActiveBossChangedSignature OnActiveBossChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Boss Intro")
+	FArenaBossIntroTimingChangedSignature OnBossIntroTimingChanged;
 
 protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GamePhase, Category = "Arena|Game State")
@@ -88,6 +133,9 @@ protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ActiveBoss, Category = "Arena|Game State")
 	TObjectPtr<AArenaBossCharacter> ActiveBoss;
 
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_BossIntroTiming, Category = "Arena|Boss Intro")
+	FArenaBossIntroTiming BossIntroTiming;
+
 	UFUNCTION()
 	void OnRep_GamePhase(EArenaGamePhase OldPhase);
 
@@ -102,4 +150,7 @@ protected:
 
 	UFUNCTION()
 	void OnRep_ActiveBoss(AArenaBossCharacter* OldActiveBoss);
+
+	UFUNCTION()
+	void OnRep_BossIntroTiming(FArenaBossIntroTiming OldTiming);
 };

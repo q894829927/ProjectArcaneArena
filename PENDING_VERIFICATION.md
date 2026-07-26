@@ -216,37 +216,6 @@
 - 缩放过程不短暂触发 Phase 2/3，不直接写 Health 或 MaxHealth，也不会因重复调用叠加到 `3675`。
 - 缩放失败只记录 `LogArenaBoss`/`LogArenaWaves` 错误并保留基础 Boss，不阻塞 Boss 波和终局流程。
 
-## Boss 阶段四 A 召唤物闭环
-
-### 编译、资产与行为树
-
-1. 关闭 Live Coding 后编译窄范围 `ProjectArcaneArenaEditor Win64 Development`，重启编辑器并确认 Summon Ability、Cooldown 和 GameplayTag 原生类型可见。
-2. 连续执行两次 `Content/Python/boss/setup_boss_summon_minions.py`，确认没有 `_1/_2` 资产，Boss `StartupAbilities` 中四个 Boss 技能各一份，`MaxActiveSummons = 4`。
-3. 按 README 手工连接并重新打开 `BT_ArenaBoss`，确认顺序为 `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait`，Summon Decorator 为 `Lower Priority`。
-
-### 单人 PIE
-
-1. Phase 1/2 观察召唤冷却标签和 BT Debug，确认召唤技能不会激活或消耗冷却；Phase 3 等待高优先级技能不可用后确认生成一个近战和一个远程敌人。
-2. 临时缩短冷却并连续施放，确认活动召唤物不超过四个；击杀一个召唤物后确认容量立即释放。
-3. 把 Boss 围在无 NavMesh 或无胶囊空间区域，确认召唤分支不 Commit、不空放 Cue，并能回退 Chase/Wait。
-4. 分别测试单个生成点失败、Boss 前摇中 Stun/死亡、Victory/Defeat、Boss 直接 Destroy 和召唤物直接 Destroy。
-5. 对召唤物验证 OnKill、OnCrit、Burning、Shocked、Overload、ShieldBreakBlast 和 Dash Trail；确认普通敌人的事件行为没有改变。
-6. 观察 `RemainingEnemyCount` 和拾取物：召唤物生成/死亡不改变波次数量、不掉落普通恢复物；Boss 本体死亡立即 Victory 并清除所有召唤物。
-
-### 双人 Listen Server
-
-1. Host/Client 同时观察一次召唤，确认只有服务器生成两个复制敌人，两端位置、AI、伤害、死亡和 Cast/Spawn Cue 一致。
-2. 两名玩家分别击杀召唤物，确认 OnKill/OnCrit 只归属实际伤害来源，事件和伤害不重复。
-3. Boss 死亡或全员死亡时确认两端召唤物同时清理，不残留 Delegate、`Enemy.Summoned.*` 标签或阻塞 Victory/Defeat 的 Actor。
-
-### 通过标准
-
-- 无合法点不 Commit，部分生成失败不阻塞 Ability、Behavior Tree 或 Boss Victory。
-- 活动召唤物始终不超过四个，死亡和销毁均只释放一次容量。
-- 召唤物完全绕开 WaveManager 数量和普通掉落，但继续使用服务器权威敌人 AI、GAS 属性、伤害和复制。
-- 构筑事件由 `Enemy.Summoned.Trigger.*` 明确决定，普通目标不受门控改动影响。
-- Boss 死亡、终局和销毁后没有召唤物、委托、状态标签或表现残留。
-
 ## 玩家 Dash 预计算终点与网络回归
 
 ### 测试方法

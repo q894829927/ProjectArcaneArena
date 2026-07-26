@@ -2,6 +2,7 @@
 
 #include "AbilitySystemComponent.h"
 #include "Components/SceneComponent.h"
+#include "Core/ArenaGameState.h"
 #include "Core/ArenaUpgradeDataAsset.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
@@ -187,7 +188,7 @@ void UArenaAttributeSet::PreAttributeBaseChange(const FGameplayAttribute& Attrib
 	ClampAttribute(Attribute, NewValue);
 }
 
-// GE 执行后消费 Damage/Healing 元属性，并在权威端发送命中 Cue、伤害数字和结果事件。
+// GE 执行后消费 Damage/Healing 元属性，Intro 中拒绝伤害，其余路径在权威端发送结果事件。
 void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data)
 {
 	Super::PostGameplayEffectExecute(Data);
@@ -198,6 +199,15 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 		const float LocalDamage = FMath::Max(GetDamage(), 0.0f);
 		SetDamage(0.0f);
 		UAbilitySystemComponent* TargetASC = GetOwningAbilitySystemComponent();
+		const AActor* TargetAvatar = TargetASC ? TargetASC->GetAvatarActor() : nullptr;
+		const AArenaGameState* ArenaGameState = TargetAvatar && TargetAvatar->GetWorld()
+			? TargetAvatar->GetWorld()->GetGameState<AArenaGameState>()
+			: nullptr;
+		if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossIntro)
+		{
+			// 最终消费入口再次阻断 Intro 伤害，覆盖 Burning 等不经过主 ExecCalc_Damage 的旧效果。
+			return;
+		}
 		FGameplayTagContainer TargetTagsBeforeDamage;
 		float AppliedDamage = 0.0f;
 		float AppliedShieldDamage = 0.0f;

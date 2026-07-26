@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-当前开发阶段为“阶段四 A：Boss 召唤物”，状态为 `Partial`。阶段二的 GroundSlam、Charge、FireZone 与 Behavior Tree 主循环已具备可用实现，但仍保留多人和异常生命周期验证项；阶段三 A 已完成主要单人 PIE 验收，阶段三 B 已完成双人 `2100/2100` 核心路径验证。阶段四 A 已完成原生召唤 Ability、Boss 私有生命周期、构筑事件资格标签和资产脚本实现，尚待编译、资产生成、行为树接线与 PIE 验收。
+阶段四 A“Boss 召唤物”和阶段五 A“Boss Intro 同步闭环”均已完成实际验收。当前开发方向进入阶段五 B，优先补齐 Boss 死亡与 Victory 的同步收尾演出；阶段五整体保持 `Partial`，阶段二和阶段三中尚未完成的多人及异常生命周期回归继续保留。
 
 ---
 
@@ -215,7 +215,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-25。
+状态：`Verified`，最后更新：2026-07-26。
 
 已完成实现：
 
@@ -295,13 +295,15 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已新增 `Enemy.Summoned`、`Enemy.Summoned.Trigger.OnKill` 与 `Enemy.Summoned.Trigger.OnCrit`。权威伤害事件路由仅对带对应资格叶标签的召唤物派发 OnKill/OnCrit，普通敌人和其他伤害事件保持原行为。
 - 已新增 Summon Ability、Cooldown、Cast/Spawn GameplayCue 原生标签和 `setup_boss_summon_minions.py`；脚本配置一个近战加一个远程 Class、Boss 上限与 StartupAbility，且不修改手工 Behavior Tree 图。
 
-尚未完成或尚未验证：
+已完成验收：
 
-- 尚未完成 C++/UHT 编译、编辑器重启和召唤资产脚本执行，当前不能把 Blueprint、Montage、GE、Cue 或 StartupAbilities 记为已保存资产。
-- 尚未手工连接 `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait`，也未验证 Phase 1/2 门控、Phase 3 决策和最大四个活动召唤物。
-- 尚未验证无合法生成点、单点 Spawn 失败、Stun、死亡、Victory/Defeat、Actor 直接销毁和 Delegate 防重清理。
-- 尚未验证召唤物不改变 WaveManager 数量/掉落/Victory，以及 OnKill、OnCrit、Burning、Shocked、Overload、ShieldBreakBlast 和 Dash 的实际兼容。
-- 尚未完成双人 Listen Server 的唯一服务器生成、移动/伤害/死亡复制和 Boss 终局清场验收。
+- Phase 1/2 不会激活召唤，Phase 3 才会进入召唤分支；每次成功施放生成一个近战和一个远程召唤物。
+- 场上活动召唤物始终不超过四个，任一召唤物死亡后立即释放 Boss 私有容量。
+- 召唤物生成和死亡均不改变 `RemainingEnemyCount`，也不进入普通恢复拾取物掉落流程。
+- Boss 本体死亡后立即完成最终波并进入 Victory，同时销毁全部仍存活召唤物。
+- Boss 在召唤前摇期间被 Stun、击杀或进入终局时不会生成迟到召唤物。
+- Burning、Shocked、Overload、OnKill、OnCrit、Dash Trail 与 ShieldBreakBlast 均已确认可正常作用于召唤物。
+- 召唤资产、四技能 `StartupAbilities` 与 `GroundSlam -> Charge -> FireZone -> SummonMinions -> Chase -> Wait` Behavior Tree 顺序已投入实际 PIE 流程。
 
 ### 阶段边界
 
@@ -336,6 +338,21 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 调整 Boss HUD、阶段提示、危险预警和伤害反馈，保证顶视角与第三人称都清晰可读。
 - 根据完整游戏循环决定是否增加 Boss 专属掉落；如果 Victory 后没有继续消费资源的场景，可以省略 Health/Energy 掉落。
 - 若实现专属掉落，使用独立 DropTable 或 Boss Override，由服务器生成并复制，不建立背包或持久化系统。
+
+### 当前实现进度
+
+状态：`Partial`，最后更新：2026-07-26。
+
+- 已在 `EArenaGamePhase` 末尾增加 `BossIntro`，`AArenaGameState` 复制 `FArenaBossIntroTiming`，客户端使用同步服务器时间计算剩余时长。
+- Boss 波生成顺序已调整为“生成 Boss → 应用人数缩放 → 发布 `ActiveBoss`/剩余数量 → 进入五秒 Intro → 进入 Combat”；普通波仍直接进入 Combat。
+- Intro 中玩家 CharacterMovement、Sprint、Look、视角切换和五个主动技能均被冻结；`UArenaGameplayAbility::CanActivateAbility()` 同时阻止 `Ability.Type.PlayerActive` 与 `Ability.Enemy`，永久被动不被取消。Boss 阶段初始化与 Health 阈值评估也显式要求 `Combat`，Intro 不会提前发布 `Boss.Phase.One`。
+- `UExecCalc_Damage` 与 `UArenaAttributeSet` 的最终 Damage Meta 消费入口都拒绝 Intro 伤害，覆盖残留 Projectile、Area 与 Burning 等旧周期效果。
+- 每个本地 `AArenaPlayerController` 独立选择距离 Boss 最近且带 `BossIntroCamera` Actor Tag 的 `CameraActor`，执行 `0.6s` Blend，并在 Intro 尾段回切当前 Pawn；缺少相机时保持玩家镜头并输出一次安全警告。
+- Space 长按状态通过可靠 Server RPC 提交；服务器独立计满 `2s` 后重新验证参战 PlayerState、阶段和 Boss 存活状态，仅第一次有效请求会把全局截止时间缩短为当前服务器时间加 `0.6s`。
+- `UArenaPlayerHUDWidget` 支持可选 `BossIntroText`、`BossIntroCountdownText`、`BossIntroSkipText` 和 `BossIntroSkipProgressBar`，缺少蓝图控件时由原生运行时布局提供回退显示。
+- `AArenaBossAIController` 在 `BossIntro -> Combat` 后额外等待 `0.5s` 才允许技能 Decorator 通过；Boss 被直接 Destroy 的异常路径也会清除 Intro、`ActiveBoss` 和最终波计数。
+- 阶段五 A `Boss Intro` 已完成实际验收：正式相机、权威时序、控制与伤害冻结、Space 长按跳过、镜头回切以及进入 Phase 1 Combat 均正常。
+- 阶段五整体仍为 `Partial`；Boss 专属声音、死亡/Victory 演出及剩余表现打磨留到阶段五 B。
 
 ### 阶段边界
 

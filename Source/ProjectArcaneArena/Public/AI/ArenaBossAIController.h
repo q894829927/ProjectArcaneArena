@@ -41,6 +41,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss AI", meta = (ClampMin = "0.0"))
 	float InitialAbilityDelay = 3.0f;
 
+	// BossIntro 回切完成后保留短暂反应窗口，再允许 BT 的 Ability Decorator 通过。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss AI", meta = (ClampMin = "0.0"))
+	float PostBossIntroAbilityDelay = 0.5f;
+
 private:
 	// 根据 Combat 阶段及 Dead/Stunned 标签统一启动或停止 Boss Brain。
 	void RefreshBossLogicState();
@@ -56,7 +60,7 @@ private:
 	// Boss 死亡或眩晕状态变化时立即刷新行为树运行状态。
 	void HandleBossStateTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 
-	// Combat 之外停止所有决策，重新进入 Combat 时仅在 Boss 存活可行动时恢复。
+	// Combat 之外停止所有决策；BossIntro 结束后先重置施法缓冲，再恢复行为树。
 	UFUNCTION()
 	void HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase);
 

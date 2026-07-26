@@ -136,6 +136,12 @@ void AArenaGameMode::StartNextWave()
 	}
 }
 
+// 只在服务器转发有效 Controller 的 Intro 跳过请求，最终阶段和 Boss 状态由 WaveManager 重验。
+bool AArenaGameMode::RequestBossIntroSkip(AArenaPlayerController* RequestingController)
+{
+	return HasAuthority() && WaveManager && WaveManager->RequestBossIntroSkip(RequestingController);
+}
+
 // 每次初始登录都重新开始同一计时器，让同批 PIE/Listen 客户端完成 PlayerState 注册后再快照人数。
 void AArenaGameMode::ScheduleInitialWaveStart()
 {

@@ -372,7 +372,7 @@ bool AArenaBossCharacter::RestoreHealthAfterPlayerCountScaling()
 	return AppliedHandle.WasSuccessfullyApplied();
 }
 
-// 等待敌人基类完成 ASC、属性和 StartupAbilities 初始化后，再建立阶段状态机。
+// 等待敌人基类完成 ASC、属性和 StartupAbilities 初始化后，仅在已处于 Combat 时建立阶段状态机。
 void AArenaBossCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -383,7 +383,7 @@ void AArenaBossCharacter::BeginPlay()
 
 	BindBossPhaseDelegates();
 	const AArenaGameState* ArenaGameState = BoundBossGameState.Get();
-	if (!ArenaGameState || ArenaGameState->GetGamePhase() == EArenaGamePhase::Combat)
+	if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::Combat)
 	{
 		InitializeBossPhaseState();
 	}
@@ -464,12 +464,15 @@ void AArenaBossCharacter::InitializeBossPhaseState()
 	BossASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::Boss_Phase_One);
 }
 
-// 使用当前 MaxHealth 计算目标阶段，并保持阶段只向前推进。
+// 仅在 Combat 使用当前 MaxHealth 计算目标阶段，并保持阶段只向前推进。
 void AArenaBossCharacter::EvaluateBossPhase(float NewHealth)
 {
 	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
 	const UArenaAttributeSet* BossAttributes = GetArenaAttributeSet();
+	const AArenaGameState* ArenaGameState = BoundBossGameState.Get();
 	if (!BossASC || !BossAttributes || NewHealth <= 0.0f
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Combat
 		|| BossASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
 	{
 		return;
@@ -650,7 +653,7 @@ int32 AArenaBossCharacter::GetBossPhaseNumber(const FGameplayTag& PhaseTag)
 	return 0;
 }
 
-// Health Delegate 只在服务器推进阶段；初始化人数缩放窗口会抑制中间比例，治疗也不会回退已有阶段。
+// Health Delegate 只在服务器 Combat 推进阶段；人数缩放窗口会抑制中间比例，治疗也不会回退已有阶段。
 void AArenaBossCharacter::HandleBossPhaseHealthChanged(const FOnAttributeChangeData& Data)
 {
 	if (HasAuthority() && !bSuppressBossPhaseEvaluation)

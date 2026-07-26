@@ -8,6 +8,7 @@ AArenaGameState::AArenaGameState()
 	bReplicates = true;
 }
 
+// 复制波次、Boss 与 Intro 权威快照，客户端仅通过委托观察这些状态。
 void AArenaGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -17,6 +18,13 @@ void AArenaGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(AArenaGameState, RemainingEnemyCount);
 	DOREPLIFETIME(AArenaGameState, UpgradeRandomSeed);
 	DOREPLIFETIME(AArenaGameState, ActiveBoss);
+	DOREPLIFETIME(AArenaGameState, BossIntroTiming);
+}
+
+// 使用 GameState 已同步的服务器时间计算 Intro 剩余秒数，避免客户端本地时钟漂移。
+float AArenaGameState::GetBossIntroRemainingTime() const
+{
+	return FMath::Max(BossIntroTiming.EndServerTimeSeconds - GetServerWorldTimeSeconds(), 0.0f);
 }
 
 // 服务器更新游戏阶段，并让监听服务器本地 UI 与远端 OnRep 获得一致通知。
@@ -91,6 +99,20 @@ void AArenaGameState::SetActiveBoss(AArenaBossCharacter* NewActiveBoss)
 	ForceNetUpdate();
 }
 
+// 服务器更新 Intro 截止时间，并让 Listen Server 与远端客户端走同一委托刷新路径。
+void AArenaGameState::SetBossIntroTiming(const FArenaBossIntroTiming& NewTiming)
+{
+	if (!HasAuthority() || BossIntroTiming == NewTiming)
+	{
+		return;
+	}
+
+	const FArenaBossIntroTiming OldTiming = BossIntroTiming;
+	BossIntroTiming = NewTiming;
+	OnBossIntroTimingChanged.Broadcast(OldTiming, BossIntroTiming);
+	ForceNetUpdate();
+}
+
 void AArenaGameState::OnRep_GamePhase(EArenaGamePhase OldPhase)
 {
 	OnGamePhaseChanged.Broadcast(OldPhase, GamePhase);
@@ -116,4 +138,10 @@ void AArenaGameState::OnRep_UpgradeRandomSeed(int32 OldUpgradeRandomSeed)
 void AArenaGameState::OnRep_ActiveBoss(AArenaBossCharacter* OldActiveBoss)
 {
 	OnActiveBossChanged.Broadcast(OldActiveBoss, ActiveBoss);
+}
+
+// Intro 时序复制变化后刷新客户端镜头、倒计时和跳过表现。
+void AArenaGameState::OnRep_BossIntroTiming(FArenaBossIntroTiming OldTiming)
+{
+	OnBossIntroTimingChanged.Broadcast(OldTiming, BossIntroTiming);
 }

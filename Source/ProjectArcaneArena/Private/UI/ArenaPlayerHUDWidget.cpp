@@ -135,7 +135,7 @@ namespace
 	}
 }
 
-// 初始化 HUD，并为蓝图未提供的准星、阶段、波次和随机种子控件创建运行时回退显示。
+// 初始化 HUD，并为蓝图未提供的准星、阶段、波次、随机种子和 Boss Intro 控件创建运行时回退显示。
 void UArenaPlayerHUDWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
@@ -327,11 +327,96 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 		}
 	}
 
+	if (WidgetTree
+		&& RootCanvas
+		&& (!BossIntroText
+			|| !BossIntroCountdownText
+			|| !BossIntroSkipText
+			|| !BossIntroSkipProgressBar))
+	{
+		// 蓝图缺少部分 Intro 控件时只为缺失项创建回退，不覆盖已经完成的自定义布局。
+		UVerticalBox* RuntimeIntroPanel = WidgetTree->ConstructWidget<UVerticalBox>(
+			UVerticalBox::StaticClass(),
+			TEXT("BossIntroPanel_Runtime"));
+		if (!BossIntroPanel)
+		{
+			BossIntroPanel = RuntimeIntroPanel;
+		}
+		if (UCanvasPanelSlot* IntroPanelSlot = RootCanvas->AddChildToCanvas(RuntimeIntroPanel))
+		{
+			IntroPanelSlot->SetAnchors(FAnchors(0.5f, 0.25f));
+			IntroPanelSlot->SetAlignment(FVector2D(0.5f, 0.0f));
+			IntroPanelSlot->SetPosition(FVector2D::ZeroVector);
+			IntroPanelSlot->SetSize(FVector2D(520.0f, 150.0f));
+		}
+
+		auto CreateIntroText = [this, RuntimeIntroPanel](
+			FName WidgetName,
+			int32 FontSize,
+			const FLinearColor& Color) -> UTextBlock*
+		{
+			UTextBlock* RuntimeText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), WidgetName);
+			RuntimeText->SetJustification(ETextJustify::Center);
+			RuntimeText->SetColorAndOpacity(FSlateColor(Color));
+			FSlateFontInfo IntroFont = RuntimeText->GetFont();
+			IntroFont.Size = FontSize;
+			IntroFont.OutlineSettings.OutlineSize = 1;
+			RuntimeText->SetFont(IntroFont);
+			if (UVerticalBoxSlot* TextSlot = RuntimeIntroPanel->AddChildToVerticalBox(RuntimeText))
+			{
+				TextSlot->SetHorizontalAlignment(HAlign_Fill);
+				TextSlot->SetPadding(FMargin(0.0f, 1.0f, 0.0f, 1.0f));
+			}
+			return RuntimeText;
+		};
+
+		if (!BossIntroText)
+		{
+			BossIntroText = CreateIntroText(
+				TEXT("BossIntroText_Runtime"),
+				28,
+				FLinearColor(1.0f, 0.72f, 0.22f, 1.0f));
+		}
+		if (!BossIntroCountdownText)
+		{
+			BossIntroCountdownText = CreateIntroText(
+				TEXT("BossIntroCountdownText_Runtime"),
+				20,
+				FLinearColor::White);
+		}
+		if (!BossIntroSkipText)
+		{
+			BossIntroSkipText = CreateIntroText(
+				TEXT("BossIntroSkipText_Runtime"),
+				15,
+				FLinearColor(0.85f, 0.85f, 0.85f, 1.0f));
+		}
+		if (!BossIntroSkipProgressBar)
+		{
+			USizeBox* SkipBarSizeBox = WidgetTree->ConstructWidget<USizeBox>(
+				USizeBox::StaticClass(),
+				TEXT("BossIntroSkipSizeBox_Runtime"));
+			SkipBarSizeBox->SetWidthOverride(280.0f);
+			SkipBarSizeBox->SetHeightOverride(10.0f);
+			BossIntroSkipProgressBar = WidgetTree->ConstructWidget<UProgressBar>(
+				UProgressBar::StaticClass(),
+				TEXT("BossIntroSkipProgressBar_Runtime"));
+			BossIntroSkipProgressBar->SetFillColorAndOpacity(FLinearColor(1.0f, 0.72f, 0.22f, 1.0f));
+			SkipBarSizeBox->AddChild(BossIntroSkipProgressBar);
+			if (UVerticalBoxSlot* SkipBarSlot = RuntimeIntroPanel->AddChildToVerticalBox(SkipBarSizeBox))
+			{
+				SkipBarSlot->SetHorizontalAlignment(HAlign_Center);
+				SkipBarSlot->SetPadding(FMargin(0.0f, 4.0f, 0.0f, 0.0f));
+			}
+		}
+	}
+
 	SetThirdPersonReticleVisible(false);
 	SetGamePhase(EArenaGamePhase::Waiting);
 	SetWaveState(0, 0);
 	SetUpgradeRandomSeed(0);
 	SetBossPanelVisible(false);
+	SetBossIntroPresentation(false, FText::GetEmpty(), 0.0f, 0.0f);
 	ClearDamageFeedbackPresentation();
 }
 
@@ -362,6 +447,9 @@ void UArenaPlayerHUDWidget::SetGamePhase(EArenaGamePhase NewPhase)
 	case EArenaGamePhase::Defeat:
 		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseDefeat", "Defeat");
 		break;
+	case EArenaGamePhase::BossIntro:
+		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseBossIntro", "Boss Intro");
+		break;
 	default:
 		PhaseDisplayText = NSLOCTEXT("ArenaPlayerHUDWidget", "PhaseWaiting", "Waiting");
 		break;
@@ -377,6 +465,48 @@ void UArenaPlayerHUDWidget::SetGamePhase(EArenaGamePhase NewPhase)
 		DefeatText->SetVisibility(NewPhase == EArenaGamePhase::Defeat
 			? ESlateVisibility::HitTestInvisible
 			: ESlateVisibility::Collapsed);
+	}
+}
+
+// 仅更新本地 Intro 控件；Boss 名称、剩余时间和 Hold 进度均由 Controller 的复制快照提供。
+void UArenaPlayerHUDWidget::SetBossIntroPresentation(
+	bool bVisible,
+	const FText& InBossName,
+	float RemainingTime,
+	float SkipProgress)
+{
+	const ESlateVisibility IntroVisibility = bVisible
+		? ESlateVisibility::HitTestInvisible
+		: ESlateVisibility::Collapsed;
+	if (BossIntroPanel)
+	{
+		BossIntroPanel->SetVisibility(IntroVisibility);
+	}
+	if (BossIntroText)
+	{
+		BossIntroText->SetText(bVisible ? InBossName : FText::GetEmpty());
+		BossIntroText->SetVisibility(IntroVisibility);
+	}
+	if (BossIntroCountdownText)
+	{
+		BossIntroCountdownText->SetText(bVisible
+			? FText::Format(
+				NSLOCTEXT("ArenaPlayerHUDWidget", "BossIntroCountdownFormat", "BOSS APPROACHING  {0}s"),
+				FText::AsNumber(FMath::CeilToInt(FMath::Max(RemainingTime, 0.0f))))
+			: FText::GetEmpty());
+		BossIntroCountdownText->SetVisibility(IntroVisibility);
+	}
+	if (BossIntroSkipText)
+	{
+		BossIntroSkipText->SetText(bVisible
+			? NSLOCTEXT("ArenaPlayerHUDWidget", "BossIntroSkipPrompt", "Hold Space to Skip")
+			: FText::GetEmpty());
+		BossIntroSkipText->SetVisibility(IntroVisibility);
+	}
+	if (BossIntroSkipProgressBar)
+	{
+		BossIntroSkipProgressBar->SetPercent(FMath::Clamp(SkipProgress, 0.0f, 1.0f));
+		BossIntroSkipProgressBar->SetVisibility(IntroVisibility);
 	}
 }
 
@@ -759,13 +889,14 @@ void UArenaPlayerHUDWidget::SetLightningStormCooldownValues(bool bInCooldownActi
 	}
 }
 
-// Widget 销毁时解绑 GAS 委托，避免 ASC 回调悬挂对象。
+// Widget 销毁时隐藏 Intro 并解绑 GAS 委托，避免表现或 ASC 回调悬挂对象。
 void UArenaPlayerHUDWidget::NativeDestruct()
 {
 	if (GetWorld())
 	{
 		GetWorld()->GetTimerManager().ClearTimer(DamageFeedbackTimerHandle);
 	}
+	SetBossIntroPresentation(false, FText::GetEmpty(), 0.0f, 0.0f);
 	ClearDamageFeedbackPresentation();
 	UnbindFromBoss();
 	UnbindFromAbilitySystem();
