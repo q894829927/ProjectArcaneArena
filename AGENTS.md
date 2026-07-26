@@ -185,6 +185,22 @@ Rules:
 
 ---
 
+## Inventory Development Plan Rule
+
+项目根目录的 `INVENTORY_DEVELOPMENT_PLAN.md` 是阶段五 C 背包系统的中文开发规范。
+
+规则：
+
+* 规划或实现背包、可入包 Pickup、物品使用、物品丢弃、分页或物品筛选前，必须阅读 `INVENTORY_DEVELOPMENT_PLAN.md`。
+* 背包系统默认采用文档定义的轻量 MVC、PlayerState Model、服务器权威和 OwnerOnly FastArray 复制边界。
+* 阶段顺序、数据结构、网络职责、分页/筛选规则、公开接口或验收标准发生变化时，必须同步更新 `INVENTORY_DEVELOPMENT_PLAN.md`。
+* 每次实现、移除或实质修改背包功能时，要同步更新该文档的“当前实现进度”，并在 `IMPLEMENTED_FEATURES.md` 记录真实存在的功能。
+* 尚未完成的背包测试在进入实现阶段后记录到 `PENDING_VERIFICATION.md`；纯规划内容不得提前写成已实现。
+* 背包阶段状态统一使用 `Planned`、`Partial`、`Implemented`、`Verified`。
+* 背包规划文档使用简体中文，类名、函数名、资产名和 GameplayTag 保留英文原文。
+
+---
+
 ## Recommended Class Architecture
 
 Use this architecture unless there is a strong reason to change it.
@@ -911,6 +927,15 @@ Follow this order:
 4. Add combo upgrades that use RequiredTags and BlockedTags.
 5. Add at least one legendary rule-changing upgrade.
 6. Verify that each build path has a visible combat identity.
+
+### Phase 5C: Runtime Inventory
+
+背包的 MVC 边界、分页规则、服务器交互和验收顺序以 `INVENTORY_DEVELOPMENT_PLAN.md` 为准。
+
+1. Add ItemDataAsset and owner-only FastArray inventory model on PlayerState.
+2. Add server-authoritative interact pickup, stacking, use, and partial drop.
+3. Add twenty-slot pagination, multi-tag filtering, and inventory UI.
+4. Add dual-view input restoration and two-player replication verification.
 
 ### Phase 6: Boss and Polish
 
