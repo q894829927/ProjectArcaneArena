@@ -8,6 +8,7 @@
 
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
+class UArenaInventoryComponent;
 class UArenaUpgradeDataAsset;
 class UAbilitySystemComponent;
 
@@ -46,6 +47,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Arena|GAS")
 	UArenaAttributeSet* GetArenaAttributeSet() const;
+
+	// 返回随 PlayerState 生命周期存在的服务器权威背包 Model。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	UArenaInventoryComponent* GetInventoryComponent() const;
 
 	// 防止重复授予启动技能，后续重生流程会复用该状态。
 	bool HasGrantedStartupAbilities() const { return bGrantedStartupAbilities; }
@@ -114,6 +119,9 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAttributeSet> AttributeSet;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Inventory", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UArenaInventoryComponent> InventoryComponent;
 
 	bool bGrantedStartupAbilities = false;
 	bool bAppliedDefaultAttributes = false;

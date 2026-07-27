@@ -4,11 +4,15 @@
 #include "Core/ArenaGameState.h"
 #include "GameFramework/PlayerController.h"
 #include "GAS/ArenaDamageFeedbackTypes.h"
+#include "GameplayTagContainer.h"
 #include "TimerManager.h"
 #include "ArenaPlayerController.generated.h"
 
+class UArenaInventoryComponent;
+class UArenaInventoryWidget;
 class UArenaPlayerHUDWidget;
 class UArenaUpgradeSelectionWidget;
+class AArenaInventoryPickupActor;
 class AArenaBossCharacter;
 class AArenaGameState;
 class AArenaPlayerState;
@@ -24,6 +28,15 @@ public:
 
 	// 切换本地鼠标捕获和第三人称准星，不复制任何相机表现状态。
 	void SetThirdPersonInputMode(bool bEnableThirdPerson);
+
+	// Tab 在 Combat 中打开或关闭本地背包，并保留当前顶视角或第三人称选择。
+	void ToggleInventory();
+
+	// G 从本地候选中选择最近可见 Pickup，再交给服务器重新验证并拾取。
+	void RequestInteractWithNearestInventoryPickup();
+
+	// 返回本地背包是否正在占用输入，供 Character 阻止移动、观察和主动技能输入。
+	bool IsInventoryOpen() const { return bInventoryInputMode; }
 
 	// 本地 Space 输入只提交按住状态，服务器独立计时并验证 BossIntro 跳过资格。
 	void SetBossIntroSkipHeld(bool bHeld);
@@ -44,6 +57,18 @@ public:
 	// 客户端只提交候选 ID，服务器 GameMode 会重新验证阶段、候选和堆叠资格。
 	UFUNCTION(Server, Reliable)
 	void ServerSelectUpgrade(FName UpgradeID);
+
+	// 服务器重新验证 Pickup 的距离、视线、保护期和物品数据后执行唯一拾取。
+	UFUNCTION(Server, Reliable)
+	void ServerInteractWithInventoryPickup(AArenaInventoryPickupActor* PickupActor);
+
+	// 服务器使用稳定 StackId 重新验证并使用一个背包物品。
+	UFUNCTION(Server, Reliable)
+	void ServerUseInventoryItem(FGuid StackId);
+
+	// 服务器使用稳定 StackId 和合法数量生成世界 Pickup 后扣除堆栈。
+	UFUNCTION(Server, Reliable)
+	void ServerDropInventoryItem(FGuid StackId, int32 Quantity);
 
 	// 仅在受害者本地 Controller 上把来源方向和强度转成 HUD 表现数据。
 	void ShowLocalDamageFeedback(const FArenaDamageFeedbackData& DamageFeedback, float FeedbackIntensity);
@@ -85,6 +110,18 @@ private:
 	void UnbindUpgradeState();
 	void RefreshUpgradeSelectionUI();
 	void SetUpgradeInputMode(bool bEnabled);
+	// 创建无需蓝图即可使用的背包 View，并绑定所有 UI 意图委托。
+	void CreateInventoryWidget();
+	// 绑定当前 PlayerState 的 OwnerOnly InventoryComponent，并立即刷新本地页面。
+	void BindInventoryState();
+	// 对称解除旧 InventoryComponent 委托并清空本地筛选/分页，避免旅行或重连后残留状态。
+	void UnbindInventoryState();
+	// 从复制 Model 构建筛选后的二十槽页面快照，View 不直接读取玩法状态。
+	void RefreshInventoryUI();
+	// 切换 GameAndUI 输入、鼠标和准星，并在关闭时恢复原双视角输入模式。
+	void SetInventoryInputMode(bool bEnabled);
+	// 本地选择最近且视线可达的 Pickup，服务器仍会执行同一组关键校验。
+	AArenaInventoryPickupActor* FindNearestInteractableInventoryPickup() const;
 	// 根据复制阶段、ActiveBoss 和时序快照开始、更新或结束本地 Intro 表现。
 	void RefreshBossIntroPresentation();
 	// 启动本地相机切换、输入冻结和 HUD 倒计时，不修改任何权威玩法状态。
@@ -160,6 +197,24 @@ private:
 
 	UFUNCTION()
 	void HandleUpgradeChosen(FName UpgradeID);
+	UFUNCTION()
+	void HandleInventoryChanged();
+	UFUNCTION()
+	void HandleInventoryStackSelected(FGuid StackId);
+	UFUNCTION()
+	void HandleInventoryUseRequested(FGuid StackId);
+	UFUNCTION()
+	void HandleInventoryDropRequested(FGuid StackId, int32 Quantity);
+	UFUNCTION()
+	void HandleInventoryFilterRequested(FGameplayTag FilterTag, bool bEnabled);
+	UFUNCTION()
+	void HandleInventoryClearFiltersRequested();
+	UFUNCTION()
+	void HandleInventoryPreviousPageRequested();
+	UFUNCTION()
+	void HandleInventoryNextPageRequested();
+	UFUNCTION()
+	void HandleInventoryCloseRequested();
 
 	// PlayerState 或 ASC 复制到客户端可能晚于 BeginPlay，需要延迟重试。
 	void SchedulePlayerHUDBindingRetry();
@@ -179,8 +234,18 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UArenaUpgradeSelectionWidget> UpgradeSelectionWidget;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Inventory", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UArenaInventoryWidget> InventoryWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UArenaInventoryWidget> InventoryWidget;
+
 	TWeakObjectPtr<AArenaGameState> BoundArenaGameState;
 	TWeakObjectPtr<AArenaPlayerState> BoundUpgradePlayerState;
+	TWeakObjectPtr<UArenaInventoryComponent> BoundInventoryComponent;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Inventory", meta = (ClampMin = "1.0"))
+	float InventoryInteractionDistance = 220.0f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.01"))
 	float PlayerHUDBindingRetryInterval = 0.1f;
@@ -265,8 +330,12 @@ private:
 	TWeakObjectPtr<ACameraActor> DynamicBossOutroCamera;
 	float LocalBossIntroSkipHoldStartTime = 0.0f;
 	float LocalBossOutroSkipHoldStartTime = 0.0f;
+	FGameplayTagContainer ActiveInventoryFilters;
+	FGuid SelectedInventoryStackId;
+	int32 InventoryPageIndex = 0;
 	bool bThirdPersonInputMode = false;
 	bool bUpgradeInputMode = false;
+	bool bInventoryInputMode = false;
 	bool bBossIntroInputMode = false;
 	bool bBossOutroInputMode = false;
 	bool bVictoryInputMode = false;

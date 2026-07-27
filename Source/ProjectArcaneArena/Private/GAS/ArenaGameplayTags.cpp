@@ -44,6 +44,7 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Dash, "Cooldown.Dash", "Dash cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Shield, "Cooldown.Shield", "Shield cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_LightningStorm, "Cooldown.LightningStorm", "Lightning storm cooldown.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Item_Consumable, "Cooldown.Item.Consumable", "Shared player consumable item cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_MeleeAttack, "Ability.Enemy.MeleeAttack", "Enemy melee attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Cooldown_Enemy_MeleeAttack, "Cooldown.Enemy.MeleeAttack", "Enemy melee attack cooldown.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Enemy_RangedAttack, "Ability.Enemy.RangedAttack", "Enemy ranged projectile attack ability.");
@@ -98,6 +99,12 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Crit, "Build.Crit", "Player owns progress in the critical-hit build path.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Shield, "Build.Shield", "Player owns progress in the shield build path.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Build_Dash, "Build.Dash", "Player owns progress in the dash build path.");
+
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Consumable_HealthPotion, "Item.Consumable.HealthPotion", "Unique item tag for the Health Potion.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Consumable_EnergyPotion, "Item.Consumable.EnergyPotion", "Unique item tag for the Energy Potion.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Type_Consumable, "Item.Type.Consumable", "Filter tag for consumable inventory items.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_Restore_Health, "Item.Effect.Restore.Health", "Filter tag for items that restore Health.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Item_Effect_Restore_Energy, "Item.Effect.Restore.Energy", "Filter tag for items that restore Energy.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Fireball_Damage, "Upgrade.Fireball.Damage", "Fireball-specific damage upgrade.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Upgrade_Fireball_Burning, "Upgrade.Fireball.Burning", "Fireball applies the Burning status.");

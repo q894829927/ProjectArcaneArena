@@ -3,9 +3,10 @@
 #include "Core/ArenaUpgradeDataAsset.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
+#include "Item/ArenaInventoryComponent.h"
 #include "Net/UnrealNetwork.h"
 
-// 构造玩家状态，创建长期存在的 ASC 和 AttributeSet。
+// 构造玩家状态，创建跨角色生命周期的 ASC、AttributeSet 和背包 Model。
 AArenaPlayerState::AArenaPlayerState()
 {
 	SetNetUpdateFrequency(100.0f);
@@ -19,6 +20,8 @@ AArenaPlayerState::AArenaPlayerState()
 	AttributeSet = CreateDefaultSubobject<UArenaAttributeSet>(TEXT("AttributeSet"));
 	// 显式注册 AttributeSet 子对象，确保 ASC 能发现并复制属性。
 	AbilitySystemComponent->AddAttributeSetSubobject(AttributeSet.Get());
+
+	InventoryComponent = CreateDefaultSubobject<UArenaInventoryComponent>(TEXT("InventoryComponent"));
 }
 
 // 复制 OwnerOnly 升级数据、公共选择完成状态与 Victory Ready，UI 只观察这些数据。
@@ -61,6 +64,12 @@ UArenaAbilitySystemComponent* AArenaPlayerState::GetArenaAbilitySystemComponent(
 UArenaAttributeSet* AArenaPlayerState::GetArenaAttributeSet() const
 {
 	return AttributeSet;
+}
+
+// 返回 PlayerState 持有的背包组件，重生只更换 Avatar 时仍保留本局物品。
+UArenaInventoryComponent* AArenaPlayerState::GetInventoryComponent() const
+{
+	return InventoryComponent;
 }
 
 // 记录启动技能是否已经授予，避免 Possess/复制路径重复授予。

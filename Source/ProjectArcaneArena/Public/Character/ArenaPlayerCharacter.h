@@ -36,6 +36,9 @@ public:
 	// Returns current dash input direction, or zero when standing still.
 	FVector GetLastMovementInputDirection() const { return LastMovementInputDirection; }
 
+	// 背包打开前在本地和服务器停止奔跑，避免 UI 期间保留加速状态。
+	void StopSprintingForInventory();
+
 protected:
 	// 绑定复制 GameState 阶段，使 Intro、Outro 与 Victory 在服务器和所属客户端共用同一移动门控。
 	virtual void BeginPlay() override;
@@ -79,13 +82,16 @@ private:
 	void UnbindGameStateDelegates();
 	// 判断当前复制阶段是否锁定玩家控制，供移动、视角、奔跑和技能输入共用。
 	bool IsPlayerControlLockedByPhase() const;
+	// 查询所属本地 Controller 是否打开背包，不把本地 UI 状态复制成玩法状态。
+	bool IsInventoryInputLocked() const;
 	// 根据 Dead、Stunned 与终局演出阶段的优先级统一刷新移动组件状态。
 	void RefreshMovementState();
 	// 阶段切换时清理移动意图，并在控制锁定阶段结束后按 GAS 状态恢复移动。
 	UFUNCTION()
 	void HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase);
-	// Dead Tag 增加时执行一次死亡流程，移除时重置死亡门闩并触发复活表现。
+	// Dead Tag 增加时关闭本地背包并执行死亡流程，移除时重置门闩和复活表现。
 	void HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// Stunned Tag 增加时关闭本地背包并取消技能，移除后按其他状态恢复移动。
 	void HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleMoveSpeedChanged(const FOnAttributeChangeData& Data);
 	// 使用当前 GAS MoveSpeed 和奔跑倍率统一刷新 CharacterMovement。
@@ -117,6 +123,10 @@ private:
 	void Input_Shield();
 	// LightningStorm 输入入口，只发送 Ability.LightningStorm 标签，具体范围伤害由 GAS 处理。
 	void Input_Ultimate();
+	// Tab 切换本地背包 View，玩法内容仍由 PlayerState InventoryComponent 持有。
+	void Input_ToggleInventory();
+	// G 请求 Controller 选择最近可见的可入包 Pickup。
+	void Input_InteractInventoryPickup();
 	// Boss Intro 或 Outro 中按下 Space 时通知本地 Controller 开始服务器验证的长按计时。
 	void Input_BossIntroSkipStarted();
 	// 松开 Space 或输入被取消时结束本地与服务器的 Intro/Outro 长按状态。
@@ -171,6 +181,12 @@ private:
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> BossIntroSkipAction;
+
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> InventoryToggleAction;
+
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> InventoryInteractAction;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	int32 InputMappingPriority = 0;

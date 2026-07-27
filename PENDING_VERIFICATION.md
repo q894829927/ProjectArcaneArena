@@ -11,6 +11,56 @@
 5. 一个功能完成完整验收后，同步更新 `IMPLEMENTED_FEATURES.md` 中的 `Partial` / `Verified` 状态。
 6. 临时测试 GameMode、WaveData、UpgradePool、属性和网络参数不要覆盖正式资产。
 
+## 阶段五 C 背包自动化与资产落地检查
+
+### 测试方法
+
+1. 在 Session Frontend 或控制台执行 `Automation RunTests ProjectArcaneArena.Inventory`，确认 `Pagination` 和 `Filters` 两项通过。
+2. 把两个 Pickup Blueprint 拖入测试关卡，确认默认 `ItemData`、`Quantity=1`、世界名称和 `[G] Pick Up` 标签正确。
+
+### 通过标准
+
+- Automation Tests 对 `0/19/20/21/40/41` 和多 Tag OR/层级筛选全部通过；这不替代后续真实 Widget 与网络 PIE。
+- 两个可入包 Pickup 在世界中可见，名称、数量、颜色和交互提示正确，不与现有即时恢复 Pickup 混淆。
+
+## 阶段五 C 背包功能与分页
+
+### 测试方法
+
+1. 分别将一个药水 Pickup 的 `Quantity` 设为 `190/200/210/400/410`，制造 `19/20/21/40/41` 个十瓶堆栈；空背包用于验证 `0`，按 `Tab` 检查页面数量、二十个固定槽和上下页。
+2. 拾取同类第 `11` 个药水，确认先补满首个 `10` 堆栈，再创建新堆栈；使用或丢弃空堆栈后确认顺序压紧、页码自动 Clamp。
+3. 同时选择 Consumable 与 Health/Energy 筛选，确认使用 OR 语义和 GameplayTag 父级匹配，清除筛选恢复原 DisplayOrder。
+4. 消耗 Health/Energy 后使用对应药水，检查恢复量、共享一秒冷却和数量；资源已满、Dead、Stunned 或非 Combat 时重复。
+5. 测试双击槽位、Use 按钮、部分丢弃、整组丢弃、落地失败和 `0/负数/超过堆栈` 请求。
+6. 依次点击筛选、槽位、Use、Drop 数量和翻页按钮后按 `Tab` / `Escape`，确认 Preview Key 路径仍能关闭背包。
+7. 分别使用约 `1280×720` 和 `1920×1080` 的 PIE 窗口检查面板：图标与数量不重叠，物品名只出现在右侧详情，Drop 确认行展开时分页不位移，底部技能 HUD 不穿过背包面板。
+
+### 通过标准
+
+- 页数按筛选后堆栈数使用 `Max(1, Ceil(Count/20))`，筛选和翻页不修改服务器物品顺序。
+- 满资源、无效状态、冷却中或 GE 配置失败时不扣物品、不添加新的冷却。
+- 满资源必须在恢复 GE 执行前直接拒绝；Health/Energy 行为由对应 SetByCaller Tag 决定，不依赖筛选用 `ItemTags`。
+- 两个不同 DataAsset 配置相同 `ItemTag` 时服务器拒绝合并，原 Pickup 和已有堆栈都保持不变。
+- 非正数和超量 Drop 请求直接拒绝；丢弃 Pickup 只有在前方存在安全地面且球形空间未被墙体、Pawn 或动态 Actor 占用时才生成并扣物品。
+- 丢弃者在短保护期内不能立即捡回，其他玩家仍可拾取。
+- 顶视角和第三人称打开背包时世界继续运行、玩家仍会受伤，但移动、Look、Sprint 和五个主动技能输入被锁定；关闭后鼠标、准星和原视角输入正确恢复。
+- 720p 与 1080p 下背包保持紧凑居中，二十槽、筛选、详情、操作和分页均位于稳定区域，长描述自动换行且不遮挡按钮。
+
+## 阶段五 C OwnerOnly 与多人权威
+
+### 测试方法
+
+1. 两人 Listen Server 让 Host 和 Client 分别拾取不同数量药水，检查对方界面无法观察另一人的 FastArray 内容。
+2. 两人同时按 `G` 竞争同一个 Pickup，并重复提交已销毁 Actor、伪造 StackId 和超量 Drop 请求。
+3. Dedicated Server 双客户端重复拾取、使用、部分丢弃和重新拾取，观察属性、世界 Actor 和 UI。
+4. 在背包打开时触发死亡、Upgrade、BossIntro、BossOutro、Victory、重生和关卡重载，检查 Delegate、输入模式和页面状态。
+
+### 通过标准
+
+- 每个 Pickup 最多一名玩家成功，客户端不能伪造增加物品、恢复资源或生成重复世界 Actor。
+- 背包数组只复制给所属客户端；服务器和拥有者的 StackId、Quantity、DisplayOrder 最终一致。
+- 阶段切换、死亡、旅行和 Widget 销毁不残留鼠标捕获、准星、忽略输入、失效 StackId 或重复 Delegate。
+
 ## Boss Foundation 编译与资产生成
 
 ### 测试方法

@@ -4,9 +4,9 @@
 
 本文档是阶段五 C“轻量 MVC 背包系统”的开发规范，维护系统边界、阶段顺序、公开接口和验收标准。
 
-状态：`Planned`，最后更新：2026-07-27。
+状态：`Partial`，最后更新：2026-07-27。
 
-当前只完成方案记录，尚未创建背包 C++ 类型、资产或 UI。开始实现后，必须同步更新本文档、`IMPLEMENTED_FEATURES.md` 和 `PENDING_VERIFICATION.md`。
+当前已完成阶段五 C-A 至 C-C 的 C++ 第一版、原生 fallback UI 和幂等资产脚本。最新 Editor DLL 已能加载全部背包原生类型；资产脚本已成功创建并在保存后验证共享冷却 GE、两种药水 DataAsset、两种 Pickup Blueprint、`WBP_Inventory`、`WBP_InventorySlot` 以及 `BP_ArenaPlayerController` 的 View 引用，重复执行没有产生 `_1/_2` 资产。FastArray 已改为精确标记真实变化并使用 UE 5.6 `PostReplicatedReceive` 在完整 Delta 批次后刷新 View；药水使用会在满资源时提前拒绝，并在恢复失败时回滚冷却；同一 `ItemTag` 的冲突 DataAsset 和无效 Deferred Pickup 初始化也会被服务器拒绝。Automation Tests、PIE 和网络验收尚未完成，因此本阶段保持 `Partial`。
 
 ---
 
@@ -44,7 +44,7 @@
 
 * `WBP_Inventory` 负责二十槽布局、标签筛选、翻页、Use、Drop 和当前页显示。
 * `WBP_InventorySlot` 只显示图标、数量、选中和禁用状态，并发出点击、双击或悬浮事件。
-* Drop 数量面板限制输入范围为 `1` 到当前复制数量，但服务器仍使用最新权威数量重新 Clamp 或拒绝。
+* Drop 数量面板限制输入范围为 `1` 到当前复制数量；服务器使用最新权威数量重新验证，非正数或超量请求直接拒绝，不静默改成其他数量。
 * Widget 不应用 GameplayEffect、不生成 Pickup、不修改 Attribute 或背包数组。
 
 ---
@@ -119,7 +119,7 @@ Cooldown.Item.Consumable
 ### 丢弃
 
 * 选中 Drop 后显示数量面板，可选择 `1` 到当前堆栈数量。
-* 服务器验证 StackId 和数量后，在玩家前方安全地面生成对应 ItemData/Quantity 的复制 Pickup，再扣除背包数量。
+* 服务器验证 StackId 和数量后，在玩家前方查找有地面且未被墙体、Pawn 或动态 Actor 占用的安全位置，生成对应 ItemData/Quantity 的复制 Pickup，再扣除背包数量。
 * 找不到合法生成位置时不扣除物品。
 * 新 Pickup 对丢弃者提供短暂拾取保护，避免角色仍在重叠范围时立即捡回；其他玩家可以正常拾取。
 
@@ -129,31 +129,46 @@ Cooldown.Item.Consumable
 
 ### 阶段五 C-A：数据与复制 Model
 
-状态：`Planned`。
+状态：`Implemented`，UHT、源码编译和 Editor 链接已通过，待网络验证。
 
 * 新增 Item DataAsset、FastArray Entry/List 和 `UArenaInventoryComponent`。
 * 在 `AArenaPlayerState` 创建组件并完成 OwnerOnly 增量复制、变化 Delegate 和服务器查询/修改接口。
 * 实现补栈、拆栈、压紧顺序和 StackId 防错操作。
+* 已实现 `UArenaItemDataAsset`、`FArenaInventoryEntry`、`FArenaInventoryList` 与 `UArenaInventoryComponent`，并由 `AArenaPlayerState` 创建组件。
+* FastArray 只标记实际新增、数量变化、移除或改序的条目；客户端在 `PostReplicatedReceive` 的完整 Delta 批次后通过 `OnInventoryChanged` 构建最终只读页面快照，不使用下一帧 Timer 读取中间状态。
+* 服务器拒绝把两个不同 DataAsset 以同一唯一 `ItemTag` 合并，避免堆叠后继承错误的恢复量、图标或 Pickup Class。
+* 运行时模块已显式依赖 `NetCore`，为公共 FastArray 类型和生成代码提供正确链接边界。
 
 完成标准：服务器能稳定保存任意数量堆栈；所属客户端收到相同顺序和数量，其他客户端看不到私有背包数据。
 
 ### 阶段五 C-B：权威物品流程
 
-状态：`Planned`。
+状态：`Partial`，C++、脚本及首批资产生成已完成并通过保存后自检，PIE 待验证。
 
 * 新增交互 Pickup、G 目标选择、服务器距离/视线验证和竞争消费门闩。
 * 实现药水 GAS 使用、共享冷却、满资源失败保护和部分丢弃。
 * 创建 Health Potion、Energy Potion、Cooldown GE 和对应可入包 Pickup 资产。
+* 已实现复制的 `AArenaInventoryPickupActor`、三个服务器 RPC、稳定 `StackId` 使用/丢弃和一秒 `Cooldown.Item.Consumable`；Pickup 仅旋转 Mesh，名称与数量在各客户端朝向本地相机并按恢复类型着色。
+* 药水恢复语义由 `SetByCallerMagnitudeTag` 决定，`ItemTags` 只承担分类与筛选；资源已满时不执行恢复 GE，Deferred Pickup 也只接受有效 ItemData 和正数量。
+* `Content/Python/inventory/setup_inventory_items.py` 已成功生成共享冷却 GE、两个药水 DataAsset 与 Pickup Blueprint；保存后重新加载并验证了 Tag、恢复量、堆叠、GE、图标、Pickup CDO 引用及 `_1/_2` 重复资产。
 
 完成标准：拾取、使用和丢弃均只结算一次，客户端不能伪造物品、恢复或世界 Pickup。
 
 ### 阶段五 C-C：分页筛选与双视角 UI
 
-状态：`Planned`。
+状态：`Partial`，C++ View 与 WBP 资产已实现并通过保存后引用自检，双视角交互待验证。
 
 * 新增 `WBP_Inventory`、`WBP_InventorySlot` 和 Drop 数量面板。
 * 实现二十槽分页、多 Tag OR 筛选、双击/Use、翻页和当前页 Clamp。
 * 接入 Tab/G Enhanced Input，并与 Upgrade、BossIntro、BossOutro、Victory、Dead 和 Stunned 状态协调输入清理。
+* 已实现无需蓝图资产即可运行的 `UArenaInventoryWidget` 与 `UArenaInventorySlotWidget` fallback；使用紧凑 `800×570` 左右分栏、固定五列四行与二十个 `76×76` 图标槽，物品名称和描述集中到右侧详情栏，底部分页与隐藏的 Drop 确认行保持稳定占位。
+* 背包打开时使用全屏半透明遮罩降低战斗 HUD 干扰；槽位不再把完整物品名覆盖在图标上，只显示图标和右上角数量，详情栏负责名称、描述、Use、Drop 与数量确认。
+* `UArenaInventoryWidget.InventorySlotWidgetClass` 允许二十槽 fallback 使用项目专属槽位 WBP；未配置时安全回退原生槽位。
+* 资产脚本已幂等创建 `/Game/UI/Inventory/WBP_Inventory` 和 `WBP_InventorySlot`，连接两者并将 `BP_ArenaPlayerController.InventoryWidgetClass` 指向正式背包 View；保存后重新加载验证通过。
+* 已提供 `K2_OnInventoryPageUpdated`、`K2_OnInventoryHidden` 和 `K2_OnSlotDataUpdated`，后续可直接美化两个 WBP 而继续消费同一份只读 ViewData。
+* `ArenaInventory::CalculatePageCount()` 与 `MatchesFilters()` 是 Controller 和自动化测试共用的分页/筛选规则；`ProjectArcaneArena.Inventory.Pagination` 覆盖 `0/19/20/21/40/41`，`ProjectArcaneArena.Inventory.Filters` 覆盖无筛选、多 Tag OR、父标签、唯一 ItemTag 和无关 Tag。
+* `AArenaPlayerController` 持有本地页码、筛选 Tag 和选中 StackId；`Tab`、`G` 已接入角色默认 Enhanced Input。
+* 背包打开时使用 `GameAndUI`、停止 Sprint 和本地移动/Look/主动技能输入，关闭后按原顶视角或第三人称状态恢复鼠标和准星。
 
 完成标准：顶视角和第三人称均可打开、操作和关闭背包，输入、鼠标和准星不会残留或串到玩法层。
 
@@ -202,7 +217,7 @@ AArenaPlayerController::ServerDropInventoryItem(...)
 * 验证部分/整组丢弃、地面生成、重新拾取和两人竞争同一 Pickup。
 * 验证背包只复制给拥有者，客户端伪造 StackId、数量、Actor 或迟到请求均被服务器拒绝。
 * 验证死亡、阶段切换、关卡旅行和 Widget 销毁会清理页面、弹窗、Delegate 与输入状态。
-* 分别在顶视角和第三人称验证 Tab、G、鼠标、准星、移动和主动技能输入恢复。
+* 分别在顶视角和第三人称验证 Tab、G、鼠标、准星、移动和主动技能输入恢复，并在 720p 与 1080p 检查槽位文字、详情操作和分页不重叠。
 
 ---
 
@@ -217,3 +232,5 @@ AArenaPlayerController::ServerDropInventoryItem(...)
 ```
 
 项目编译继续遵守 `AGENTS.md` 的源码引擎和 Live Coding 安全规则。
+
+编译完成后先执行 `Automation RunTests ProjectArcaneArena.Inventory`；自动化只验证纯分页/筛选规则，FastArray、Widget、输入和网络仍必须按 PIE 清单验收。
