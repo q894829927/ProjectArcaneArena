@@ -48,6 +48,18 @@ struct PROJECTARCANEARENA_API FArenaInventoryPageViewData
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|Inventory")
 	FGameplayTagContainer ActiveFilters;
+
+	// Controller 根据复制阶段和角色状态写入，View 只据此启用 Use/Drop 意图。
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Inventory")
+	bool bCanPerformActions = false;
+
+	// 在基础操作权限上额外考虑共享消耗品冷却，只控制 Use 意图。
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Inventory")
+	bool bCanUseItems = false;
+
+	// 丢弃不受共享使用冷却影响，但仍遵循阶段、Dead 和 Stunned 权限。
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Inventory")
+	bool bCanDropItems = false;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FArenaInventoryStackRequestSignature, FGuid, StackId);
@@ -97,15 +109,25 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Inventory")
 	FArenaInventorySimpleRequestSignature OnCloseRequested;
 
+	// GameAndUI 下把 Tab 按下交还 Controller，按键重复由 Controller 状态机去重。
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Inventory")
+	FArenaInventorySimpleRequestSignature OnTabPressed;
+
+	// GameAndUI 下把 Tab 松开交还 Controller，以完成长按临时查看。
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Inventory")
+	FArenaInventorySimpleRequestSignature OnTabReleased;
+
 protected:
 	// 初始化时创建原生二十槽 fallback。
 	virtual void NativeOnInitialized() override;
 	// 加入视口时绑定固定控制并默认折叠。
 	virtual void NativeConstruct() override;
-	// 在子按钮处理焦点导航前拦截 Tab/Escape，保证操作过任意控件后仍可关闭背包。
+	// 在子按钮处理焦点导航前拦截 Tab/Escape，并把 Tab 按住状态交给 Controller。
 	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
-	// Tab 或 Escape 在 UI 获得焦点时请求关闭背包。
+	// Tab 或 Escape 在 UI 获得焦点时转发状态或请求关闭背包。
 	virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+	// KeyUp 冒泡路径转发 Tab 松开，兼容子按钮或自定义槽位持有焦点。
+	virtual FReply NativeOnKeyUp(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
 	// 蓝图 View 可使用 Controller 已构建的只读页面数据更新自定义布局。
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Inventory")

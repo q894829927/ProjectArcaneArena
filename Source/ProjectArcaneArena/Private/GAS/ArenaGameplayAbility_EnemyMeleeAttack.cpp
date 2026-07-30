@@ -2,6 +2,8 @@
 
 #include "AbilitySystemComponent.h"
 #include "Character/ArenaEnemyCharacter.h"
+#include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
 
@@ -16,6 +18,33 @@ UArenaGameplayAbility_EnemyMeleeAttack::UArenaGameplayAbility_EnemyMeleeAttack()
 bool UArenaGameplayAbility_EnemyMeleeAttack::HasRequiredAttackConfiguration() const
 {
 	return Super::HasRequiredAttackConfiguration() && DamageEffectClass != nullptr;
+}
+
+// 忽略全部敌人胶囊和模型，只保留场景 Visibility 阻挡，避免同阵营排队让近战永久失去攻击资格。
+bool UArenaGameplayAbility_EnemyMeleeAttack::HasAttackLineOfSight(
+	AArenaEnemyCharacter* SourceEnemy,
+	AActor* TargetActor) const
+{
+	UWorld* World = SourceEnemy ? SourceEnemy->GetWorld() : nullptr;
+	if (!World || !TargetActor)
+	{
+		return false;
+	}
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(EnemyMeleeAttackLineOfSight), false, SourceEnemy);
+	for (AArenaEnemyCharacter* EnemyCharacter : TActorRange<AArenaEnemyCharacter>(World))
+	{
+		QueryParams.AddIgnoredActor(EnemyCharacter);
+	}
+
+	FHitResult HitResult;
+	const bool bHasBlockingHit = World->LineTraceSingleByChannel(
+		HitResult,
+		SourceEnemy->GetActorLocation(),
+		TargetActor->GetActorLocation(),
+		ECC_Visibility,
+		QueryParams);
+	return !bHasBlockingHit || HitResult.GetActor() == TargetActor;
 }
 
 // 使用释放时的最新属性构造物理伤害 Spec，每次攻击窗口最多应用一次。

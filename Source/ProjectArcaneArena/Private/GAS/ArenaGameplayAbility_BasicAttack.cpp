@@ -195,7 +195,7 @@ void UArenaGameplayAbility_BasicAttack::PlayAttackMontage()
 	}
 }
 
-// 仅在服务器沿最终瞄准方向扫描目标，并通过 GE/ExecCalc 应用物理伤害。
+// 仅在服务器沿最终瞄准方向扫描目标，并把选中命中点写入 GE 上下文供伤害和 Cue 共用。
 void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 	AActor* AvatarActor,
 	UAbilitySystemComponent* SourceASC,
@@ -236,6 +236,7 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 
 	AActor* BestTarget = nullptr;
 	UAbilitySystemComponent* BestTargetASC = nullptr;
+	FHitResult BestTargetHitResult;
 	float BestDistanceSquared = TNumericLimits<float>::Max();
 
 	for (const FHitResult& HitResult : HitResults)
@@ -270,6 +271,7 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 			BestDistanceSquared = DistanceSquared;
 			BestTarget = HitActor;
 			BestTargetASC = TargetASC;
+			BestTargetHitResult = HitResult;
 		}
 	}
 
@@ -280,6 +282,8 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 		// 伤害数值以 SetByCaller 写入 GE Spec，实际计算由 ExecCalc_Damage 完成。
 		FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
 		EffectContext.AddSourceObject(this);
+		// 保留权威 Sweep 的真实命中点，供伤害 GameplayCue 在目标表面准确生成。
+		EffectContext.AddHitResult(BestTargetHitResult, true);
 		FGameplayEffectSpecHandle DamageSpecHandle = SourceASC->MakeOutgoingSpec(DamageEffectClass, GetAbilityLevel(), EffectContext);
 
 		if (DamageSpecHandle.IsValid())

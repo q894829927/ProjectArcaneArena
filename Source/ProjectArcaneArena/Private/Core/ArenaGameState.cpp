@@ -8,7 +8,7 @@ AArenaGameState::AArenaGameState()
 	bReplicates = true;
 }
 
-// 复制波次、Boss、演出时序与 Victory Ready 快照，客户端仅通过委托观察这些状态。
+// 复制波次、Boss、演出时序、背包阶段规则与 Victory Ready 快照，客户端仅观察权威状态。
 void AArenaGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -22,6 +22,38 @@ void AArenaGameState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(AArenaGameState, BossOutroTiming);
 	DOREPLIFETIME(AArenaGameState, VictoryRestartReadyCount);
 	DOREPLIFETIME(AArenaGameState, VictoryRestartRequiredCount);
+	DOREPLIFETIME(AArenaGameState, bAllowInventoryOperationsWhileWaiting);
+}
+
+// Boss 演出阶段独占镜头和跳过输入，其余阶段允许打开背包查看。
+bool AArenaGameState::IsInventoryViewAllowedForPhase(EArenaGamePhase Phase)
+{
+	return Phase != EArenaGamePhase::BossIntro
+		&& Phase != EArenaGamePhase::BossOutro;
+}
+
+// Combat 与 Victory 允许完整操作；Waiting 只在测试 GameMode 显式授权时开放。
+bool AArenaGameState::AreInventoryOperationsAllowedForPhase(
+	EArenaGamePhase Phase,
+	bool bAllowWaitingOperations)
+{
+	return Phase == EArenaGamePhase::Combat
+		|| Phase == EArenaGamePhase::Victory
+		|| (Phase == EArenaGamePhase::Waiting && bAllowWaitingOperations);
+}
+
+// 使用当前复制阶段判断本地背包是否可见。
+bool AArenaGameState::CanViewInventory() const
+{
+	return IsInventoryViewAllowedForPhase(GamePhase);
+}
+
+// 使用服务器复制的 Waiting 测试开关统一判断拾取、使用和丢弃权限。
+bool AArenaGameState::CanPerformInventoryOperations() const
+{
+	return AreInventoryOperationsAllowedForPhase(
+		GamePhase,
+		bAllowInventoryOperationsWhileWaiting);
 }
 
 // 使用 GameState 已同步的服务器时间计算 Intro 剩余秒数，避免客户端本地时钟漂移。
@@ -161,6 +193,18 @@ void AArenaGameState::SetVictoryRestartCounts(int32 NewReadyCount, int32 NewRequ
 		OnVictoryRestartRequiredCountChanged.Broadcast(OldRequiredCount, VictoryRestartRequiredCount);
 	}
 
+	ForceNetUpdate();
+}
+
+// 服务器在测试 GameMode 初始化时写入 Waiting 完整权限，并推动初始状态及时复制。
+void AArenaGameState::SetAllowInventoryOperationsWhileWaiting(bool bAllow)
+{
+	if (!HasAuthority() || bAllowInventoryOperationsWhileWaiting == bAllow)
+	{
+		return;
+	}
+
+	bAllowInventoryOperationsWhileWaiting = bAllow;
 	ForceNetUpdate();
 }
 

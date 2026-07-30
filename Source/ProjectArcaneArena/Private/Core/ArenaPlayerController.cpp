@@ -16,6 +16,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
 #include "GAS/ArenaGameplayTags.h"
+#include "HAL/PlatformTime.h"
 #include "Item/ArenaInventoryComponent.h"
 #include "Item/ArenaInventoryPickupActor.h"
 #include "Item/ArenaItemDataAsset.h"
@@ -138,6 +139,16 @@ void AArenaPlayerController::OnPossess(APawn* InPawn)
 	BindInventoryState();
 }
 
+// 引擎在 ClientRestart 中清空 IgnoreInput 计数后，重置项目记账并按当前 UI 阶段重新持有唯一锁层。
+void AArenaPlayerController::ResetIgnoreInputFlags()
+{
+	Super::ResetIgnoreInputFlags();
+
+	bLocalUIMoveInputLocked = false;
+	bLocalUILookInputLocked = false;
+	RefreshLocalUIInputLocks();
+}
+
 // 仅在本地控制器上创建常驻 HUD；普通阶段整体忽略命中测试，Victory 再临时开放子控件点击。
 void AArenaPlayerController::CreatePlayerHUD()
 {
@@ -171,6 +182,12 @@ void AArenaPlayerController::CreateUpgradeSelectionWidget()
 	{
 		UpgradeSelectionWidget->AddToViewport(20);
 		UpgradeSelectionWidget->OnUpgradeChosen.AddUniqueDynamic(this, &AArenaPlayerController::HandleUpgradeChosen);
+		UpgradeSelectionWidget->OnInventoryRequested.AddUniqueDynamic(
+			this,
+			&AArenaPlayerController::HandleUpgradeInventoryTabPressed);
+		UpgradeSelectionWidget->OnInventoryTabReleased.AddUniqueDynamic(
+			this,
+			&AArenaPlayerController::HandleUpgradeInventoryTabReleased);
 	}
 }
 
@@ -213,6 +230,12 @@ void AArenaPlayerController::CreateInventoryWidget()
 	InventoryWidget->OnCloseRequested.AddUniqueDynamic(
 		this,
 		&AArenaPlayerController::HandleInventoryCloseRequested);
+	InventoryWidget->OnTabPressed.AddUniqueDynamic(
+		this,
+		&AArenaPlayerController::HandleInventoryTabPressedFromView);
+	InventoryWidget->OnTabReleased.AddUniqueDynamic(
+		this,
+		&AArenaPlayerController::HandleInventoryTabReleasedFromView);
 }
 
 // 绑定当前 PlayerState 的升级复制委托，并立即用现有快照刷新界面。
@@ -256,7 +279,7 @@ void AArenaPlayerController::UnbindUpgradeState()
 	BoundUpgradePlayerState.Reset();
 }
 
-// 绑定 PlayerState 上的 OwnerOnly 背包 Model，服务器 Listen Player 与所属客户端共用同一刷新入口。
+// 绑定 PlayerState 上的 OwnerOnly 背包 Model 与阻断操作的 GAS Tag，服务器 Listen Player 与所属客户端共用同一刷新入口。
 void AArenaPlayerController::BindInventoryState()
 {
 	if (!IsLocalController())
@@ -267,6 +290,8 @@ void AArenaPlayerController::BindInventoryState()
 	AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
 	UArenaInventoryComponent* InventoryComponent =
 		ArenaPlayerState ? ArenaPlayerState->GetInventoryComponent() : nullptr;
+	UAbilitySystemComponent* AbilitySystemComponent =
+		ArenaPlayerState ? ArenaPlayerState->GetAbilitySystemComponent() : nullptr;
 	if (!InventoryComponent)
 	{
 		UnbindInventoryState();
@@ -277,19 +302,40 @@ void AArenaPlayerController::BindInventoryState()
 		return;
 	}
 
-	if (BoundInventoryComponent.Get() != InventoryComponent)
+	if (BoundInventoryComponent.Get() != InventoryComponent
+		|| BoundInventoryAbilitySystemComponent.Get() != AbilitySystemComponent)
 	{
 		UnbindInventoryState();
 		BoundInventoryComponent = InventoryComponent;
 		InventoryComponent->OnInventoryChanged.AddUniqueDynamic(
 			this,
 			&AArenaPlayerController::HandleInventoryChanged);
+
+		BoundInventoryAbilitySystemComponent = AbilitySystemComponent;
+		if (AbilitySystemComponent)
+		{
+			InventoryDeadTagDelegateHandle = AbilitySystemComponent->RegisterGameplayTagEvent(
+				ArenaGameplayTags::State_Dead,
+				EGameplayTagEventType::NewOrRemoved).AddUObject(
+					this,
+					&AArenaPlayerController::HandleInventoryPermissionTagChanged);
+			InventoryStunnedTagDelegateHandle = AbilitySystemComponent->RegisterGameplayTagEvent(
+				ArenaGameplayTags::State_Stunned,
+				EGameplayTagEventType::NewOrRemoved).AddUObject(
+					this,
+					&AArenaPlayerController::HandleInventoryPermissionTagChanged);
+			InventoryConsumableCooldownTagDelegateHandle = AbilitySystemComponent->RegisterGameplayTagEvent(
+				ArenaGameplayTags::Cooldown_Item_Consumable,
+				EGameplayTagEventType::NewOrRemoved).AddUObject(
+					this,
+					&AArenaPlayerController::HandleInventoryPermissionTagChanged);
+		}
 	}
 
 	RefreshInventoryUI();
 }
 
-// 解除旧背包 Model 委托并清空筛选、分页和选择，防止旅行或重连后保留失效 View 状态。
+// 对称解除旧背包 Model 与 GAS Tag 委托，并清空筛选、分页和选择，防止旅行或重连后保留失效状态。
 void AArenaPlayerController::UnbindInventoryState()
 {
 	if (UArenaInventoryComponent* InventoryComponent = BoundInventoryComponent.Get())
@@ -298,14 +344,42 @@ void AArenaPlayerController::UnbindInventoryState()
 			this,
 			&AArenaPlayerController::HandleInventoryChanged);
 	}
+	if (UAbilitySystemComponent* AbilitySystemComponent = BoundInventoryAbilitySystemComponent.Get())
+	{
+		if (InventoryDeadTagDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent->UnregisterGameplayTagEvent(
+				InventoryDeadTagDelegateHandle,
+				ArenaGameplayTags::State_Dead,
+				EGameplayTagEventType::NewOrRemoved);
+		}
+		if (InventoryStunnedTagDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent->UnregisterGameplayTagEvent(
+				InventoryStunnedTagDelegateHandle,
+				ArenaGameplayTags::State_Stunned,
+				EGameplayTagEventType::NewOrRemoved);
+		}
+		if (InventoryConsumableCooldownTagDelegateHandle.IsValid())
+		{
+			AbilitySystemComponent->UnregisterGameplayTagEvent(
+				InventoryConsumableCooldownTagDelegateHandle,
+				ArenaGameplayTags::Cooldown_Item_Consumable,
+				EGameplayTagEventType::NewOrRemoved);
+		}
+	}
 
 	BoundInventoryComponent.Reset();
+	BoundInventoryAbilitySystemComponent.Reset();
+	InventoryDeadTagDelegateHandle.Reset();
+	InventoryStunnedTagDelegateHandle.Reset();
+	InventoryConsumableCooldownTagDelegateHandle.Reset();
 	ActiveInventoryFilters.Reset();
 	SelectedInventoryStackId.Invalidate();
 	InventoryPageIndex = 0;
 }
 
-// 按固定 Model 顺序执行多 Tag OR 筛选，再计算动态页数并构建最多二十项的 ViewData。
+// 按固定 Model 顺序筛选分页，并把复制阶段与角色状态整理为只读或可操作 ViewData。
 void AArenaPlayerController::RefreshInventoryUI()
 {
 	if (!IsLocalController() || !bInventoryInputMode)
@@ -365,6 +439,9 @@ void AArenaPlayerController::RefreshInventoryUI()
 	PageViewData.TotalPages = TotalPages;
 	PageViewData.SelectedStackId = SelectedInventoryStackId;
 	PageViewData.ActiveFilters = ActiveInventoryFilters;
+	PageViewData.bCanPerformActions = CanPerformInventoryActions();
+	PageViewData.bCanUseItems = CanUseInventoryItems();
+	PageViewData.bCanDropItems = PageViewData.bCanPerformActions;
 
 	for (int32 Index = StartIndex; Index < EndIndex; ++Index)
 	{
@@ -378,7 +455,7 @@ void AArenaPlayerController::RefreshInventoryUI()
 	InventoryWidget->ShowInventoryPage(PageViewData);
 }
 
-// 根据复制阶段和候选决定是否显示界面，并把 PlayerState 层数整理为只读卡片展示快照。
+// 根据复制阶段、候选和背包遮挡状态决定是否显示升级界面。
 void AArenaPlayerController::RefreshUpgradeSelectionUI()
 {
 	if (!IsLocalController())
@@ -395,22 +472,28 @@ void AArenaPlayerController::RefreshUpgradeSelectionUI()
 	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
 	const bool bShouldShow = UpgradeSelectionWidget && ArenaPlayerState && ArenaGameState
 		&& ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade
+		&& !bInventoryInputMode
 		&& !ArenaPlayerState->HasSelectedUpgrade()
 		&& !ArenaPlayerState->GetUpgradeCandidates().IsEmpty();
 
 	if (bShouldShow)
 	{
 		UpgradeSelectionWidget->ShowUpgradeChoices(BuildUpgradeChoiceViewData(ArenaPlayerState));
+		SetUpgradeInputMode(true);
 	}
-	else if (UpgradeSelectionWidget)
+	else
 	{
-		UpgradeSelectionWidget->HideUpgradeChoices();
+		const bool bTransitioningToInventory = bInventoryInputMode && bUpgradeInputMode;
+		SetUpgradeInputMode(false, bTransitioningToInventory);
+		if (UpgradeSelectionWidget)
+		{
+			UpgradeSelectionWidget->HideUpgradeChoices();
+		}
 	}
-	SetUpgradeInputMode(bShouldShow);
 }
 
-// 升级期间切为 UIOnly 并聚焦首个有效按钮；结束后恢复当前视角输入。
-void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
+// 升级期间使用 GameAndUI 保留 Tab 的 Enhanced Input 兜底；阶段锁仍阻止移动和主动技能。
+void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled, bool bTransitioningToInventory)
 {
 	if (!IsLocalController() || bUpgradeInputMode == bEnabled)
 	{
@@ -418,10 +501,10 @@ void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
 	}
 
 	bUpgradeInputMode = bEnabled;
+	RefreshLocalUIInputLocks();
 	if (bUpgradeInputMode && UpgradeSelectionWidget)
 	{
-		// UIOnly 会截断 Enhanced Input 的 Completed/Canceled 事件；先清键并阻止后续移动输入。
-		SetIgnoreMoveInput(true);
+		// 进入升级选择前清理旧战斗按键；输入锁由统一协调器按当前全部模式持有。
 		FlushPressedKeys();
 
 		if (APawn* ControlledPawn = GetPawn())
@@ -434,24 +517,36 @@ void AArenaPlayerController::SetUpgradeInputMode(bool bEnabled)
 		}
 
 		bShowMouseCursor = true;
-		FInputModeUIOnly InputMode;
-		if (UWidget* InitialFocusTarget = UpgradeSelectionWidget->GetInitialFocusTarget())
+		FInputModeGameAndUI InputMode;
+		UWidget* InitialFocusTarget = UpgradeSelectionWidget->GetInitialFocusTarget();
+		if (InitialFocusTarget)
 		{
 			InputMode.SetWidgetToFocus(InitialFocusTarget->TakeWidget());
 		}
+		InputMode.SetHideCursorDuringCapture(false);
 		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 		SetInputMode(InputMode);
+		if (InitialFocusTarget)
+		{
+			// Widget 优先处理 Tab；焦点失效时 GameAndUI 仍允许 Enhanced Input 入口接管。
+			InitialFocusTarget->SetKeyboardFocus();
+		}
 	}
 	else
 	{
-		// 恢复游戏输入前再次清键，避免 UI 期间松开的按键在 Enhanced Input 中保持按下状态。
-		FlushPressedKeys();
-		SetIgnoreMoveInput(false);
-		SetThirdPersonInputMode(bThirdPersonInputMode);
+		// 升级界面切到背包时，Tab 正处于 Slate KeyDown 分发中；清键会吞掉后续 KeyUp 并破坏轻点/长按判定。
+		if (!bTransitioningToInventory)
+		{
+			FlushPressedKeys();
+		}
+		if (!bTransitioningToInventory)
+		{
+			SetThirdPersonInputMode(bThirdPersonInputMode);
+		}
 	}
 }
 
-// Tab 只在 Combat 且玩家可操作时打开背包；已打开时始终允许关闭以恢复输入。
+// 显式切换入口保留旧调用语义，并清理可能尚未结束的 Tab 长按快照。
 void AArenaPlayerController::ToggleInventory()
 {
 	if (!IsLocalController())
@@ -459,47 +554,113 @@ void AArenaPlayerController::ToggleInventory()
 		return;
 	}
 
+	ResetInventoryTabPressState();
 	if (bInventoryInputMode)
 	{
 		SetInventoryInputMode(false);
 		return;
 	}
 
-	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
-	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
-	const UAbilitySystemComponent* AbilitySystemComponent =
-		ArenaPlayerState ? ArenaPlayerState->GetAbilitySystemComponent() : nullptr;
-	if (bUpgradeInputMode || bBossIntroInputMode || bBossOutroInputMode || bVictoryInputMode
-		|| !ArenaGameState || ArenaGameState->GetGamePhase() != EArenaGamePhase::Combat
-		|| !AbilitySystemComponent
-		|| AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
-		|| AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))
+	TryOpenInventory();
+}
+
+// Tab 按下立即显示背包；重复 KeyDown 不重置开始时间，保证长按阈值稳定。
+void AArenaPlayerController::HandleInventoryTabPressed()
+{
+	if (!IsLocalController() || bInventoryTabPressActive)
 	{
 		return;
+	}
+
+	bInventoryTabPressActive = true;
+	bInventoryWasOpenOnTabPress = bInventoryInputMode;
+	InventoryTabPressStartTime = FPlatformTime::Seconds();
+
+	if (!bInventoryInputMode && !TryOpenInventory())
+	{
+		ResetInventoryTabPressState();
+	}
+}
+
+// Tab 松开时，原本关闭的短按保持背包打开；长按或原本已打开的按键在松开时关闭。
+void AArenaPlayerController::HandleInventoryTabReleased()
+{
+	if (!IsLocalController() || !bInventoryTabPressActive)
+	{
+		return;
+	}
+
+	const double HeldDuration = FMath::Max(FPlatformTime::Seconds() - InventoryTabPressStartTime, 0.0);
+	const bool bShouldCloseOnRelease = ArenaInventory::ShouldCloseOnTabRelease(
+		bInventoryWasOpenOnTabPress,
+		bInventoryInputMode,
+		HeldDuration,
+		static_cast<double>(InventoryHoldThreshold));
+
+	ResetInventoryTabPressState();
+	if (bShouldCloseOnRelease)
+	{
+		SetInventoryInputMode(false);
+	}
+}
+
+// 按复制阶段权限尝试打开背包；只读阶段仍可查看，Boss 演出阶段保留镜头与跳过输入。
+bool AArenaPlayerController::TryOpenInventory()
+{
+	if (!IsLocalController() || bInventoryInputMode)
+	{
+		return bInventoryInputMode;
+	}
+
+	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	if (bBossIntroInputMode
+		|| bBossOutroInputMode
+		|| !ArenaGameState
+		|| !ArenaGameState->CanViewInventory())
+	{
+		return false;
 	}
 
 	BindInventoryState();
 	if (!BoundInventoryComponent.IsValid())
 	{
-		return;
+		return false;
 	}
 
 	SetInventoryInputMode(true);
 	RefreshInventoryUI();
+	return bInventoryInputMode;
 }
 
-// 背包打开时使用 GameAndUI 和可见鼠标，关闭时恢复进入背包前保留的双视角输入表现。
+// 清空本次 Tab 按住状态，防止阶段切换、按钮关闭或销毁后迟到 KeyUp 再次改变界面。
+void AArenaPlayerController::ResetInventoryTabPressState()
+{
+	bInventoryTabPressActive = false;
+	bInventoryWasOpenOnTabPress = false;
+	InventoryTabPressStartTime = 0.0;
+}
+
+// 背包打开时隐藏 Upgrade 选择并接管 GameAndUI，关闭时按当前阶段恢复升级或原视角输入。
 void AArenaPlayerController::SetInventoryInputMode(bool bEnabled)
 {
 	if (!IsLocalController() || bInventoryInputMode == bEnabled)
 	{
+		if (!bEnabled)
+		{
+			ResetInventoryTabPressState();
+		}
 		return;
 	}
 
+	if (!bEnabled)
+	{
+		ResetInventoryTabPressState();
+	}
 	bInventoryInputMode = bEnabled;
-	FlushPressedKeys();
 	if (bInventoryInputMode)
 	{
+		RefreshUpgradeSelectionUI();
+		RefreshLocalUIInputLocks();
 		if (AArenaPlayerCharacter* PlayerCharacter = Cast<AArenaPlayerCharacter>(GetPawn()))
 		{
 			PlayerCharacter->StopSprintingForInventory();
@@ -513,8 +674,6 @@ void AArenaPlayerController::SetInventoryInputMode(bool bEnabled)
 			}
 		}
 
-		SetIgnoreMoveInput(true);
-		SetIgnoreLookInput(true);
 		bEnableClickEvents = true;
 		bEnableMouseOverEvents = true;
 		bShowMouseCursor = true;
@@ -538,16 +697,85 @@ void AArenaPlayerController::SetInventoryInputMode(bool bEnabled)
 		return;
 	}
 
+	// 只在退出 UI 时清键；打开时保留 Tab 的物理按住状态，才能可靠区分轻点和长按。
+	FlushPressedKeys();
 	if (InventoryWidget)
 	{
 		InventoryWidget->HideInventory();
 	}
 	SelectedInventoryStackId.Invalidate();
-	SetIgnoreMoveInput(bUpgradeInputMode || bBossIntroInputMode || bBossOutroInputMode || bVictoryInputMode);
-	SetIgnoreLookInput(bBossIntroInputMode || bBossOutroInputMode || bVictoryInputMode);
+	RefreshUpgradeSelectionUI();
+	RefreshLocalUIInputLocks();
 	bEnableClickEvents = bVictoryInputMode;
 	bEnableMouseOverEvents = bVictoryInputMode;
-	SetThirdPersonInputMode(bThirdPersonInputMode);
+	// 背包只是临时 UI，不是视角切换；恢复顶视角时保留关闭背包瞬间的鼠标位置。
+	SetThirdPersonInputMode(bThirdPersonInputMode, false);
+}
+
+// 把 Upgrade、Inventory、Boss 演出和 Victory 汇总为唯一输入锁所有者，模式交错时只做一次幂等切换。
+void AArenaPlayerController::RefreshLocalUIInputLocks(bool bForceRelease)
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	const AArenaGameState* ArenaGameState = BoundArenaGameState.IsValid()
+		? BoundArenaGameState.Get()
+		: (GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr);
+	const bool bUpgradePhaseActive =
+		!bForceRelease
+		&& ArenaGameState
+		&& ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade;
+	const bool bShouldLockMoveInput = !bForceRelease
+		&& (bUpgradePhaseActive
+			|| bUpgradeInputMode
+			|| bInventoryInputMode
+			|| bBossIntroInputMode
+			|| bBossOutroInputMode
+			|| bVictoryInputMode);
+	const bool bShouldLockLookInput = !bForceRelease
+		&& (bInventoryInputMode
+			|| bBossIntroInputMode
+			|| bBossOutroInputMode
+			|| bVictoryInputMode);
+
+	if (bLocalUIMoveInputLocked != bShouldLockMoveInput)
+	{
+		SetIgnoreMoveInput(bShouldLockMoveInput);
+		bLocalUIMoveInputLocked = bShouldLockMoveInput;
+	}
+	if (bLocalUILookInputLocked != bShouldLockLookInput)
+	{
+		SetIgnoreLookInput(bShouldLockLookInput);
+		bLocalUILookInputLocked = bShouldLockLookInput;
+	}
+}
+
+// 本地依据复制规则和 ASC 状态判断操作资格；服务器仍会对所有 RPC 重做相同验证。
+bool AArenaPlayerController::CanPerformInventoryActions() const
+{
+	const AArenaGameState* ArenaGameState =
+		GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
+	const UAbilitySystemComponent* AbilitySystemComponent =
+		ArenaPlayerState ? ArenaPlayerState->GetAbilitySystemComponent() : nullptr;
+	return ArenaGameState
+		&& ArenaGameState->CanPerformInventoryOperations()
+		&& AbilitySystemComponent
+		&& !AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
+		&& !AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
+}
+
+// 使用资格在基础阶段/状态权限上增加共享冷却检查，服务器 Model 仍执行最终验证。
+bool AArenaPlayerController::CanUseInventoryItems() const
+{
+	const AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>();
+	const UAbilitySystemComponent* AbilitySystemComponent =
+		ArenaPlayerState ? ArenaPlayerState->GetAbilitySystemComponent() : nullptr;
+	return CanPerformInventoryActions()
+		&& AbilitySystemComponent
+		&& !AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::Cooldown_Item_Consumable);
 }
 
 // 从玩家位置而非远端相机位置选择最近可见 Pickup，避免顶视角和第三人称得到不同交互距离。
@@ -606,16 +834,10 @@ AArenaInventoryPickupActor* AArenaPlayerController::FindNearestInteractableInven
 	return BestPickup;
 }
 
-// G 只提交本地找到的候选 Actor，不能直接改变世界 Pickup 或背包 Model。
+// G 仅在阶段和角色状态允许时提交本地候选，不能直接改变世界 Pickup 或背包 Model。
 void AArenaPlayerController::RequestInteractWithNearestInventoryPickup()
 {
-	if (!IsLocalController() || bInventoryInputMode)
-	{
-		return;
-	}
-
-	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
-	if (!ArenaGameState || ArenaGameState->GetGamePhase() != EArenaGamePhase::Combat)
+	if (!IsLocalController() || bInventoryInputMode || !CanPerformInventoryActions())
 	{
 		return;
 	}
@@ -632,6 +854,21 @@ void AArenaPlayerController::HandleInventoryChanged()
 	RefreshInventoryUI();
 }
 
+// Dead、Stunned 或共享冷却增减时刷新 ViewData；角色移动和关闭逻辑仍由各自状态流程负责。
+void AArenaPlayerController::HandleInventoryPermissionTagChanged(
+	const FGameplayTag CallbackTag,
+	int32 /*NewCount*/)
+{
+	if (CallbackTag != ArenaGameplayTags::State_Dead
+		&& CallbackTag != ArenaGameplayTags::State_Stunned
+		&& CallbackTag != ArenaGameplayTags::Cooldown_Item_Consumable)
+	{
+		return;
+	}
+
+	RefreshInventoryUI();
+}
+
 // 槽位选择是纯本地 View 状态，使用和丢弃仍以稳定 StackId 走服务器 RPC。
 void AArenaPlayerController::HandleInventoryStackSelected(FGuid StackId)
 {
@@ -639,19 +876,22 @@ void AArenaPlayerController::HandleInventoryStackSelected(FGuid StackId)
 	RefreshInventoryUI();
 }
 
-// 双击或 Use 按钮只提交当前 StackId，服务器验证恢复资格和共享冷却。
+// 双击或 Use 按钮仅在当前阶段可操作时提交 StackId，服务器仍验证资源与冷却。
 void AArenaPlayerController::HandleInventoryUseRequested(FGuid StackId)
 {
-	if (bInventoryInputMode && StackId.IsValid())
+	if (bInventoryInputMode && StackId.IsValid() && CanUseInventoryItems())
 	{
 		ServerUseInventoryItem(StackId);
 	}
 }
 
-// 丢弃面板只提交正数量，服务器会再次限制到当前权威堆栈数量。
+// 丢弃面板仅在当前阶段可操作时提交正数量，服务器会再次限制权威堆栈。
 void AArenaPlayerController::HandleInventoryDropRequested(FGuid StackId, int32 Quantity)
 {
-	if (bInventoryInputMode && StackId.IsValid() && Quantity > 0)
+	if (bInventoryInputMode
+		&& StackId.IsValid()
+		&& Quantity > 0
+		&& CanPerformInventoryActions())
 	{
 		ServerDropInventoryItem(StackId, Quantity);
 	}
@@ -709,7 +949,7 @@ void AArenaPlayerController::HandleInventoryCloseRequested()
 	SetInventoryInputMode(false);
 }
 
-// Authority 校验阶段、状态、距离、视线和拾取保护，多人竞争由 Pickup 消费门闩保证唯一成功。
+// Authority 统一校验阶段操作权限、状态、距离、视线和拾取保护。
 void AArenaPlayerController::ServerInteractWithInventoryPickup_Implementation(
 	AArenaInventoryPickupActor* PickupActor)
 {
@@ -719,7 +959,7 @@ void AArenaPlayerController::ServerInteractWithInventoryPickup_Implementation(
 	UAbilitySystemComponent* AbilitySystemComponent =
 		ArenaPlayerState ? ArenaPlayerState->GetAbilitySystemComponent() : nullptr;
 	if (!IsValid(PickupActor) || !ControlledPawn || !ArenaPlayerState || !ArenaGameState
-		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Combat
+		|| !ArenaGameState->CanPerformInventoryOperations()
 		|| !AbilitySystemComponent
 		|| AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 		|| AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned)
@@ -747,7 +987,7 @@ void AArenaPlayerController::ServerInteractWithInventoryPickup_Implementation(
 	PickupActor->TryCollect(ArenaPlayerState);
 }
 
-// Authority 把使用请求交给 InventoryComponent，资源、冷却和物品扣除保持原子顺序。
+// Authority 把使用请求交给 InventoryComponent，由 Model 重做阶段、状态与恢复事务校验。
 void AArenaPlayerController::ServerUseInventoryItem_Implementation(FGuid StackId)
 {
 	if (AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>())
@@ -759,7 +999,7 @@ void AArenaPlayerController::ServerUseInventoryItem_Implementation(FGuid StackId
 	}
 }
 
-// Authority 以当前 Pawn 为丢弃来源，Pickup 成功生成前不会扣除堆栈。
+// Authority 以当前 Pawn 为丢弃来源，由 Model 重做权限并在生成成功前保留堆栈。
 void AArenaPlayerController::ServerDropInventoryItem_Implementation(FGuid StackId, int32 Quantity)
 {
 	if (AArenaPlayerState* ArenaPlayerState = GetPlayerState<AArenaPlayerState>())
@@ -786,6 +1026,30 @@ void AArenaPlayerController::HandleUpgradeChosen(FName UpgradeID)
 	}
 }
 
+// Upgrade Widget 优先转发 Tab 按下，焦点缺失时 Enhanced Input 会进入同一状态机。
+void AArenaPlayerController::HandleUpgradeInventoryTabPressed()
+{
+	HandleInventoryTabPressed();
+}
+
+// Upgrade Widget 转发 Tab 松开，完成轻点保持或长按关闭。
+void AArenaPlayerController::HandleUpgradeInventoryTabReleased()
+{
+	HandleInventoryTabReleased();
+}
+
+// 背包 View 在 GameAndUI 下转发 Tab 按下，重复事件由统一状态门闩忽略。
+void AArenaPlayerController::HandleInventoryTabPressedFromView()
+{
+	HandleInventoryTabPressed();
+}
+
+// 背包 View 在 GameAndUI 下转发 Tab 松开，结束当前轻点或长按手势。
+void AArenaPlayerController::HandleInventoryTabReleasedFromView()
+{
+	HandleInventoryTabReleased();
+}
+
 // 服务器 RPC 将选择交给 GameMode 做阶段、候选、标签和层数验证。
 void AArenaPlayerController::ServerSelectUpgrade_Implementation(FName UpgradeID)
 {
@@ -801,6 +1065,12 @@ void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	if (UpgradeSelectionWidget)
 	{
 		UpgradeSelectionWidget->OnUpgradeChosen.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeChosen);
+		UpgradeSelectionWidget->OnInventoryRequested.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandleUpgradeInventoryTabPressed);
+		UpgradeSelectionWidget->OnInventoryTabReleased.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandleUpgradeInventoryTabReleased);
 	}
 	if (InventoryWidget)
 	{
@@ -828,6 +1098,12 @@ void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		InventoryWidget->OnCloseRequested.RemoveDynamic(
 			this,
 			&AArenaPlayerController::HandleInventoryCloseRequested);
+		InventoryWidget->OnTabPressed.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandleInventoryTabPressedFromView);
+		InventoryWidget->OnTabReleased.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandleInventoryTabReleasedFromView);
 	}
 	if (PlayerHUDWidget)
 	{
@@ -843,6 +1119,8 @@ void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	ClearBossOutroSkipHold();
 	SetVictoryInputMode(false);
 	SetInventoryInputMode(false);
+	SetUpgradeInputMode(false);
+	RefreshLocalUIInputLocks(true);
 	UnbindInventoryState();
 	UnbindUpgradeState();
 	UnbindGameStateHUD();
@@ -850,8 +1128,10 @@ void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-// 切换双视角鼠标与准星状态；背包、升级、演出或 Victory 激活时保留专属输入表现。
-void AArenaPlayerController::SetThirdPersonInputMode(bool bEnableThirdPerson)
+// 切换双视角鼠标与准星状态；临时 UI 可禁止顶视角归中，真实视角切换仍清理旧瞄准位置。
+void AArenaPlayerController::SetThirdPersonInputMode(
+	bool bEnableThirdPerson,
+	bool bRecenterTopDownCursor)
 {
 	if (!IsLocalController())
 	{
@@ -889,12 +1169,26 @@ void AArenaPlayerController::SetThirdPersonInputMode(bool bEnableThirdPerson)
 	}
 	bShowMouseCursor = !bThirdPersonInputMode;
 
+	float PreservedMouseX = 0.0f;
+	float PreservedMouseY = 0.0f;
+	const bool bShouldPreserveTopDownCursor =
+		!bThirdPersonInputMode
+		&& !bRecenterTopDownCursor
+		&& GetMousePosition(PreservedMouseX, PreservedMouseY);
+
 	FInputModeGameOnly InputMode;
 	// 顶视角保留第一次鼠标点击，第三人称由 GameOnly 模式持续捕获鼠标增量。
 	InputMode.SetConsumeCaptureMouseDown(false);
 	SetInputMode(InputMode);
 
-	if (!bThirdPersonInputMode)
+	if (bShouldPreserveTopDownCursor)
+	{
+		// 某些 PIE 捕获模式会在 SetInputMode 时移动光标，因此显式恢复关闭 UI 瞬间的位置。
+		SetMouseLocation(
+			FMath::RoundToInt(PreservedMouseX),
+			FMath::RoundToInt(PreservedMouseY));
+	}
+	else if (!bThirdPersonInputMode && bRecenterTopDownCursor)
 	{
 		int32 ViewportSizeX = 0;
 		int32 ViewportSizeY = 0;
@@ -1137,8 +1431,7 @@ void AArenaPlayerController::StartBossIntroPresentation(
 	bBossIntroCameraBlendingOut = false;
 	bBossIntroSkipHeldLocally = false;
 	LocalBossIntroSkipHoldStartTime = 0.0f;
-	SetIgnoreMoveInput(true);
-	SetIgnoreLookInput(true);
+	RefreshLocalUIInputLocks();
 	FlushPressedKeys();
 	bShowMouseCursor = false;
 	if (PlayerHUDWidget)
@@ -1313,8 +1606,7 @@ void AArenaPlayerController::FinishBossIntroPresentation(bool bWasInterrupted)
 	bBossIntroSkipHeldLocally = false;
 	LocalBossIntroSkipHoldStartTime = 0.0f;
 	ActiveBossIntroCamera.Reset();
-	SetIgnoreMoveInput(bUpgradeInputMode);
-	SetIgnoreLookInput(false);
+	RefreshLocalUIInputLocks();
 	SetThirdPersonInputMode(bThirdPersonInputMode);
 	if (PlayerHUDWidget)
 	{
@@ -1430,8 +1722,7 @@ void AArenaPlayerController::StartBossOutroPresentation(
 	bBossOutroCameraBlendingOut = false;
 	bBossOutroSkipHeldLocally = false;
 	LocalBossOutroSkipHoldStartTime = 0.0f;
-	SetIgnoreMoveInput(true);
-	SetIgnoreLookInput(true);
+	RefreshLocalUIInputLocks();
 	FlushPressedKeys();
 	bShowMouseCursor = false;
 	if (PlayerHUDWidget)
@@ -1605,8 +1896,7 @@ void AArenaPlayerController::FinishBossOutroPresentation(bool bWasInterrupted)
 	bBossOutroSkipHeldLocally = false;
 	LocalBossOutroSkipHoldStartTime = 0.0f;
 	ActiveBossOutroCamera.Reset();
-	SetIgnoreMoveInput(bUpgradeInputMode || bVictoryInputMode);
-	SetIgnoreLookInput(false);
+	RefreshLocalUIInputLocks();
 	if (!bVictoryInputMode)
 	{
 		SetThirdPersonInputMode(bThirdPersonInputMode);
@@ -1834,10 +2124,9 @@ void AArenaPlayerController::SetVictoryInputMode(bool bEnabled)
 	}
 
 	bVictoryInputMode = bEnabled;
+	RefreshLocalUIInputLocks();
 	if (bVictoryInputMode)
 	{
-		SetIgnoreMoveInput(true);
-		SetIgnoreLookInput(true);
 		FlushPressedKeys();
 		bShowMouseCursor = true;
 		if (PlayerHUDWidget)
@@ -1858,8 +2147,6 @@ void AArenaPlayerController::SetVictoryInputMode(bool bEnabled)
 		{
 			PlayerHUDWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
 		}
-		SetIgnoreMoveInput(bUpgradeInputMode || bBossIntroInputMode || bBossOutroInputMode);
-		SetIgnoreLookInput(bBossIntroInputMode || bBossOutroInputMode);
 		if (!bUpgradeInputMode && !bBossIntroInputMode && !bBossOutroInputMode)
 		{
 			SetThirdPersonInputMode(bThirdPersonInputMode);
@@ -1871,7 +2158,7 @@ void AArenaPlayerController::SetVictoryInputMode(bool bEnabled)
 	}
 }
 
-// 尝试把 HUD 绑定到 PlayerState 上的 ASC 和 AttributeSet。
+// 在延迟 PlayerState/ASC 就绪后统一补绑 HUD、背包 GAS 状态和 GameState，避免早期复制顺序遗漏委托。
 void AArenaPlayerController::TryBindPlayerHUD()
 {
 	if (!IsLocalController())
@@ -1897,6 +2184,7 @@ void AArenaPlayerController::TryBindPlayerHUD()
 	}
 
 	PlayerHUDWidget->BindToAbilitySystem(ArenaPlayerState->GetArenaAbilitySystemComponent(), ArenaPlayerState->GetArenaAttributeSet());
+	BindInventoryState();
 	BindGameStateHUD();
 	ClearPlayerHUDBindingRetry();
 }
@@ -1944,6 +2232,7 @@ void AArenaPlayerController::BindGameStateHUD()
 	RefreshBossIntroPresentation();
 	RefreshBossOutroPresentation();
 	RefreshVictoryPresentation();
+	RefreshLocalUIInputLocks();
 }
 
 // 解除 GameState 阶段、波次、Boss、演出与 Ready 委托，并恢复全部本地输入状态。
@@ -1975,12 +2264,17 @@ void AArenaPlayerController::UnbindGameStateHUD()
 	BoundArenaGameState.Reset();
 }
 
-// 阶段变化时先关闭仅 Combat 可用的背包，再同步 HUD、Upgrade、演出和 Victory 表现。
+// 阶段变化时仅在禁止查看的演出阶段关闭背包，其余阶段原地刷新只读/操作权限。
 void AArenaPlayerController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
 {
-	if (NewPhase != EArenaGamePhase::Combat && bInventoryInputMode)
+	const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
+	if (bInventoryInputMode && (!ArenaGameState || !ArenaGameState->CanViewInventory()))
 	{
 		SetInventoryInputMode(false);
+	}
+	else if (bInventoryInputMode)
+	{
+		RefreshInventoryUI();
 	}
 	if (OldPhase == EArenaGamePhase::BossIntro && NewPhase != EArenaGamePhase::BossIntro)
 	{
@@ -1995,6 +2289,7 @@ void AArenaPlayerController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EA
 		PlayerHUDWidget->SetGamePhase(NewPhase);
 	}
 	RefreshUpgradeSelectionUI();
+	RefreshLocalUIInputLocks();
 	RefreshBossIntroPresentation();
 	RefreshBossOutroPresentation();
 	RefreshVictoryPresentation();

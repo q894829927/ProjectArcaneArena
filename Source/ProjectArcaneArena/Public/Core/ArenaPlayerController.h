@@ -12,6 +12,7 @@ class UArenaInventoryComponent;
 class UArenaInventoryWidget;
 class UArenaPlayerHUDWidget;
 class UArenaUpgradeSelectionWidget;
+class UAbilitySystemComponent;
 class AArenaInventoryPickupActor;
 class AArenaBossCharacter;
 class AArenaGameState;
@@ -26,13 +27,19 @@ class PROJECTARCANEARENA_API AArenaPlayerController : public APlayerController
 public:
 	AArenaPlayerController();
 
-	// 切换本地鼠标捕获和第三人称准星，不复制任何相机表现状态。
-	void SetThirdPersonInputMode(bool bEnableThirdPerson);
+	// 切换本地鼠标捕获和第三人称准星；仅真实视角切换时按参数把顶视角鼠标归中。
+	void SetThirdPersonInputMode(bool bEnableThirdPerson, bool bRecenterTopDownCursor = true);
 
-	// Tab 在 Combat 中打开或关闭本地背包，并保留当前顶视角或第三人称选择。
+	// Tab 按复制阶段权限打开或关闭本地背包，并保留当前顶视角或第三人称选择。
 	void ToggleInventory();
 
-	// G 从本地候选中选择最近可见 Pickup，再交给服务器重新验证并拾取。
+	// Tab 按下时立即显示背包并记录原开关状态，供轻点切换与长按临时查看共用。
+	void HandleInventoryTabPressed();
+
+	// Tab 松开时按按住时长决定保持轻点结果或关闭长按临时背包。
+	void HandleInventoryTabReleased();
+
+	// G 在允许操作的阶段选择最近可见 Pickup，再交给服务器重新验证并拾取。
 	void RequestInteractWithNearestInventoryPickup();
 
 	// 返回本地背包是否正在占用输入，供 Character 阻止移动、观察和主动技能输入。
@@ -80,6 +87,8 @@ protected:
 
 	// Pawn 切换后重试 HUD 绑定，兼容未来重生流程。
 	virtual void OnPossess(APawn* InPawn) override;
+	// 引擎重启 Pawn 清空 IgnoreInput 计数后重建项目 UI 锁，保持本地记账与真实输入状态一致。
+	virtual void ResetIgnoreInputFlags() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// Intro 本地镜头开始事件仅供蓝图扩展动画或音效，不拥有玩法阶段。
@@ -109,17 +118,28 @@ private:
 	void BindUpgradeState();
 	void UnbindUpgradeState();
 	void RefreshUpgradeSelectionUI();
-	void SetUpgradeInputMode(bool bEnabled);
+	// 切换升级界面的 GameAndUI 输入；转交背包时只释放升级锁，不清除仍在处理的 Tab 手势。
+	void SetUpgradeInputMode(bool bEnabled, bool bTransitioningToInventory = false);
 	// 创建无需蓝图即可使用的背包 View，并绑定所有 UI 意图委托。
 	void CreateInventoryWidget();
 	// 绑定当前 PlayerState 的 OwnerOnly InventoryComponent，并立即刷新本地页面。
 	void BindInventoryState();
 	// 对称解除旧 InventoryComponent 委托并清空本地筛选/分页，避免旅行或重连后残留状态。
 	void UnbindInventoryState();
-	// 从复制 Model 构建筛选后的二十槽页面快照，View 不直接读取玩法状态。
+	// 从复制 Model 构建筛选后的二十槽页面及阶段权限快照，View 不直接读取玩法状态。
 	void RefreshInventoryUI();
-	// 切换 GameAndUI 输入、鼠标和准星，并在关闭时恢复原双视角输入模式。
+	// 切换 GameAndUI 输入、鼠标和准星，并协调 Upgrade/Victory 的界面输入优先级。
 	void SetInventoryInputMode(bool bEnabled);
+	// 根据所有本地 UI 与演出模式统一持有一层输入锁；销毁时可强制释放本 Controller 持有的锁。
+	void RefreshLocalUIInputLocks(bool bForceRelease = false);
+	// 按阶段权限尝试打开背包，成功后统一进入 GameAndUI 输入模式。
+	bool TryOpenInventory();
+	// 清理本次 Tab 按住快照，供关闭、阶段切换和销毁路径防止迟到松开事件。
+	void ResetInventoryTabPressState();
+	// 统一检查复制阶段以及 Dead/Stunned，供本地意图发送前做即时反馈。
+	bool CanPerformInventoryActions() const;
+	// 在基础操作资格上检查共享消耗品冷却，供 Use 按钮和客户端意图即时反馈。
+	bool CanUseInventoryItems() const;
 	// 本地选择最近且视线可达的 Pickup，服务器仍会执行同一组关键校验。
 	AArenaInventoryPickupActor* FindNearestInteractableInventoryPickup() const;
 	// 根据复制阶段、ActiveBoss 和时序快照开始、更新或结束本地 Intro 表现。
@@ -197,8 +217,22 @@ private:
 
 	UFUNCTION()
 	void HandleUpgradeChosen(FName UpgradeID);
+	// Upgrade Widget 捕获 Tab 按下后，转入统一轻点/长按状态机。
+	UFUNCTION()
+	void HandleUpgradeInventoryTabPressed();
+	// Upgrade Widget 捕获 Tab 松开后，完成轻点切换或长按关闭。
+	UFUNCTION()
+	void HandleUpgradeInventoryTabReleased();
+	// 背包获得焦点后转发 Tab 按下，按键重复不会重复切换。
+	UFUNCTION()
+	void HandleInventoryTabPressedFromView();
+	// 背包获得焦点后转发 Tab 松开，保证 GameAndUI 下能结束长按。
+	UFUNCTION()
+	void HandleInventoryTabReleasedFromView();
 	UFUNCTION()
 	void HandleInventoryChanged();
+	// Dead、Stunned 或共享冷却 Tag 变化时立即刷新背包按钮资格。
+	void HandleInventoryPermissionTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	UFUNCTION()
 	void HandleInventoryStackSelected(FGuid StackId);
 	UFUNCTION()
@@ -243,9 +277,16 @@ private:
 	TWeakObjectPtr<AArenaGameState> BoundArenaGameState;
 	TWeakObjectPtr<AArenaPlayerState> BoundUpgradePlayerState;
 	TWeakObjectPtr<UArenaInventoryComponent> BoundInventoryComponent;
+	TWeakObjectPtr<UAbilitySystemComponent> BoundInventoryAbilitySystemComponent;
+	FDelegateHandle InventoryDeadTagDelegateHandle;
+	FDelegateHandle InventoryStunnedTagDelegateHandle;
+	FDelegateHandle InventoryConsumableCooldownTagDelegateHandle;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Inventory", meta = (ClampMin = "1.0"))
 	float InventoryInteractionDistance = 220.0f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Inventory", meta = (ClampMin = "0.05"))
+	float InventoryHoldThreshold = 0.25f;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.01"))
 	float PlayerHUDBindingRetryInterval = 0.1f;
@@ -333,9 +374,12 @@ private:
 	FGameplayTagContainer ActiveInventoryFilters;
 	FGuid SelectedInventoryStackId;
 	int32 InventoryPageIndex = 0;
+	double InventoryTabPressStartTime = 0.0;
 	bool bThirdPersonInputMode = false;
 	bool bUpgradeInputMode = false;
 	bool bInventoryInputMode = false;
+	bool bInventoryTabPressActive = false;
+	bool bInventoryWasOpenOnTabPress = false;
 	bool bBossIntroInputMode = false;
 	bool bBossOutroInputMode = false;
 	bool bVictoryInputMode = false;
@@ -345,6 +389,8 @@ private:
 	bool bBossOutroCameraBlendingOut = false;
 	bool bBossOutroSkipHeldLocally = false;
 	bool bBossOutroSkipHeldOnServer = false;
+	bool bLocalUIMoveInputLocked = false;
+	bool bLocalUILookInputLocked = false;
 	mutable bool bWarnedMissingBossIntroCamera = false;
 	mutable bool bWarnedMissingBossOutroCamera = false;
 };

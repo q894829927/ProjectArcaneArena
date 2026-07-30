@@ -31,13 +31,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
 	int32 GetStackQuantity(FGuid StackId) const;
 
-	// 服务器优先补满同类堆栈，再把溢出数量拆成新堆栈。
+	// 服务器重验阶段与角色状态，并以不可重入事务补栈和拆分溢出数量。
 	bool TryAddItem(UArenaItemDataAsset* ItemData, int32 Quantity);
 
-	// 服务器以可回滚冷却保护恢复事务，只有资源实际增加后才消费一个物品。
+	// 服务器以不可重入且可回滚的冷却事务恢复资源，只有属性实际增加后才消费物品。
 	bool TryUseItem(FGuid StackId);
 
-	// 服务器在安全地面生成复制 Pickup 后扣除请求数量。
+	// 服务器以不可重入事务在安全地面生成复制 Pickup，成功后才扣除请求数量。
 	bool TryDropItem(FGuid StackId, int32 Quantity, APawn* SourcePawn);
 
 	// FastArray 回调和 Authority 修改统一通过该入口通知 Controller/View。
@@ -56,8 +56,8 @@ private:
 	// 在调用方完成精确 FastArray Dirty 标记后，统一刷新本地 View 和网络发送时机。
 	void NotifyInventoryChanged();
 
-	// 验证玩家处于 Combat、存活且未眩晕，供使用和丢弃共享。
-	bool CanPerformCombatInventoryAction() const;
+	// 按 GameState 权限矩阵验证阶段，并要求玩家存活且未眩晕。
+	bool CanPerformInventoryAction() const;
 
 	// 根据 SetByCaller 恢复类型读取当前值和上限，满资源时不执行恢复 GE。
 	bool GetTrackedResourceValues(
@@ -70,4 +70,7 @@ private:
 
 	UPROPERTY(Replicated)
 	FArenaInventoryList InventoryList;
+
+	// 阻止 GameplayEffect、Actor BeginPlay 或 UI 委托同步回调重入服务器写事务。
+	bool bInventoryMutationInProgress = false;
 };

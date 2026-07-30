@@ -34,7 +34,7 @@ public:
 	// 客户端和服务器共同使用该只读条件过滤无效或处于保护期的 Pickup。
 	bool CanBeInteractedBy(const AArenaPlayerState* PlayerState) const;
 
-	// 服务器将全部数量加入目标 PlayerState 背包，成功后只销毁一次 Actor。
+	// 服务器先占用消费门闩，再把全部数量加入目标背包；失败时回滚门闩和碰撞。
 	bool TryCollect(AArenaPlayerState* PlayerState);
 
 	// 返回当前复制的物品定义，供本地候选显示和服务器拾取验证读取。
@@ -78,8 +78,14 @@ private:
 	// 使用当前 ItemData/Quantity 刷新所有端可见的世界标签。
 	void RefreshPickupPresentation();
 
+	// 按 ItemData 的软引用网格、材质和相对变换刷新世界外观，缺失配置时保留蓝图默认表现。
+	void RefreshPickupMeshPresentation();
+
 	// 让物品名称始终面向当前世界的本地玩家相机，兼容顶视角和第三人称。
 	void FaceLabelToLocalCamera();
+
+	// 优先读取同步服务器时间；缺少 ArenaGameState 的测试世界回退到 World 时间。
+	float GetInteractionTimeSeconds() const;
 
 	UPROPERTY(
 		EditAnywhere,
@@ -103,5 +109,6 @@ private:
 	UPROPERTY(Replicated)
 	float IgnoreUntilServerTime = 0.0f;
 
+	// 服务器同步调用背包前先占用该门闩，防止委托重入或多人竞争重复领取。
 	bool bConsumed = false;
 };

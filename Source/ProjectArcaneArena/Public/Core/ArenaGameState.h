@@ -100,6 +100,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	EArenaGamePhase GetGamePhase() const { return GamePhase; }
 
+	// 返回指定阶段是否允许打开只读或可操作的背包界面。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	static bool IsInventoryViewAllowedForPhase(EArenaGamePhase Phase);
+
+	// 返回指定阶段是否允许拾取、使用和丢弃；Waiting 仅由测试规则显式放开。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	static bool AreInventoryOperationsAllowedForPhase(
+		EArenaGamePhase Phase,
+		bool bAllowWaitingOperations);
+
+	// 使用当前复制阶段判断本地是否可以查看背包。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	bool CanViewInventory() const;
+
+	// 使用当前复制阶段与测试规则判断是否允许修改背包或世界 Pickup。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	bool CanPerformInventoryOperations() const;
+
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	int32 GetCurrentWaveIndex() const { return CurrentWaveIndex; }
 
@@ -152,6 +170,8 @@ public:
 	void SetBossOutroTiming(const FArenaBossOutroTiming& NewTiming);
 	// 仅由服务器汇总 Victory 重开确认人数，客户端只负责展示。
 	void SetVictoryRestartCounts(int32 NewReadyCount, int32 NewRequiredCount);
+	// 仅由服务器 GameMode 配置 Waiting 阶段的测试操作权限，正式对局默认保持只读。
+	void SetAllowInventoryOperationsWhileWaiting(bool bAllow);
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaGamePhaseChangedSignature OnGamePhaseChanged;
@@ -207,6 +227,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_VictoryRestartRequiredCount, Category = "Arena|Victory")
 	int32 VictoryRestartRequiredCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arena|Inventory")
+	bool bAllowInventoryOperationsWhileWaiting = false;
 
 	UFUNCTION()
 	void OnRep_GamePhase(EArenaGamePhase OldPhase);

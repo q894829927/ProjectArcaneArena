@@ -32,6 +32,8 @@ protected:
 	virtual FName GetAttackMontageStartSection() const override { return MontageStartSection; }
 	// 要求近战同时配置 Montage 与伤害 GameplayEffect。
 	virtual bool HasRequiredAttackConfiguration() const override;
+	// 近战只让墙体等场景阻挡攻击路径，同阵营敌人不会把后排永久锁在不可攻击状态。
+	virtual bool HasAttackLineOfSight(AArenaEnemyCharacter* SourceEnemy, AActor* TargetActor) const override;
 	// 在权威命中窗口构造一次物理伤害 Spec 并应用给锁定目标。
 	virtual void ExecuteAttack(
 		AArenaEnemyCharacter* SourceEnemy,

@@ -6,14 +6,18 @@
 #include "Components/TextRenderComponent.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerState.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/RotatingMovementComponent.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "Item/ArenaInventoryComponent.h"
 #include "Item/ArenaItemDataAsset.h"
+#include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogArenaInventoryPickup, Log, All);
 
 // 创建可复制的交互 Pickup，并提供原生球体、旋转和世界名称占位表现。
 AArenaInventoryPickupActor::AArenaInventoryPickupActor()
@@ -106,24 +110,33 @@ void AArenaInventoryPickupActor::BeginPlay()
 	FaceLabelToLocalCamera();
 }
 
-// Deferred Spawn 阶段只接受权威、有效物品和正数量，避免生成可复制的空 Pickup。
+// Deferred Spawn 阶段只接受权威、有效物品、合法堆栈和正数量，避免复制无效 Pickup。
 bool AArenaInventoryPickupActor::InitializePickup(
 	UArenaItemDataAsset* InItemData,
 	int32 InQuantity,
 	AArenaPlayerState* InIgnoredPlayerState,
 	float IgnoreDuration)
 {
-	if (!HasAuthority() || !InItemData || !InItemData->ItemTag.IsValid() || InQuantity <= 0)
+	if (!HasAuthority() || !InItemData || InQuantity <= 0)
 	{
+		return false;
+	}
+	FText RuntimeDefinitionError;
+	if (!InItemData->IsRuntimeDefinitionValid(&RuntimeDefinitionError))
+	{
+		UE_LOG(
+			LogArenaInventoryPickup,
+			Error,
+			TEXT("Rejected invalid inventory pickup definition %s: %s"),
+			*GetNameSafe(InItemData),
+			*RuntimeDefinitionError.ToString());
 		return false;
 	}
 
 	ItemData = InItemData;
 	Quantity = InQuantity;
 	IgnoredPlayerState = InIgnoredPlayerState;
-	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
-	const float ServerTime = ArenaGameState ? ArenaGameState->GetServerWorldTimeSeconds() : 0.0f;
-	IgnoreUntilServerTime = ServerTime + FMath::Max(IgnoreDuration, 0.0f);
+	IgnoreUntilServerTime = GetInteractionTimeSeconds() + FMath::Max(IgnoreDuration, 0.0f);
 	RefreshPickupPresentation();
 	return true;
 }
@@ -138,9 +151,7 @@ bool AArenaInventoryPickupActor::CanBeInteractedBy(const AArenaPlayerState* Play
 
 	if (IgnoredPlayerState == PlayerState)
 	{
-		const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
-		const float ServerTime = ArenaGameState ? ArenaGameState->GetServerWorldTimeSeconds() : 0.0f;
-		if (ServerTime < IgnoreUntilServerTime)
+		if (GetInteractionTimeSeconds() < IgnoreUntilServerTime)
 		{
 			return false;
 		}
@@ -148,7 +159,7 @@ bool AArenaInventoryPickupActor::CanBeInteractedBy(const AArenaPlayerState* Play
 	return true;
 }
 
-// Authority 使用消费门闩处理多人竞争，完整加入后再销毁世界 Actor。
+// Authority 在调用背包前先占用门闩；加入失败时恢复原碰撞模式，成功后只销毁一次 Actor。
 bool AArenaInventoryPickupActor::TryCollect(AArenaPlayerState* PlayerState)
 {
 	if (!HasAuthority() || !CanBeInteractedBy(PlayerState))
@@ -156,14 +167,26 @@ bool AArenaInventoryPickupActor::TryCollect(AArenaPlayerState* PlayerState)
 		return false;
 	}
 
+	const ECollisionEnabled::Type PreviousCollisionState = PickupCollisionComponent
+		? PickupCollisionComponent->GetCollisionEnabled()
+		: ECollisionEnabled::NoCollision;
+	bConsumed = true;
+	if (PickupCollisionComponent)
+	{
+		PickupCollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
 	UArenaInventoryComponent* InventoryComponent = PlayerState->GetInventoryComponent();
 	if (!InventoryComponent || !InventoryComponent->TryAddItem(ItemData, Quantity))
 	{
+		bConsumed = false;
+		if (PickupCollisionComponent)
+		{
+			PickupCollisionComponent->SetCollisionEnabled(PreviousCollisionState);
+		}
 		return false;
 	}
 
-	bConsumed = true;
-	PickupCollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Destroy();
 	return true;
 }
@@ -174,9 +197,10 @@ void AArenaInventoryPickupActor::OnRep_PickupData()
 	RefreshPickupPresentation();
 }
 
-// 使用 DataAsset 的玩家可见名称和数量构造无需额外 WBP 的原型标签。
+// 使用 DataAsset 的世界外观、玩家可见名称和数量刷新无需额外 WBP 的 Pickup 表现。
 void AArenaInventoryPickupActor::RefreshPickupPresentation()
 {
+	RefreshPickupMeshPresentation();
 	if (!PickupLabelComponent)
 	{
 		return;
@@ -206,6 +230,43 @@ void AArenaInventoryPickupActor::RefreshPickupPresentation()
 	}
 }
 
+// 客户端和编辑器按 ItemData 应用软引用世界外观；专服不加载纯表现资产。
+void AArenaInventoryPickupActor::RefreshPickupMeshPresentation()
+{
+	if (!PickupMeshComponent
+		|| !ItemData
+		|| ItemData->WorldMesh.IsNull()
+		|| GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	UStaticMesh* ResolvedMesh = ItemData->WorldMesh.LoadSynchronous();
+	if (!ResolvedMesh)
+	{
+		UE_LOG(
+			LogArenaInventoryPickup,
+			Warning,
+			TEXT("Inventory item %s failed to load its configured WorldMesh."),
+			*GetNameSafe(ItemData));
+		return;
+	}
+
+	PickupMeshComponent->SetStaticMesh(ResolvedMesh);
+	PickupMeshComponent->SetRelativeLocation(ItemData->WorldMeshRelativeLocation);
+	PickupMeshComponent->SetRelativeRotation(ItemData->WorldMeshRelativeRotation);
+	PickupMeshComponent->SetRelativeScale3D(ItemData->WorldMeshRelativeScale);
+
+	const int32 MaterialSlotCount = ResolvedMesh->GetStaticMaterials().Num();
+	for (int32 MaterialIndex = 0; MaterialIndex < MaterialSlotCount; ++MaterialIndex)
+	{
+		UMaterialInterface* Material = ItemData->WorldMaterials.IsValidIndex(MaterialIndex)
+			? ItemData->WorldMaterials[MaterialIndex].LoadSynchronous()
+			: nullptr;
+		PickupMeshComponent->SetMaterial(MaterialIndex, Material);
+	}
+}
+
 // 使用当前本地 PlayerCameraManager 旋转文字，不复制任何相机相关状态。
 void AArenaInventoryPickupActor::FaceLabelToLocalCamera()
 {
@@ -228,4 +289,14 @@ void AArenaInventoryPickupActor::FaceLabelToLocalCamera()
 	{
 		PickupLabelComponent->SetWorldRotation(CameraDirection.Rotation());
 	}
+}
+
+// 使用 GameState 的同步服务器时间维护拾取保护；无 GameState 时仍让测试世界中的保护正常过期。
+float AArenaInventoryPickupActor::GetInteractionTimeSeconds() const
+{
+	const UWorld* World = GetWorld();
+	const AArenaGameState* ArenaGameState = World ? World->GetGameState<AArenaGameState>() : nullptr;
+	return ArenaGameState
+		? ArenaGameState->GetServerWorldTimeSeconds()
+		: (World ? static_cast<float>(World->GetTimeSeconds()) : 0.0f);
 }

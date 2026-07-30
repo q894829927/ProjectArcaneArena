@@ -18,6 +18,7 @@
 #include "GAS/ArenaGameplayTags.h"
 #include "Input/Events.h"
 #include "InputCoreTypes.h"
+#include "Item/ArenaInventoryTypes.h"
 #include "Item/ArenaItemDataAsset.h"
 #include "UI/ArenaInventorySlotWidget.h"
 
@@ -89,29 +90,34 @@ UArenaInventoryWidget::UArenaInventoryWidget(const FObjectInitializer& ObjectIni
 	InventorySlotWidgetClass = UArenaInventorySlotWidget::StaticClass();
 }
 
-// 初始化时构建原生 View，后续蓝图版本可以替换布局但不拥有玩法状态。
+// 初始化时先启用根键盘焦点再构建原生 View，确保输入模式切换时 Tab 不依赖子按钮焦点。
 void UArenaInventoryWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
+	SetIsFocusable(true);
 	BuildFallbackLayout();
 }
 
-// 加入视口时绑定控制并默认折叠，等待 Controller 的 Combat Tab 输入。
+// 加入视口时绑定控制并默认折叠，焦点能力已在 Slate 重建前完成配置。
 void UArenaInventoryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	BindControls();
-	SetIsFocusable(true);
 	SetVisibility(ESlateVisibility::Collapsed);
 }
 
-// Preview 阶段优先消费 Tab/Escape，避免子按钮把 Tab 当作焦点导航而截断关闭请求。
+// Preview 阶段优先消费 Tab/Escape，Tab 交给 Controller 区分轻点切换与长按临时查看。
 FReply UArenaInventoryWidget::NativeOnPreviewKeyDown(
 	const FGeometry& InGeometry,
 	const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
-	if (Key == EKeys::Tab || Key == EKeys::Escape)
+	if (Key == EKeys::Tab)
+	{
+		OnTabPressed.Broadcast();
+		return FReply::Handled();
+	}
+	if (Key == EKeys::Escape)
 	{
 		OnCloseRequested.Broadcast();
 		return FReply::Handled();
@@ -119,16 +125,32 @@ FReply UArenaInventoryWidget::NativeOnPreviewKeyDown(
 	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
-// Tab 或 Escape 在 UI 获得键盘焦点时仍能可靠请求关闭。
+// Tab 或 Escape 在 UI 获得键盘焦点时转发按住状态或请求关闭。
 FReply UArenaInventoryWidget::NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
-	if (Key == EKeys::Tab || Key == EKeys::Escape)
+	if (Key == EKeys::Tab)
+	{
+		OnTabPressed.Broadcast();
+		return FReply::Handled();
+	}
+	if (Key == EKeys::Escape)
 	{
 		OnCloseRequested.Broadcast();
 		return FReply::Handled();
 	}
 	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+// KeyUp 冒泡路径转发 Tab 松开，兼容子按钮或自定义槽位持有焦点。
+FReply UArenaInventoryWidget::NativeOnKeyUp(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Tab)
+	{
+		OnTabReleased.Broadcast();
+		return FReply::Handled();
+	}
+	return Super::NativeOnKeyUp(InGeometry, InKeyEvent);
 }
 
 // 接收 Controller 已筛选分页的 ViewData，并展示二十个固定槽位。
@@ -439,7 +461,7 @@ void UArenaInventoryWidget::BindControls()
 	}
 }
 
-// 把页面 ViewData 映射到固定二十槽，并刷新详情、数量和翻页可用性。
+// 把页面 ViewData 映射到固定二十槽，并按只读权限刷新详情、操作与翻页状态。
 void UArenaInventoryWidget::RefreshVisuals()
 {
 	for (int32 Index = 0; Index < SlotWidgets.Num(); ++Index)
@@ -488,13 +510,13 @@ void UArenaInventoryWidget::RefreshVisuals()
 	}
 	if (UseButton)
 	{
-		UseButton->SetIsEnabled(bHasSelection);
+		UseButton->SetIsEnabled(bHasSelection && CurrentViewData.bCanUseItems);
 	}
 	if (DropButton)
 	{
-		DropButton->SetIsEnabled(bHasSelection);
+		DropButton->SetIsEnabled(bHasSelection && CurrentViewData.bCanDropItems);
 	}
-	if (!bHasSelection && DropConfirmPanel)
+	if ((!bHasSelection || !CurrentViewData.bCanDropItems) && DropConfirmPanel)
 	{
 		DropConfirmPanel->SetVisibility(ESlateVisibility::Hidden);
 	}
@@ -504,7 +526,7 @@ void UArenaInventoryWidget::RefreshVisuals()
 		DropQuantitySpinBox->SetMinValue(1.0f);
 		DropQuantitySpinBox->SetMaxValue(FMath::Max(MaxQuantity, 1.0f));
 		DropQuantitySpinBox->SetValue(FMath::Clamp(DropQuantitySpinBox->GetValue(), 1.0f, MaxQuantity));
-		DropQuantitySpinBox->SetIsEnabled(bHasSelection);
+		DropQuantitySpinBox->SetIsEnabled(bHasSelection && CurrentViewData.bCanDropItems);
 	}
 
 	bUpdatingFilterControls = true;
@@ -545,38 +567,49 @@ void UArenaInventoryWidget::HandleSlotSelected(FGuid StackId)
 	OnStackSelected.Broadcast(StackId);
 }
 
-// 双击槽位直接发送使用请求，服务器仍会重新验证。
+// 双击槽位仅在阶段、状态和共享冷却均允许时发送使用请求，服务器仍会重新验证。
 void UArenaInventoryWidget::HandleSlotUseRequested(FGuid StackId)
 {
-	OnUseRequested.Broadcast(StackId);
+	if (CurrentViewData.bCanUseItems)
+	{
+		OnUseRequested.Broadcast(StackId);
+	}
 }
 
-// Use 按钮使用当前选中堆栈。
+// Use 按钮仅在非只读且共享冷却结束时提交当前选中堆栈。
 void UArenaInventoryWidget::HandleUseClicked()
 {
-	if (CurrentViewData.SelectedStackId.IsValid())
+	if (CurrentViewData.bCanUseItems && CurrentViewData.SelectedStackId.IsValid())
 	{
 		OnUseRequested.Broadcast(CurrentViewData.SelectedStackId);
 	}
 }
 
-// Drop 首次点击只展开数量确认面板，避免单击误丢物品。
+// Drop 首次点击仅在非只读阶段展开数量确认面板，避免单击误丢物品。
 void UArenaInventoryWidget::HandleOpenDropClicked()
 {
-	if (CurrentViewData.SelectedStackId.IsValid() && DropConfirmPanel)
+	if (CurrentViewData.bCanDropItems
+		&& CurrentViewData.SelectedStackId.IsValid()
+		&& DropConfirmPanel)
 	{
 		DropConfirmPanel->SetVisibility(ESlateVisibility::Visible);
 	}
 }
 
-// Confirm 提交界面范围内的整数数量，服务器仍按最新权威堆栈重新验证并拒绝超量请求。
+// Confirm 仅提交合法正整数，不把非法输入静默改成一；服务器仍按最新权威堆栈重新验证。
 void UArenaInventoryWidget::HandleConfirmDropClicked()
 {
-	if (CurrentViewData.SelectedStackId.IsValid() && DropQuantitySpinBox)
+	if (CurrentViewData.bCanDropItems
+		&& CurrentViewData.SelectedStackId.IsValid()
+		&& DropQuantitySpinBox)
 	{
-		OnDropRequested.Broadcast(
-			CurrentViewData.SelectedStackId,
-			FMath::Max(FMath::RoundToInt(DropQuantitySpinBox->GetValue()), 1));
+		const int32 RequestedQuantity = FMath::RoundToInt(DropQuantitySpinBox->GetValue());
+		const FArenaInventoryItemViewData* SelectedItem = FindSelectedItem();
+		if (SelectedItem
+			&& ArenaInventory::IsValidDropQuantity(RequestedQuantity, SelectedItem->Quantity))
+		{
+			OnDropRequested.Broadcast(CurrentViewData.SelectedStackId, RequestedQuantity);
+		}
 	}
 	if (DropConfirmPanel)
 	{

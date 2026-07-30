@@ -62,7 +62,7 @@ def _require_native_types():
 
 
 def _configure_test_game_mode(arena_game_mode_class):
-    """复制正式 GameMode，关闭波次、掉落和自动升级，由关卡拾取物控制构筑。"""
+    """复制正式 GameMode，关闭波次并为 Waiting 测试关卡开放完整背包操作。"""
     _, generated_class, asset_path = tools.duplicate_or_load_blueprint(
         "BP_ArenaGameMode_OverloadTest",
         TEST_ROOT,
@@ -73,6 +73,7 @@ def _configure_test_game_mode(arena_game_mode_class):
     defaults.modify()
     defaults.set_editor_property("wave_data", None)
     defaults.set_editor_property("pickup_drop_table", None)
+    defaults.set_editor_property("allow_inventory_operations_while_waiting", True)
     defaults.set_editor_property("enable_debug_starting_upgrades", False)
     defaults.set_editor_property("debug_starting_upgrades", [])
     tools.save_asset(asset_path)

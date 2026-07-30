@@ -15,25 +15,30 @@
 
 ### 测试方法
 
-1. 在 Session Frontend 或控制台执行 `Automation RunTests ProjectArcaneArena.Inventory`，确认 `Pagination` 和 `Filters` 两项通过。
-2. 把两个 Pickup Blueprint 拖入测试关卡，确认默认 `ItemData`、`Quantity=1`、世界名称和 `[G] Pick Up` 标签正确。
+1. 在 Session Frontend 或控制台执行 `Automation RunTests ProjectArcaneArena.Inventory`，确认 `Pagination`、`Stacking`、`TabGesture`、`Filters`、`PhaseAccess`、`ReplicationContract` 和 `ItemValidation` 七项通过。
+2. 完整编译并重启编辑器后重新执行 `setup_inventory_items.py`，把两个 Pickup Blueprint 拖入测试关卡，确认默认 `ItemData`、`Quantity=1`、红/蓝药水瓶 Mesh/材质、世界名称和 `[G] Pick Up` 标签正确。
 
 ### 通过标准
 
 - Automation Tests 对 `0/19/20/21/40/41` 和多 Tag OR/层级筛选全部通过；这不替代后续真实 Widget 与网络 PIE。
-- 两个可入包 Pickup 在世界中可见，名称、数量、颜色和交互提示正确，不与现有即时恢复 Pickup 混淆。
+- 两个可入包 Pickup 在世界中显示对应红/蓝药水瓶，名称、数量、颜色和交互提示正确；丢弃后生成的原生 Pickup 仍从 ItemData 恢复同一外观，不退回通用球体，也不与现有即时恢复 Pickup 混淆。
 
 ## 阶段五 C 背包功能与分页
 
 ### 测试方法
 
 1. 分别将一个药水 Pickup 的 `Quantity` 设为 `190/200/210/400/410`，制造 `19/20/21/40/41` 个十瓶堆栈；空背包用于验证 `0`，按 `Tab` 检查页面数量、二十个固定槽和上下页。
-2. 拾取同类第 `11` 个药水，确认先补满首个 `10` 堆栈，再创建新堆栈；使用或丢弃空堆栈后确认顺序压紧、页码自动 Clamp。
-3. 同时选择 Consumable 与 Health/Energy 筛选，确认使用 OR 语义和 GameplayTag 父级匹配，清除筛选恢复原 DisplayOrder。
-4. 消耗 Health/Energy 后使用对应药水，检查恢复量、共享一秒冷却和数量；资源已满、Dead、Stunned 或非 Combat 时重复。
-5. 测试双击槽位、Use 按钮、部分丢弃、整组丢弃、落地失败和 `0/负数/超过堆栈` 请求。
-6. 依次点击筛选、槽位、Use、Drop 数量和翻页按钮后按 `Tab` / `Escape`，确认 Preview Key 路径仍能关闭背包。
-7. 分别使用约 `1280×720` 和 `1920×1080` 的 PIE 窗口检查面板：图标与数量不重叠，物品名只出现在右侧详情，Drop 确认行展开时分页不位移，底部技能 HUD 不穿过背包面板。
+2. 将一个 `MaxStackSize=10` 的测试 Pickup 数量设为 `1001`，确认服务器整笔拒绝且原背包数量不变；`1000` 仍应成功并创建恰好 `100` 个新堆栈。
+3. 拾取同类第 `11` 个药水，确认先补满首个 `10` 堆栈，再创建新堆栈；使用或丢弃空堆栈后确认顺序压紧、页码自动 Clamp。
+4. 同时选择 Consumable 与 Health/Energy 筛选，确认使用 OR 语义和 GameplayTag 父级匹配，清除筛选恢复原 DisplayOrder。
+5. 消耗 Health/Energy 后使用对应药水，检查恢复量、共享一秒冷却和数量；冷却期间 Use 应禁用而 Drop 仍可用。资源已满、Dead、Stunned 或只读阶段时重复。
+6. 测试双击槽位、Use 按钮、部分丢弃、整组丢弃、落地失败和 `0/负数/超过堆栈` 请求；确认非法数量没有被客户端静默改写为 `1`。
+7. 依次点击筛选、槽位、Use、Drop 数量和翻页按钮后测试短按 `Tab`、长按 `Tab` 与 `Escape`，确认焦点路径仍能正确开关背包。
+8. 分别使用约 `1280×720` 和 `1920×1080` 的 PIE 窗口检查面板：图标与数量不重叠，物品名只出现在右侧详情，Drop 确认行展开时分页不位移，底部技能 HUD 不穿过背包面板。
+9. 依次验证权限矩阵：Waiting 只读、Combat 完整、Upgrade 只读且隐藏/恢复升级选择、BossIntro/BossOutro 禁止、Victory 完整、Defeat 只读。
+10. 重新执行 `setup_overload_test.py` 后进入 `Lvl_OverloadTest`，确认 Waiting 中可拾取、使用和丢弃；正式 GameMode 的 Waiting 仍保持只读。
+11. 在 Upgrade 候选界面分别短按和长按 Tab；先依次用鼠标点击或悬停不同候选按钮再重复切换，确认按钮不会通过 Slate 键盘导航吞掉 Tab、背包始终能够打开、升级选择暂时隐藏且关闭后候选恢复。重新显示候选时确认第一个有效按钮获得初始焦点，`Enter`、`Space` 和手柄确认可直接选择它。完成选择进入 Combat 后确认 WASD 和鼠标观察不残留锁定；随后在 BossIntro、BossOutro、Victory 切换边界重复相同输入清理检查，并连续快速切换至少十次验证统一 UI 输入锁不会残留。
+12. 背包打开时分别添加/移除 `State.Stunned` 与 `State.Dead`，确认操作按钮立即变为只读；PlayerState 重绑或重生后确认 Tag Delegate 不重复、解除状态后仅在阶段允许时恢复操作。额外在 Inventory、Upgrade、BossIntro、BossOutro 和 Victory 锁定期间触发重生或重新 Possess，确认 `ClientRestart` 后移动/观察仍按当前模式保持锁定，退出该模式后恰好恢复一次。
 
 ### 通过标准
 
@@ -44,14 +49,19 @@
 - 非正数和超量 Drop 请求直接拒绝；丢弃 Pickup 只有在前方存在安全地面且球形空间未被墙体、Pawn 或动态 Actor 占用时才生成并扣物品。
 - 丢弃者在短保护期内不能立即捡回，其他玩家仍可拾取。
 - 顶视角和第三人称打开背包时世界继续运行、玩家仍会受伤，但移动、Look、Sprint 和五个主动技能输入被锁定；关闭后鼠标、准星和原视角输入正确恢复。
+- 短按 Tab 从关闭状态打开并保持，再次短按关闭；按住超过 `0.25s` 时背包持续显示，松开立即关闭，按键重复不造成闪烁或重复切换。
+- 顶视角关闭背包后鼠标保持关闭前的屏幕位置；只有真正从第三人称切回顶视角时才归中。
+- 背包与其他 UI 阶段重叠退出后 `SetIgnoreMoveInput`/`SetIgnoreLookInput` 计数恢复平衡，玩家不会概率性失去移动或观察。
 - 720p 与 1080p 下背包保持紧凑居中，二十槽、筛选、详情、操作和分页均位于稳定区域，长描述自动换行且不遮挡按钮。
+- 只读阶段仍可筛选、翻页和查看详情，但 Use、双击使用、Drop、G 以及伪造 RPC 都不能改变物品或世界 Actor。
+- BossIntro/BossOutro 中 Tab 不打开背包，Space 长按跳过和镜头演出不受影响。
 
 ## 阶段五 C OwnerOnly 与多人权威
 
 ### 测试方法
 
 1. 两人 Listen Server 让 Host 和 Client 分别拾取不同数量药水，检查对方界面无法观察另一人的 FastArray 内容。
-2. 两人同时按 `G` 竞争同一个 Pickup，并重复提交已销毁 Actor、伪造 StackId 和超量 Drop 请求。
+2. 两人同时按 `G` 竞争同一个 Pickup，并重复提交已销毁 Actor、伪造 StackId 和超量 Drop 请求；再用无效物品定义制造一次拾取失败，确认 Pickup 会恢复原碰撞模式与可交互状态且不会复制物品。
 3. Dedicated Server 双客户端重复拾取、使用、部分丢弃和重新拾取，观察属性、世界 Actor 和 UI。
 4. 在背包打开时触发死亡、Upgrade、BossIntro、BossOutro、Victory、重生和关卡重载，检查 Delegate、输入模式和页面状态。
 
@@ -334,8 +344,9 @@
 2. 使用同一种子和同一敌人死亡顺序重新开局，对比掉落序列和每次 Upgrade 候选顺序。
 3. 使用足够多的击杀统计总掉落比例和 Health/Energy 类型比例。
 4. 临时将 Drop Chance 设为 `1.0`，对同一敌人的死亡处理设断点或观察 World Outliner，确认一次死亡最多出现一个 Pickup Actor。
-5. 依次测试 `PickupDropTable = None`、Entries 为空、全部 Weight 为零、Pickup Class 为空和故意配置无法生成的 Class，完整清理波次。
-6. 恢复正式掉落表配置。
+5. 让受伤玩家贴近敌人完成击杀，确认 Health Pickup 可在生成完成时立即恢复并销毁，且不会错误输出 `Failed to allocate deferred pickup`；资源已满时应留下可见 Pickup。
+6. 依次测试 `PickupDropTable = None`、Entries 为空、全部 Weight 为零、Pickup Class 为空和故意配置无法生成的 Class，完整清理波次。
+7. 恢复正式掉落表配置。
 
 ### 通过标准
 
@@ -657,6 +668,7 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.
 5. 发射后横向移动躲避，并让 Projectile 分别命中墙、Shield 玩家和 Dash 无敌玩家。
 6. 2-player Listen Server 让未被锁定的玩家走入弹道，观察双方 Montage、Projectile、属性和伤害数字。
 7. 分别用顶视角与第三人称检查弹道高度、可读性和躲避空间。
+8. 让玩家保持不动并生成一组近战/远程敌人，确认 Detour Crowd 会让后排绕开前排补位；观察被堵住的非攻击敌人约 `0.8s` 后执行短侧移并恢复 Chase。击杀最前方敌人后，后排应立即继续追击并攻击，而不是等待尸体 LifeSpan。
 
 ### 通过标准
 
@@ -667,6 +679,7 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.
 - 已 Commit 的前摇不会因目标随后离开射程或出现遮挡而取消发射，Projectile 发射后也不因原目标移动而改向。
 - 目标死亡、敌人死亡或 Stun 会取消前摇并阻止迟到 Projectile。
 - 目标死亡后 AI 取消前摇并重新选择最近的存活玩家。
+- 多名敌人共享同一目标时不会长期互相顶死；近战攻击路径不会被同阵营敌人遮挡，停滞者能在 NavMesh 内侧移脱困。前排死亡后其 AIController/Crowd Agent 立即注销，后排可以继续补位。
 
 ## 四波正式流程
 
@@ -1065,11 +1078,13 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 3. 使用 `2 Players` Listen Server 重复测试，分别从 Host 和 Client 对 Boss 造成重叠伤害。
 4. 开启 `arena.Net.AbilityAudit 1`，对比服务器实际伤害结算次数、批量反馈项和两端可见表现次数。
 5. 检查新数字五槽横向偏移能否解决已观察到的完全重叠，同时确认每段结算仍对应一个数字。
+6. 在顶视角、第三人称和双客户端分别使用 BasicAttack 命中敌人，确认 `GameplayCue.Hit.Physical` 出现在服务器 Sweep 的目标表面，而不是角色中心、头顶或远离目标的位置。
 ### 通过标准
 
 - 同一目标在一个 Tick 内的所有权威伤害结算只发送一个项目级批量 Multicast；每段结算仍分别携带独立 `FArenaDamageFeedbackData`。
 - Output Log 不再出现并发命中与数字耗尽 `net.MaxRPCPerNetUpdate=2` 的警告，三段以上同帧伤害也不会丢失后续表现。
 - Host 与 Client 均按元素 Cue、结果 Cue、一个伤害数字的顺序看到反馈；暴击仍显示金色 Critical 样式。
+- BasicAttack 的物理命中特效在攻击者与观察端都清晰可见，并使用同一个权威命中位置。
 - 合并只改变表现 RPC 数量，不改变 Health、Shield、Crit、OnDamage、OnCrit、OnKill 或 Overload 的权威结算次数。
 
 ## Damage Feedback Foundation 表现配置与安全退化

@@ -27,7 +27,7 @@ AArenaGameMode::AArenaGameMode()
 	WaveManagerClass = AArenaWaveManager::StaticClass();
 }
 
-// 服务器生成随机种子、绑定阶段委托并创建 WaveManager；首波等待至少一名玩家登录后再安排。
+// 服务器生成随机种子、同步测试背包规则、绑定阶段委托并创建 WaveManager。
 void AArenaGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -39,6 +39,10 @@ void AArenaGameMode::BeginPlay()
 	InitializeUpgradeRandomStream();
 	if (AArenaGameState* MutableArenaGameState = GetGameState<AArenaGameState>())
 	{
+#if WITH_EDITORONLY_DATA
+		MutableArenaGameState->SetAllowInventoryOperationsWhileWaiting(
+			bAllowInventoryOperationsWhileWaiting);
+#endif
 		MutableArenaGameState->OnGamePhaseChanged.AddUniqueDynamic(this, &AArenaGameMode::HandleGamePhaseChanged);
 	}
 	if (!WaveManagerClass)

@@ -135,6 +135,9 @@ private:
 	int32 UpgradeRandomSeedOverride = 0;
 
 #if WITH_EDITORONLY_DATA
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Debug|Inventory")
+	bool bAllowInventoryOperationsWhileWaiting = false;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Debug|Upgrade")
 	bool bEnableDebugStartingUpgrades = false;
 

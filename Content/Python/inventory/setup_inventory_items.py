@@ -41,6 +41,12 @@ ITEM_CONFIGS = (
         "set_by_caller_tag": "SetByCaller.Recovery.Health",
         "use_magnitude": 50.0,
         "icon_path": "/Game/UI/UpgradeIcons/T_Upgrade_MaxHealth_Icon",
+        "world_mesh_path": "/Game/Assets/Pickups/Potions/SM_PotionBottle",
+        "world_material_paths": (
+            "/Game/Assets/Pickups/Potions/Liquid/MI_RedLiquid",
+            "/Game/Assets/Pickups/Potions/Bottle/MI_Bottle",
+            "/Game/Assets/Pickups/Potions/Cork/M_Cork",
+        ),
     },
     {
         "asset_name": "DA_EnergyPotion",
@@ -58,6 +64,12 @@ ITEM_CONFIGS = (
         "set_by_caller_tag": "SetByCaller.Recovery.Energy",
         "use_magnitude": 25.0,
         "icon_path": "/Game/UI/UpgradeIcons/T_Upgrade_EnergyOnKill_Icon",
+        "world_mesh_path": "/Game/Assets/Pickups/Potions/SM_PotionBottle",
+        "world_material_paths": (
+            "/Game/Assets/Pickups/Potions/Liquid/MI_BlueLiquid",
+            "/Game/Assets/Pickups/Potions/Bottle/MI_Bottle",
+            "/Game/Assets/Pickups/Potions/Cork/M_Cork",
+        ),
     },
 )
 
@@ -139,6 +151,9 @@ def _validate_prerequisites():
     for config in ITEM_CONFIGS:
         tools.require_unreal_type(config["use_effect_type"])
         tools.require_asset(config["icon_path"], unreal.Texture2D)
+        tools.require_asset(config["world_mesh_path"], unreal.StaticMesh)
+        for material_path in config["world_material_paths"]:
+            tools.require_asset(material_path, unreal.MaterialInterface)
         tools.make_tag(config["item_tag"])
         tools.make_tag(config["set_by_caller_tag"])
         for tag_name in config["item_tags"]:
@@ -303,7 +318,7 @@ def _configure_item_data(
     pickup_native_class,
     cooldown_effect_class,
 ):
-    """写入药水数据，并用原生 Pickup 类避免 DataAsset 与专属蓝图形成硬引用环。"""
+    """写入药水玩法与世界外观，并用原生 Pickup 类避免 DataAsset/Blueprint 硬引用环。"""
     item_data.modify()
     item_data.set_editor_property("item_tag", tools.make_tag(config["item_tag"]))
     item_data.set_editor_property(
@@ -347,6 +362,29 @@ def _configure_item_data(
     item_data.set_editor_property(
         "world_pickup_class",
         pickup_native_class,
+    )
+    item_data.set_editor_property(
+        "world_mesh",
+        tools.require_asset(config["world_mesh_path"], unreal.StaticMesh),
+    )
+    item_data.set_editor_property(
+        "world_materials",
+        [
+            tools.require_asset(material_path, unreal.MaterialInterface)
+            for material_path in config["world_material_paths"]
+        ],
+    )
+    item_data.set_editor_property(
+        "world_mesh_relative_location",
+        unreal.Vector(0.0, 0.0, 0.0),
+    )
+    item_data.set_editor_property(
+        "world_mesh_relative_rotation",
+        unreal.Rotator(0.0, 0.0, 0.0),
+    )
+    item_data.set_editor_property(
+        "world_mesh_relative_scale",
+        unreal.Vector(0.25, 0.25, 0.25),
     )
 
 
@@ -526,6 +564,25 @@ def _verify_configured_assets(
             and config["icon_path"] in _export_struct(actual_icon),
             f"{item_path}.Icon does not reference {config['icon_path']}",
         )
+        actual_world_mesh = item_data.get_editor_property("world_mesh")
+        _require_postcondition(
+            config["world_mesh_path"] in _unreal_reference_path(actual_world_mesh),
+            f"{item_path}.WorldMesh does not reference {config['world_mesh_path']}",
+        )
+        actual_world_materials = item_data.get_editor_property("world_materials")
+        _require_postcondition(
+            len(actual_world_materials) == len(config["world_material_paths"]),
+            f"{item_path}.WorldMaterials count is incorrect",
+        )
+        for material_index, expected_material_path in enumerate(
+            config["world_material_paths"]
+        ):
+            _require_postcondition(
+                expected_material_path
+                in _unreal_reference_path(actual_world_materials[material_index]),
+                f"{item_path}.WorldMaterials[{material_index}] does not reference "
+                f"{expected_material_path}",
+            )
         _require_postcondition(
             _unreal_reference_path(
                 pickup_defaults.get_editor_property("item_data")

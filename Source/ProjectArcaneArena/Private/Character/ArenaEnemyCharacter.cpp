@@ -383,7 +383,7 @@ void AArenaEnemyCharacter::HandleHealthChanged(const FOnAttributeChangeData& Dat
 	K2_OnHealthChanged(Data.OldValue, Data.NewValue, MaxHealth);
 }
 
-// 执行一次性死亡流程：停移动、关碰撞、取消技能、广播死亡事件。
+// 执行一次性死亡流程：停移动、关碰撞、解除 Crowd AI、取消技能并广播死亡事件。
 void AArenaEnemyCharacter::HandleDeath()
 {
 	if (bDeathHandled)
@@ -417,6 +417,12 @@ void AArenaEnemyCharacter::HandleDeath()
 	if (AbilitySystemComponent)
 	{
 		AbilitySystemComponent->CancelAllAbilities();
+	}
+
+	if (HasAuthority())
+	{
+		// 尸体保留死亡表现，但立刻销毁无主 AIController 并从 Crowd Manager 注销导航代理。
+		DetachFromControllerPendingDestroy();
 	}
 
 	if (HealthBarWidgetComponent)

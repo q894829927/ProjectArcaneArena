@@ -30,6 +30,7 @@ struct PROJECTARCANEARENA_API FArenaUpgradeChoiceViewData
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FArenaUpgradeChosenSignature, FName, UpgradeID);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FArenaUpgradeInventoryRequestSignature);
 
 UCLASS(Blueprintable)
 class PROJECTARCANEARENA_API UArenaUpgradeSelectionWidget : public UUserWidget
@@ -45,15 +46,35 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|Upgrade")
 	void HideUpgradeChoices();
 
-	// 返回第一个有效且可聚焦的候选按钮，供 Controller 安全设置 UIOnly 初始焦点。
+	// 优先返回第一个有效候选按钮供键盘/手柄确认，缺失时回退可聚焦根 Widget。
 	UWidget* GetInitialFocusTarget() const;
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")
 	FArenaUpgradeChosenSignature OnUpgradeChosen;
 
+	// Upgrade 阶段通过该意图把 Tab 交还 Controller，View 不自行决定背包权限。
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")
+	FArenaUpgradeInventoryRequestSignature OnInventoryRequested;
+
+	// Upgrade 阶段把 Tab 松开交还 Controller，以完成长按临时查看。
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")
+	FArenaUpgradeInventoryRequestSignature OnInventoryTabReleased;
+
 protected:
 	virtual void NativeOnInitialized() override;
 	virtual void NativeConstruct() override;
+	// 在候选按钮处理按键前拦截 Tab 按下，使只读背包可以从 Upgrade 界面打开。
+	virtual FReply NativeOnPreviewKeyDown(
+		const FGeometry& InGeometry,
+		const FKeyEvent& InKeyEvent) override;
+	// 焦点路由未执行 Preview 时再次捕获 Tab，避免自定义蓝图子控件吞掉背包切换。
+	virtual FReply NativeOnKeyDown(
+		const FGeometry& InGeometry,
+		const FKeyEvent& InKeyEvent) override;
+	// 在冒泡路径捕获 Tab 松开，供 Controller 判定轻点或长按。
+	virtual FReply NativeOnKeyUp(
+		const FGeometry& InGeometry,
+		const FKeyEvent& InKeyEvent) override;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|Upgrade")
 	TObjectPtr<UButton> UpgradeChoiceButton0;

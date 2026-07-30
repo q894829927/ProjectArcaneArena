@@ -9,6 +9,7 @@
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaWaveDataAsset.h"
 #include "Engine/TargetPoint.h"
+#include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaGameplayTags.h"
@@ -657,7 +658,7 @@ void AArenaWaveManager::HandleEnemyDestroyed(AActor* DestroyedActor)
 	CheckWaveCompletion();
 }
 
-// 每名受管理敌人只经过本入口一次，因此单次死亡最多生成一个共享拾取物。
+// 每名受管理敌人只经过本入口一次；延迟完成生成可区分真实失败与同帧自动拾取消耗。
 void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy)
 {
 	if (!HasAuthority() || !Enemy || !PickupDropTable || !GetWorld())
@@ -687,20 +688,23 @@ void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy)
 		- FVector(0.0f, 0.0f, CapsuleHalfHeight)
 		+ FVector(0.0f, 0.0f, 35.0f);
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AArenaPickupActor* Pickup = GetWorld()->SpawnActor<AArenaPickupActor>(
+	const FTransform SpawnTransform(FRotator::ZeroRotator, SpawnLocation);
+	AArenaPickupActor* Pickup = GetWorld()->SpawnActorDeferred<AArenaPickupActor>(
 		PickupClass,
-		SpawnLocation,
-		FRotator::ZeroRotator,
-		SpawnParameters);
+		SpawnTransform,
+		this,
+		nullptr,
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!Pickup)
 	{
-		UE_LOG(LogArenaWaves, Warning, TEXT("Failed to spawn pickup %s for enemy %s."),
+		UE_LOG(LogArenaWaves, Warning, TEXT("Failed to allocate deferred pickup %s for enemy %s."),
 			*GetNameSafe(PickupClass.Get()),
 			*GetNameSafe(Enemy));
+		return;
 	}
+
+	// FinishSpawning 期间允许附近玩家立即拾取并销毁 Actor，该路径仍属于成功掉落。
+	Pickup->FinishSpawning(SpawnTransform);
 }
 
 // 只统计有效 Class 和正权重，确保错误条目不会影响其他可用掉落。

@@ -483,7 +483,12 @@ void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 		InventoryToggleAction,
 		ETriggerEvent::Started,
 		this,
-		&AArenaPlayerCharacter::Input_ToggleInventory);
+		&AArenaPlayerCharacter::Input_InventoryTabPressed);
+	EnhancedInputComponent->BindAction(
+		InventoryToggleAction,
+		ETriggerEvent::Completed,
+		this,
+		&AArenaPlayerCharacter::Input_InventoryTabReleased);
 	EnhancedInputComponent->BindAction(
 		InventoryInteractAction,
 		ETriggerEvent::Started,
@@ -707,8 +712,8 @@ void AArenaPlayerCharacter::Input_Ultimate()
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_LightningStorm);
 }
 
-// Tab 把开关请求交给本地 Controller，Controller 负责 View 与输入模式，Model 仍在 PlayerState。
-void AArenaPlayerCharacter::Input_ToggleInventory()
+// Tab 按下交给本地 Controller；松开由获得焦点的 Widget 转发，避免切入 UI 后丢失长按状态。
+void AArenaPlayerCharacter::Input_InventoryTabPressed()
 {
 	if (!IsLocallyControlled())
 	{
@@ -717,14 +722,28 @@ void AArenaPlayerCharacter::Input_ToggleInventory()
 
 	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
 	{
-		ArenaPlayerController->ToggleInventory();
+		ArenaPlayerController->HandleInventoryTabPressed();
 	}
 }
 
-// G 请求本地 Controller 查找候选 Pickup，最终拾取资格由服务器 RPC 重新验证。
+// Tab 松开交给 Controller 完成当前手势；UMG 已处理时状态门闩会安全忽略重复回调。
+void AArenaPlayerCharacter::Input_InventoryTabReleased()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
+	{
+		ArenaPlayerController->HandleInventoryTabReleased();
+	}
+}
+
+// G 始终交给 Controller 按背包权限矩阵判断，最终拾取资格由服务器 RPC 重新验证。
 void AArenaPlayerCharacter::Input_InteractInventoryPickup()
 {
-	if (!IsLocallyControlled() || IsPlayerControlLockedByPhase() || IsInventoryInputLocked())
+	if (!IsLocallyControlled() || IsInventoryInputLocked())
 	{
 		return;
 	}

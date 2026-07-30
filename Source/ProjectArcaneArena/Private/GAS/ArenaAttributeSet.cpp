@@ -426,7 +426,7 @@ void UArenaAttributeSet::RefreshShieldGameplayCue()
 	}
 }
 
-// 根据权威实际资源损失分类，并保存位置、标签和比例供客户端只做表现。
+// 根据权威实际资源损失分类，并优先使用真实命中点、否则计算目标表面位置供客户端表现。
 void UArenaAttributeSet::QueueDamageFeedback(
 	const FGameplayEffectModCallbackData& Data,
 	float ShieldBeforeDamage,
@@ -501,7 +501,10 @@ void UArenaAttributeSet::QueueDamageFeedback(
 		{
 			SurfaceNormal = FVector::UpVector;
 		}
-		const float SurfaceDistance = FMath::Max(BoundsExtent.GetAbsMax(), 1.0f);
+		// 按伤害方向投影包围盒尺寸，避免用角色高度作为水平半径而把 Cue 推离目标。
+		const float SurfaceDistance = FMath::Max(
+			FVector::DotProduct(BoundsExtent, SurfaceNormal.GetAbs()),
+			1.0f);
 		DamageFeedback.CueParameters.Location = BoundsOrigin + SurfaceNormal * SurfaceDistance;
 		DamageFeedback.CueParameters.Normal = SurfaceNormal;
 	}

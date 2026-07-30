@@ -53,13 +53,30 @@ int32 UArenaInventoryComponent::GetStackQuantity(FGuid StackId) const
 	return Entry ? FMath::Max(Entry->Quantity, 0) : 0;
 }
 
-// Authority 先拒绝冲突定义，再补满同类堆栈并精确标记新增或变化条目。
+// Authority 重验阶段与角色状态，再以不可重入事务补满同类堆栈并标记变化。
 bool UArenaInventoryComponent::TryAddItem(UArenaItemDataAsset* ItemData, int32 Quantity)
 {
 	const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(GetOwner());
 	if (!ArenaPlayerState || !ArenaPlayerState->HasAuthority()
-		|| !ItemData || !ItemData->ItemTag.IsValid() || Quantity <= 0)
+		|| !ItemData || Quantity <= 0 || bInventoryMutationInProgress)
 	{
+		return false;
+	}
+	if (!CanPerformInventoryAction())
+	{
+		return false;
+	}
+	TGuardValue<bool> MutationGuard(bInventoryMutationInProgress, true);
+
+	FText RuntimeDefinitionError;
+	if (!ItemData->IsRuntimeDefinitionValid(&RuntimeDefinitionError))
+	{
+		UE_LOG(
+			LogArenaInventory,
+			Error,
+			TEXT("Rejected invalid inventory definition %s: %s"),
+			*GetNameSafe(ItemData),
+			*RuntimeDefinitionError.ToString());
 		return false;
 	}
 
@@ -78,34 +95,52 @@ bool UArenaInventoryComponent::TryAddItem(UArenaItemDataAsset* ItemData, int32 Q
 		}
 	}
 
-	const int32 MaxStackSize = FMath::Max(ItemData->MaxStackSize, 1);
-	int32 RemainingQuantity = Quantity;
-	for (FArenaInventoryEntry& Entry : InventoryList.Entries)
+	const int32 MaxStackSize = ItemData->MaxStackSize;
+	TArray<int32> MatchingEntryIndices;
+	TArray<int32> ResolvedStackQuantities;
+	for (int32 EntryIndex = 0; EntryIndex < InventoryList.Entries.Num(); ++EntryIndex)
 	{
+		const FArenaInventoryEntry& Entry = InventoryList.Entries[EntryIndex];
 		if (!Entry.ItemData || Entry.ItemData->ItemTag != ItemData->ItemTag
-			|| Entry.Quantity >= MaxStackSize)
+			|| Entry.Quantity <= 0)
 		{
 			continue;
 		}
 
-		const int32 AddedQuantity = FMath::Min(MaxStackSize - Entry.Quantity, RemainingQuantity);
-		Entry.Quantity += AddedQuantity;
-		RemainingQuantity -= AddedQuantity;
-		InventoryList.MarkItemDirty(Entry);
-		if (RemainingQuantity <= 0)
+		MatchingEntryIndices.Add(EntryIndex);
+		ResolvedStackQuantities.Add(Entry.Quantity);
+	}
+	if (!ArenaInventory::ApplyStackAddition(ResolvedStackQuantities, MaxStackSize, Quantity))
+	{
+		UE_LOG(
+			LogArenaInventory,
+			Error,
+			TEXT("Rejected invalid stack state while adding %d of %s."),
+			Quantity,
+			*ItemData->ItemTag.ToString());
+		return false;
+	}
+
+	for (int32 MatchingIndex = 0; MatchingIndex < MatchingEntryIndices.Num(); ++MatchingIndex)
+	{
+		FArenaInventoryEntry& Entry = InventoryList.Entries[MatchingEntryIndices[MatchingIndex]];
+		const int32 ResolvedQuantity = ResolvedStackQuantities[MatchingIndex];
+		if (Entry.Quantity != ResolvedQuantity)
 		{
-			break;
+			Entry.Quantity = ResolvedQuantity;
+			InventoryList.MarkItemDirty(Entry);
 		}
 	}
 
-	while (RemainingQuantity > 0)
+	for (int32 NewStackIndex = MatchingEntryIndices.Num();
+		NewStackIndex < ResolvedStackQuantities.Num();
+		++NewStackIndex)
 	{
 		FArenaInventoryEntry& NewEntry = InventoryList.Entries.AddDefaulted_GetRef();
 		NewEntry.StackId = FGuid::NewGuid();
 		NewEntry.ItemData = ItemData;
-		NewEntry.Quantity = FMath::Min(MaxStackSize, RemainingQuantity);
+		NewEntry.Quantity = ResolvedStackQuantities[NewStackIndex];
 		NewEntry.DisplayOrder = InventoryList.Entries.Num() - 1;
-		RemainingQuantity -= NewEntry.Quantity;
 		InventoryList.MarkItemDirty(NewEntry);
 	}
 
@@ -114,11 +149,17 @@ bool UArenaInventoryComponent::TryAddItem(UArenaItemDataAsset* ItemData, int32 Q
 	return true;
 }
 
-// Authority 先拒绝已满资源，再应用可回滚冷却与恢复 GE；只有属性增加后才消费条目。
+// Authority 用不可重入事务应用可回滚冷却与恢复 GE；只有属性增加后才消费条目。
 bool UArenaInventoryComponent::TryUseItem(FGuid StackId)
 {
+	if (bInventoryMutationInProgress)
+	{
+		return false;
+	}
+	TGuardValue<bool> MutationGuard(bInventoryMutationInProgress, true);
+
 	FArenaInventoryEntry* Entry = FindMutableEntry(StackId);
-	if (!Entry || Entry->Quantity <= 0 || !Entry->ItemData || !CanPerformCombatInventoryAction())
+	if (!Entry || Entry->Quantity <= 0 || !Entry->ItemData || !CanPerformInventoryAction())
 	{
 		return false;
 	}
@@ -128,11 +169,23 @@ bool UArenaInventoryComponent::TryUseItem(FGuid StackId)
 		? ArenaPlayerState->GetAbilitySystemComponent()
 		: nullptr;
 	UArenaItemDataAsset* ItemData = Entry->ItemData;
-	if (!AbilitySystemComponent || !ItemData->UseGameplayEffectClass
-		|| !ItemData->CooldownGameplayEffectClass
-		|| !ItemData->SetByCallerMagnitudeTag.IsValid()
-		|| ItemData->UseMagnitude <= KINDA_SMALL_NUMBER
-		|| AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::Cooldown_Item_Consumable))
+	if (!AbilitySystemComponent)
+	{
+		return false;
+	}
+
+	FText UseConfigurationError;
+	if (!ItemData->IsUseConfigurationValid(&UseConfigurationError))
+	{
+		UE_LOG(
+			LogArenaInventory,
+			Error,
+			TEXT("Rejected use of invalid item asset %s: %s"),
+			*GetNameSafe(ItemData),
+			*UseConfigurationError.ToString());
+		return false;
+	}
+	if (AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::Cooldown_Item_Consumable))
 	{
 		return false;
 	}
@@ -193,16 +246,28 @@ bool UArenaInventoryComponent::TryUseItem(FGuid StackId)
 	return true;
 }
 
-// Authority 先确认 Pickup 成功落地，再扣除当前堆栈，生成失败不会丢失物品。
+// Authority 验证丢弃 Pawn 属于背包 PlayerState，再以不可重入事务确认 Pickup 落地后扣除堆栈。
 bool UArenaInventoryComponent::TryDropItem(FGuid StackId, int32 Quantity, APawn* SourcePawn)
 {
+	if (bInventoryMutationInProgress)
+	{
+		return false;
+	}
+	TGuardValue<bool> MutationGuard(bInventoryMutationInProgress, true);
+
 	FArenaInventoryEntry* Entry = FindMutableEntry(StackId);
-	if (!Entry || !Entry->ItemData || !SourcePawn || !CanPerformCombatInventoryAction())
+	AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(GetOwner());
+	if (!Entry
+		|| !Entry->ItemData
+		|| !SourcePawn
+		|| !ArenaPlayerState
+		|| SourcePawn->GetPlayerState() != ArenaPlayerState
+		|| !CanPerformInventoryAction())
 	{
 		return false;
 	}
 
-	if (Quantity <= 0 || Quantity > Entry->Quantity || !GetWorld())
+	if (!ArenaInventory::IsValidDropQuantity(Quantity, Entry->Quantity) || !GetWorld())
 	{
 		return false;
 	}
@@ -231,7 +296,6 @@ bool UArenaInventoryComponent::TryDropItem(FGuid StackId, int32 Quantity, APawn*
 		return false;
 	}
 
-	AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(GetOwner());
 	if (!PickupActor->InitializePickup(Entry->ItemData, Quantity, ArenaPlayerState, 0.5f))
 	{
 		PickupActor->Destroy();
@@ -319,8 +383,8 @@ void UArenaInventoryComponent::NotifyInventoryChanged()
 	}
 }
 
-// 使用和丢弃只允许 Combat 中存活且未眩晕的 PlayerState。
-bool UArenaInventoryComponent::CanPerformCombatInventoryAction() const
+// 使用和丢弃遵循 GameState 权限矩阵，同时要求权威 PlayerState 存活且未眩晕。
+bool UArenaInventoryComponent::CanPerformInventoryAction() const
 {
 	const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(GetOwner());
 	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
@@ -330,7 +394,7 @@ bool UArenaInventoryComponent::CanPerformCombatInventoryAction() const
 	return ArenaPlayerState
 		&& ArenaPlayerState->HasAuthority()
 		&& ArenaGameState
-		&& ArenaGameState->GetGamePhase() == EArenaGamePhase::Combat
+		&& ArenaGameState->CanPerformInventoryOperations()
 		&& AbilitySystemComponent
 		&& !AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 		&& !AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);

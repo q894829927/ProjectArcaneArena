@@ -123,9 +123,11 @@ private:
 	void Input_Shield();
 	// LightningStorm 输入入口，只发送 Ability.LightningStorm 标签，具体范围伤害由 GAS 处理。
 	void Input_Ultimate();
-	// Tab 切换本地背包 View，玩法内容仍由 PlayerState InventoryComponent 持有。
-	void Input_ToggleInventory();
-	// G 请求 Controller 选择最近可见的可入包 Pickup。
+	// Tab 按下时启动轻点切换或长按临时查看，玩法内容仍由 PlayerState InventoryComponent 持有。
+	void Input_InventoryTabPressed();
+	// Tab 松开时完成轻点切换或长按临时关闭，作为 Widget 焦点路径之外的 Enhanced Input 兜底。
+	void Input_InventoryTabReleased();
+	// G 请求 Controller 按当前背包阶段权限选择最近可见 Pickup。
 	void Input_InteractInventoryPickup();
 	// Boss Intro 或 Outro 中按下 Space 时通知本地 Controller 开始服务器验证的长按计时。
 	void Input_BossIntroSkipStarted();
