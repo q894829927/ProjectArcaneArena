@@ -396,6 +396,16 @@ Boss 战斗规则不再扩展，主要动画、VFX、音效、HUD 和 Intro 已�
 - 调整数值、预警时间和技能频率，但不在本阶段增加新的机制或系统。
 - 完成验证后，从 `PENDING_VERIFICATION.md` 删除对应条目，并将 `IMPLEMENTED_FEATURES.md` 的 Boss 状态更新为 `Verified`。
 
+### 当前实现进度
+
+状态：`Partial`，最后更新：2026-07-30。
+
+- 阶段六 A 已完成共用伤害反馈的 C++ 收口：Boss 与 Player、普通敌人继续使用同一 `UArenaHitReactionComponent`，每段权威伤害保留独立元素 Cue、结果 Cue 和世界数字，同 Tick 的 Overlay、CameraShake 与本地 HUD 合并为一次；唯一汇总结果音通过独立可靠消息播放，避免视觉批次丢包造成命中音断续。
+- 共用闪光已改为项目 Overlay MID，不再修改悟空等第三方主材质槽；连续伤害刷新 Timer，并且只在当前 Overlay 仍为伤害 MID 时恢复旧值。
+- 伤害数字已加入 Ease-Out 上浮和末段渐隐，HUD 方向提示按实际 Widget 尺寸适配 720p/1080p 与双视角；第三人称 CameraShake 默认衰减到顶视角的 `65%`。
+- `Content/Python/damage_feedback/setup_damage_feedback_polish.py` 已在编辑器成功执行一次，创建并保存统一 Overlay、四个 Perlin CameraShake，并把表现资产与现有三类结果音效连接到 Player、近战/远程 Enemy 和 Boss；九个相关资产通过编辑器资产验证。
+- 阶段六 A 状态为 `Implemented`。脚本二次幂等性、Boss 四类伤害、同 Tick 多段抑制、Overlay 恢复、双视角、Listen Server 和 Dedicated Server 表现仍在 `PENDING_VERIFICATION.md`，完成前不标记为 `Verified`。
+
 ### 阶段边界
 
 本阶段只允许测试所需的修复、数值调整和表现修正，不增加新 Ability、新阶段、新构筑、新掉落类型或新的 AI 架构。

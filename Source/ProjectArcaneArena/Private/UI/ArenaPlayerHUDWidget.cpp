@@ -999,7 +999,7 @@ void UArenaPlayerHUDWidget::SetEnergyValues(float InEnergy, float InMaxEnergy)
 	}
 }
 
-// 显示常驻 HUD 上的方向提示和破盾文本，并把动画扩展交给蓝图事件。
+// 显示自适应 HUD 方向提示和破盾文本，并把附加动画扩展交给蓝图事件。
 void UArenaPlayerHUDWidget::ShowDamageFeedback(
 	float DirectionAngleDegrees,
 	bool bHasDirection,
@@ -1025,8 +1025,17 @@ void UArenaPlayerHUDWidget::ShowDamageFeedback(
 			if (UCanvasPanelSlot* DirectionSlot = Cast<UCanvasPanelSlot>(DamageDirectionIndicator->Slot))
 			{
 				const float DirectionRadians = FMath::DegreesToRadians(DirectionAngleDegrees);
+				const FVector2D WidgetSize = GetCachedGeometry().GetLocalSize();
+				const float HorizontalRadius = WidgetSize.X > 1.0f
+					? FMath::Clamp(WidgetSize.X * 0.32f, 240.0f, 520.0f)
+					: 340.0f;
+				const float VerticalRadius = WidgetSize.Y > 1.0f
+					? FMath::Clamp(WidgetSize.Y * 0.30f, 150.0f, 300.0f)
+					: 220.0f;
 				const FVector2D EdgeOffset = bHasDirection
-					? FVector2D(FMath::Sin(DirectionRadians) * 340.0f, -FMath::Cos(DirectionRadians) * 220.0f)
+					? FVector2D(
+						FMath::Sin(DirectionRadians) * HorizontalRadius,
+						-FMath::Cos(DirectionRadians) * VerticalRadius)
 					: FVector2D::ZeroVector;
 				DirectionSlot->SetPosition(EdgeOffset);
 			}

@@ -11,46 +11,35 @@
 5. 一个功能完成完整验收后，同步更新 `IMPLEMENTED_FEATURES.md` 中的 `Partial` / `Verified` 状态。
 6. 临时测试 GameMode、WaveData、UpgradePool、属性和网络参数不要覆盖正式资产。
 
-## 阶段五 C 背包自动化与资产落地检查
+## 阶段五 C 背包资产落地检查
 
 ### 测试方法
 
-1. 在 Session Frontend 或控制台执行 `Automation RunTests ProjectArcaneArena.Inventory`，确认 `Pagination`、`Stacking`、`TabGesture`、`Filters`、`PhaseAccess`、`ReplicationContract` 和 `ItemValidation` 七项通过。
-2. 完整编译并重启编辑器后重新执行 `setup_inventory_items.py`，把两个 Pickup Blueprint 拖入测试关卡，确认默认 `ItemData`、`Quantity=1`、红/蓝药水瓶 Mesh/材质、世界名称和 `[G] Pick Up` 标签正确。
+1. 完整编译并重启编辑器后重新执行 `setup_inventory_items.py`，把两个 Pickup Blueprint 拖入测试关卡，确认默认 `ItemData`、`Quantity=1`、红/蓝药水瓶 Mesh/材质、世界名称和 `[G] Pick Up` 标签正确。
 
 ### 通过标准
 
-- Automation Tests 对 `0/19/20/21/40/41` 和多 Tag OR/层级筛选全部通过；这不替代后续真实 Widget 与网络 PIE。
 - 两个可入包 Pickup 在世界中显示对应红/蓝药水瓶，名称、数量、颜色和交互提示正确；丢弃后生成的原生 Pickup 仍从 ItemData 恢复同一外观，不退回通用球体，也不与现有即时恢复 Pickup 混淆。
 
 ## 阶段五 C 背包功能与分页
 
 ### 测试方法
 
-1. 分别将一个药水 Pickup 的 `Quantity` 设为 `190/200/210/400/410`，制造 `19/20/21/40/41` 个十瓶堆栈；空背包用于验证 `0`，按 `Tab` 检查页面数量、二十个固定槽和上下页。
-2. 将一个 `MaxStackSize=10` 的测试 Pickup 数量设为 `1001`，确认服务器整笔拒绝且原背包数量不变；`1000` 仍应成功并创建恰好 `100` 个新堆栈。
-3. 拾取同类第 `11` 个药水，确认先补满首个 `10` 堆栈，再创建新堆栈；使用或丢弃空堆栈后确认顺序压紧、页码自动 Clamp。
-4. 同时选择 Consumable 与 Health/Energy 筛选，确认使用 OR 语义和 GameplayTag 父级匹配，清除筛选恢复原 DisplayOrder。
-5. 消耗 Health/Energy 后使用对应药水，检查恢复量、共享一秒冷却和数量；冷却期间 Use 应禁用而 Drop 仍可用。资源已满、Dead、Stunned 或只读阶段时重复。
-6. 测试双击槽位、Use 按钮、部分丢弃、整组丢弃、落地失败和 `0/负数/超过堆栈` 请求；确认非法数量没有被客户端静默改写为 `1`。
-7. 依次点击筛选、槽位、Use、Drop 数量和翻页按钮后测试短按 `Tab`、长按 `Tab` 与 `Escape`，确认焦点路径仍能正确开关背包。
-8. 分别使用约 `1280×720` 和 `1920×1080` 的 PIE 窗口检查面板：图标与数量不重叠，物品名只出现在右侧详情，Drop 确认行展开时分页不位移，底部技能 HUD 不穿过背包面板。
-9. 依次验证权限矩阵：Waiting 只读、Combat 完整、Upgrade 只读且隐藏/恢复升级选择、BossIntro/BossOutro 禁止、Victory 完整、Defeat 只读。
-10. 重新执行 `setup_overload_test.py` 后进入 `Lvl_OverloadTest`，确认 Waiting 中可拾取、使用和丢弃；正式 GameMode 的 Waiting 仍保持只读。
-11. 在 Upgrade 候选界面分别短按和长按 Tab；先依次用鼠标点击或悬停不同候选按钮再重复切换，确认按钮不会通过 Slate 键盘导航吞掉 Tab、背包始终能够打开、升级选择暂时隐藏且关闭后候选恢复。重新显示候选时确认第一个有效按钮获得初始焦点，`Enter`、`Space` 和手柄确认可直接选择它。完成选择进入 Combat 后确认 WASD 和鼠标观察不残留锁定；随后在 BossIntro、BossOutro、Victory 切换边界重复相同输入清理检查，并连续快速切换至少十次验证统一 UI 输入锁不会残留。
-12. 背包打开时分别添加/移除 `State.Stunned` 与 `State.Dead`，确认操作按钮立即变为只读；PlayerState 重绑或重生后确认 Tag Delegate 不重复、解除状态后仅在阶段允许时恢复操作。额外在 Inventory、Upgrade、BossIntro、BossOutro 和 Victory 锁定期间触发重生或重新 Possess，确认 `ClientRestart` 后移动/观察仍按当前模式保持锁定，退出该模式后恰好恢复一次。
+1. 将一个 `MaxStackSize=10` 的测试 Pickup 数量设为 `1001`，确认服务器整笔拒绝且原背包数量不变；`1000` 仍应成功并创建恰好 `100` 个新堆栈。
+2. 在 Dead、Stunned、只读阶段和恢复 GE 配置失败时使用药水，确认不扣数量且不添加新的冷却；冷却期间确认 Use 禁用但 Drop 仍可用。
+3. 测试双击槽位、Use 按钮、落地失败和 `0/负数/超过堆栈` Drop 请求；确认非法数量没有被客户端静默改写为 `1`。
+4. 分别使用约 `1280×720` 和 `1920×1080` 的 PIE 窗口检查面板：图标与数量不重叠，物品名只出现在右侧详情，Drop 确认行展开时分页不位移，底部技能 HUD 不穿过背包面板。
+5. 继续验证权限矩阵中尚未确认的 Waiting 只读、BossIntro/BossOutro 禁止、Victory 完整和 Defeat 只读；`Lvl_OverloadTest` 的 Waiting 完整操作不能改变正式 GameMode 默认规则。
+6. 在 Upgrade 界面确认第一个有效按钮获得初始焦点，`Enter`、`Space` 和手柄确认可直接选择它；随后在 BossIntro、BossOutro、Victory 切换边界重复输入清理。
+7. 背包打开时分别添加/移除 `State.Stunned` 与 `State.Dead`，确认操作按钮立即变为只读；PlayerState 重绑或重生后确认 Tag Delegate 不重复、解除状态后仅在阶段允许时恢复操作。背包打开时的一次重新 Possess 已通过；仍需在 Upgrade、BossIntro、BossOutro 和 Victory 锁定期间触发重生或重新 Possess，确认 `ClientRestart` 后移动/观察仍按当前模式保持锁定，退出该模式后恰好恢复一次。
 
 ### 通过标准
 
-- 页数按筛选后堆栈数使用 `Max(1, Ceil(Count/20))`，筛选和翻页不修改服务器物品顺序。
 - 满资源、无效状态、冷却中或 GE 配置失败时不扣物品、不添加新的冷却。
 - 满资源必须在恢复 GE 执行前直接拒绝；Health/Energy 行为由对应 SetByCaller Tag 决定，不依赖筛选用 `ItemTags`。
 - 两个不同 DataAsset 配置相同 `ItemTag` 时服务器拒绝合并，原 Pickup 和已有堆栈都保持不变。
 - 非正数和超量 Drop 请求直接拒绝；丢弃 Pickup 只有在前方存在安全地面且球形空间未被墙体、Pawn 或动态 Actor 占用时才生成并扣物品。
 - 丢弃者在短保护期内不能立即捡回，其他玩家仍可拾取。
-- 顶视角和第三人称打开背包时世界继续运行、玩家仍会受伤，但移动、Look、Sprint 和五个主动技能输入被锁定；关闭后鼠标、准星和原视角输入正确恢复。
-- 短按 Tab 从关闭状态打开并保持，再次短按关闭；按住超过 `0.25s` 时背包持续显示，松开立即关闭，按键重复不造成闪烁或重复切换。
-- 顶视角关闭背包后鼠标保持关闭前的屏幕位置；只有真正从第三人称切回顶视角时才归中。
 - 背包与其他 UI 阶段重叠退出后 `SetIgnoreMoveInput`/`SetIgnoreLookInput` 计数恢复平衡，玩家不会概率性失去移动或观察。
 - 720p 与 1080p 下背包保持紧凑居中，二十槽、筛选、详情、操作和分页均位于稳定区域，长描述自动换行且不遮挡按钮。
 - 只读阶段仍可筛选、翻页和查看详情，但 Use、双击使用、Drop、G 以及伪造 RPC 都不能改变物品或世界 Actor。
@@ -61,7 +50,7 @@
 ### 测试方法
 
 1. 两人 Listen Server 让 Host 和 Client 分别拾取不同数量药水，检查对方界面无法观察另一人的 FastArray 内容。
-2. 两人同时按 `G` 竞争同一个 Pickup，并重复提交已销毁 Actor、伪造 StackId 和超量 Drop 请求；再用无效物品定义制造一次拾取失败，确认 Pickup 会恢复原碰撞模式与可交互状态且不会复制物品。
+2. 两人同时按 `G` 竞争同一个 Pickup，并重复提交已销毁 Actor、伪造 StackId 和超量 Drop 请求。
 3. Dedicated Server 双客户端重复拾取、使用、部分丢弃和重新拾取，观察属性、世界 Actor 和 UI。
 4. 在背包打开时触发死亡、Upgrade、BossIntro、BossOutro、Victory、重生和关卡重载，检查 Delegate、输入模式和页面状态。
 
@@ -1081,26 +1070,32 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 6. 在顶视角、第三人称和双客户端分别使用 BasicAttack 命中敌人，确认 `GameplayCue.Hit.Physical` 出现在服务器 Sweep 的目标表面，而不是角色中心、头顶或远离目标的位置。
 ### 通过标准
 
-- 同一目标在一个 Tick 内的所有权威伤害结算只发送一个项目级批量 Multicast；每段结算仍分别携带独立 `FArenaDamageFeedbackData`。
+- 同一目标在一个 Tick 内的所有权威伤害结算只发送一个项目级不可靠视觉批量 Multicast，并额外发送一个仅携带汇总分类的可靠结果音 Multicast；每段结算仍分别携带独立 `FArenaDamageFeedbackData`。
 - Output Log 不再出现并发命中与数字耗尽 `net.MaxRPCPerNetUpdate=2` 的警告，三段以上同帧伤害也不会丢失后续表现。
 - Host 与 Client 均按元素 Cue、结果 Cue、一个伤害数字的顺序看到反馈；暴击仍显示金色 Critical 样式。
 - BasicAttack 的物理命中特效在攻击者与观察端都清晰可见，并使用同一个权威命中位置。
 - 合并只改变表现 RPC 数量，不改变 Health、Shield、Crit、OnDamage、OnCrit、OnKill 或 Overload 的权威结算次数。
 
-## Damage Feedback Foundation 表现配置与安全退化
+## Damage Feedback Presentation 资产配置与安全退化
 
-> 当前状态：本轮按用户要求暂缓运行时测试。以下配置与验收步骤继续保留，恢复验证后通过一项便移除对应条目。
+> 当前状态：批次收口、Overlay、数字动画和 HUD 自适应代码已完成；`SA_ArenaHitFeedback` 的远程命中可听性和 `SC_Slash_Cyberpunk_Cue` 破盾音已通过单人 PIE，二次幂等性及其余运行时测试继续保留。
 
 ### 测试方法
 
-1. 在角色材质中加入 `HitFlashColor` 和 `HitFlashIntensity` 参数；先验证 C++ 回退方向符号与破盾文本，再在 `WBP_PlayerHUD` 中按需提供 `DamageDirectionIndicator`、`ShieldBreakText` 并实现 `On Damage Feedback` 动画覆盖回退布局。
-2. 为 `HitReactionComponent` 配置轻/中/重与破盾 CameraShake，以及 ShieldHit、ShieldBreak、HealthHit 音效；缺少正式资源时保持为空。
-3. 分别在 Listen Server、Client 和 Dedicated Server 路径检查未配置表现资源时的退化行为。
+1. 再执行一次 `Content/Python/damage_feedback/setup_damage_feedback_polish.py`；确认继续复用一个 `M_ArenaHitFlashOverlay` 和四个 `CS_*`，Player、近战/远程 Enemy、Boss 和 `BP_ArenaEnemy_OverloadDummy` 的 `HitReactionComponent` 引用保持有效，`GCN_BasicAttack_Activate` 只追加一个 `SC_Basic_Slash_Cue`，且没有 `_1/_2`。
+2. 检查四类角色的 `HitReactionComponent.HitFeedbackAttenuationSettings` 均为 `SA_ArenaHitFeedback`，`ShieldBreakSound` 均为 `SC_Slash_Cyberpunk_Cue`；从镜头附近和 Fireball 最大常用射程分别命中，结果音都应保持可听且仍有空间方向。
+3. 分别在 Manny、悟空、Muriel、普通敌人和 Boss Mesh 上触发 ShieldOnly、ShieldBreak、HealthOnly 和复合伤害，确认 Overlay 能覆盖不同第三方主材质并在定时结束后恢复原 Overlay。
+4. 在闪光期间让另一表现临时替换 Mesh Overlay，确认伤害 Timer 到期不会覆盖后来设置的 Overlay；未配置 `HitFlashOverlayMaterial` 时只跳过闪光。
+5. 在 `WBP_PlayerHUD` 中按需提供 `DamageDirectionIndicator`、`ShieldBreakText` 并实现 `On Damage Feedback` 动画；未提供时验证原生回退布局。
+6. 分别在 Listen Server、Client 和 Dedicated Server 路径检查未配置表现资源时的退化行为。
 
 ### 通过标准
 
 - Dedicated Server 不创建 MID、音频、DamageNumber、Widget 或 CameraShake。
-- 未配置材质参数、Sound、CameraShake 或 HUD 可选控件时安全退化，不崩溃且不影响伤害结算。
+- 未配置 Overlay Material、Sound、CameraShake 或 HUD 可选控件时安全退化，不崩溃且不影响伤害结算。
+- 连续受击复用同一个 Overlay MID、刷新复位 Timer，并且不修改角色各主材质槽。
+- BasicAttack 无论命中或打空都播放一次激活挥击音；命中后仍只额外播放目标对应的一次结果音。
+- 在 PIE Network Emulation 的 `150ms RTT + 2%/5% Packet Loss` 下连续测试 BasicAttack、Fireball、LightningStorm、FireZone 和敌人攻击；每次实际扣除 Shield/Health 都应听到一次对应结果音，不因视觉批次丢包而间歇静音。
 
 ## 四类伤害反馈与事件边界
 
@@ -1109,7 +1104,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 1. 先记录 `GE_Init_PlayerAttributes`、`GE_Init_EnemyAttributes`、`GA_BasicAttack` 和 `GA_EnemyMeleeAttack` 的原值；测试结束后必须恢复，避免把验收数值带入正式平衡配置。
 2. 世界反馈阶段：把玩家 `AttackPower/CritChance` 设为 `0/0`、敌人 `Defense` 设为 `0`，依次把敌人初始 `Shield/Health` 与 `GA_BasicAttack.BaseDamage` 配成 `30/100/10`、`10/100/10`、`10/100/30`、`0/100/20`；每次重新开始 PIE 后只攻击一次。
 3. 本地玩家反馈阶段：把敌人 `AttackPower/CritChance` 设为 `0/0`、玩家 `Defense` 设为 `0`，用同样四组 `Shield/Health` 和 `GA_EnemyMeleeAttack.BaseDamage` 让敌人只命中本地玩家一次。
-4. 两个阶段都开启 `arena.Net.AbilityAudit 1`，同时观察 Shield/Health、批次日志、元素 Cue、结果 Cue、唯一数字、HUD 方向提示和 CameraShake；当前材质没有 `HitFlashColor/HitFlashIntensity` 参数时，闪烁安全缺席不作为分类失败。
+4. 两个阶段都开启 `arena.Net.AbilityAudit 1`，同时观察 Shield/Health、批次日志、元素 Cue、结果 Cue、唯一数字、Overlay、HUD 方向提示和 CameraShake。
 5. 对 Shield 已为零的目标继续伤害，再用一个不修改 Damage Meta Attribute 的 Instant GE 直接把正数 Shield Override 为 `0`。
 6. Dash 期间确认存在 `State.Invincible` 后重复相同攻击。
 7. 把目标设为 `Shield=10, Health=15`，使用 `Damage=30` 制造一次同时破盾、伤血并致死的结算，比较视觉分类与 `Trigger.OnShieldBreak`。
@@ -1118,6 +1113,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 - 四组结果依次为 `ShieldOnly`、`ShieldBreak`、`ShieldBreakWithHealthDamage`、`HealthOnly`，实际属性分别为 `20/100`、`0/100`、`0/80`、`0/80`。
 - 每段结算只播放一个结果 Cue 和一个数字；复合伤害不重复播放完整 ShieldHit 或 HealthHit。
+- 同一目标同 Tick 制造三段以上结算时，每段 Cue 和数字都保留，但 Overlay、结果音效、CameraShake 和 HUD 只刷新一次；Health 损失比例累加后不超过 `1`。
 - Shield 原本为零、直接属性修改和零实际损失不产生破盾反馈；无敌不产生任何受伤反馈。
 - 致死复合伤害仍显示 `ShieldBreakWithHealthDamage`，但保持现有规则，不派发存活目标专用 `Trigger.OnShieldBreak`。
 - `OnDamage -> OnCrit -> OnKill -> 存活目标 OnShieldBreak` 的玩法事件顺序没有变化。
@@ -1127,7 +1123,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 ### 测试方法
 
 1. 分别使用 Burning、LightningStorm、Overload、Boss FireZone、GroundSlam、Charge 和敌人远程投射物制造四类资源损失。
-2. 在顶视角和第三人称从前、后、左、右攻击本地玩家，观察方向角与屏幕提示。
+2. 在 1280x720 和 1920x1080 下，分别从顶视角和第三人称的前、后、左、右攻击本地玩家，观察方向角、屏幕提示和 UI 重叠。
 3. 2-player Listen Server 分别让 Host 和 Client 受伤，并让两人同帧同时受伤。
 4. Dedicated Server 双客户端重复 HealthOnly 和复合伤害。
 5. 让旧 `BP_ArenaEnemyCharacter` 的 `K2_OnDamaged` 蓝图图表仍保留原节点，确认统一反馈后不会因 Health Delegate 再播放第二次完整闪白或数字。
@@ -1137,5 +1133,6 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 每次真实周期伤害独立分类且同 Tick 只占一个批量 Multicast；元素 Cue、结果 Cue和数字不丢失、不重复。
 - Host 受伤只影响 Host HUD/相机，Client 受伤只影响 Client HUD/相机；双方仍能看到彼此的世界空间 Cue 和数字。
 - ShieldOnly 不显示红色方向边缘；HealthOnly 和复合伤害能区分前后左右；无来源时安全回退为无方向表现。
+- 同 Tick 多来源时优先显示 Health 损失最大的一段方向；没有 Health 损失时使用总损失最大的一段方向。
 - GroundSlam、Charge 和 FireZone 不改变各自服务器伤害次数、取消清理、Shield-first 或死亡流程。
-- 普通数字按 Shield/Break/Health/复合使用青蓝、亮蓝、淡红、复合色；暴击使用更大金色；同 Tick 数字不再完全重叠。
+- 普通数字按 Shield/Break/Health/复合使用青蓝、亮蓝、淡红、复合色；暴击使用更大金色；同 Tick 数字不再完全重叠，并在约 `0.9s` 内 Ease-Out 上浮、最后 `40%` 渐隐。

@@ -7,8 +7,10 @@
 
 class AArenaDamageNumberActor;
 class UCameraShakeBase;
+class UMaterialInterface;
 class UMaterialInstanceDynamic;
 class USkeletalMeshComponent;
+class USoundAttenuation;
 class USoundBase;
 
 UCLASS(ClassGroup = (Arena), meta = (BlueprintSpawnableComponent))
@@ -21,6 +23,12 @@ public:
 
 	// 在各客户端消费服务器确认的反馈，统一播放材质、数字、音效和本地玩家反馈。
 	void PresentDamageFeedback(const FArenaDamageFeedbackData& DamageFeedback);
+
+	// 汇总同一目标本 Tick 的角色反应，同时保留每段伤害各自的世界数字。
+	void PresentDamageFeedbackBatch(const TArray<FArenaDamageFeedbackData>& DamageFeedbackBatch);
+
+	// 播放服务器汇总后的唯一结果音层；由独立可靠 RPC 调用，避免视觉丢包同时吞掉命中声音。
+	void PresentDamageFeedbackSound(EArenaDamageFeedbackType FeedbackType) const;
 
 	// 为旧 Damage Number Cue 保留单一兼容入口，实际 Actor 仍由本组件创建。
 	void SpawnDamageNumber(float DamageAmount, bool bCriticalHit, EArenaDamageFeedbackType FeedbackType);
@@ -37,6 +45,9 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage Feedback|Number", meta = (ClampMin = "0.0"))
 	float DamageNumberLaneSpacing = 26.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage Feedback|Material")
+	TObjectPtr<UMaterialInterface> HitFlashOverlayMaterial;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage Feedback|Material")
 	FName HitFlashColorParameterName = TEXT("HitFlashColor");
@@ -80,6 +91,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage Feedback|Audio")
 	TObjectPtr<USoundBase> HealthHitSound;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage Feedback|Audio")
+	TObjectPtr<USoundAttenuation> HitFeedbackAttenuationSettings;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage Feedback|Camera")
 	TSubclassOf<UCameraShakeBase> LightDamageCameraShakeClass;
 
@@ -104,26 +118,34 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage Feedback|Camera", meta = (ClampMin = "0.0", ClampMax = "3.0"))
 	float MaxCameraShakeScale = 1.5f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Damage Feedback|Camera", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ThirdPersonCameraShakeScaleMultiplier = 0.65f;
+
 private:
-	// 首次受击时创建并缓存 Mesh 的 MID，连续伤害不会重复分配材质实例。
-	void EnsureDynamicMaterials();
-	// 根据反馈类型设置统一材质参数，并刷新复位定时器。
+	// 首次受击时创建项目 Overlay MID，避免改写角色的第三方主材质。
+	void EnsureHitFlashOverlay();
+	// 根据汇总反馈类型设置 Overlay 参数，并刷新复位定时器。
 	void ApplyMaterialFlash(EArenaDamageFeedbackType FeedbackType);
-	// 复位所有缓存 MID 的闪烁强度。
+	// 复位 Overlay 强度，并仅在未被其他系统替换时恢复原 Overlay。
 	void ResetMaterialFlash();
-	// 为本地控制玩家播放一次 CameraShake 并通知 HUD。
+	// 为本地控制玩家播放一次批次级 CameraShake 并通知 HUD。
 	void PresentLocalPlayerFeedback(const FArenaDamageFeedbackData& DamageFeedback);
 	// 根据生命损失比例选择轻、中、重 CameraShake 类。
 	TSubclassOf<UCameraShakeBase> ResolveHealthCameraShake(float HealthDamageRatio) const;
-	// 根据反馈类型选择可配置音效；复合伤害同时叠加破盾和生命音层。
-	void PlayFeedbackSounds(EArenaDamageFeedbackType FeedbackType) const;
 	// 获取组件配置或角色兼容配置中的伤害数字类与偏移。
 	TSubclassOf<AArenaDamageNumberActor> ResolveDamageNumberClass() const;
 	FVector ResolveDamageNumberOffset() const;
 
 	UPROPERTY(Transient)
-	TArray<TObjectPtr<UMaterialInstanceDynamic>> DynamicMaterials;
+	TObjectPtr<USkeletalMeshComponent> CachedHitFlashMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInterface> OriginalOverlayMaterial;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> HitFlashMaterialInstance;
 
 	FTimerHandle HitFlashTimerHandle;
+	bool bHitFlashOverlayApplied = false;
 	int32 DamageNumberSequence = 0;
 };

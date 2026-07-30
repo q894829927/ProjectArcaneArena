@@ -52,12 +52,16 @@ public:
 		float AppliedShieldDamage);
 
 private:
-	// 在下一 Tick 用一个不可靠 Multicast 发送当前目标积累的全部瞬时伤害表现。
+	// 在下一 Tick 发送当前目标积累的视觉批次，并用独立可靠消息补充唯一结果音。
 	void FlushPendingGameplayCueBatch();
 
-	// 各端收到批次后按元素 Cue、结果 Cue、公共角色反馈的固定顺序逐项播放。
+	// 各端收到批次后逐项播放 Cue，再把同 Tick 角色反应汇总为一次表现。
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastExecuteGameplayCueBatch(const TArray<FArenaGameplayCueBatchItem>& GameplayCueBatch);
+
+	// 可靠广播每 Tick 汇总后的唯一命中结果音，避免可丢失视觉批次导致听感断续。
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastPlayDamageFeedbackSound(EArenaDamageFeedbackType FeedbackType);
 
 	UPROPERTY(Transient)
 	TArray<FArenaGameplayCueBatchItem> PendingGameplayCueBatch;

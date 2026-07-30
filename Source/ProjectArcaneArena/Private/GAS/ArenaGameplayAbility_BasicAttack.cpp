@@ -79,7 +79,7 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	}
 }
 
-// TargetData 有效后先同步朝向和预测 Montage，再由服务器 Commit 并执行权威 Sweep。
+// TargetData 有效后提交预测成本，立即同步朝向、起手 Cue 和 Montage，再由服务器执行权威 Sweep。
 void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
@@ -119,6 +119,7 @@ void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbility
 	}
 
 	AvatarActor->SetActorRotation(AimDirection.Rotation());
+	ExecuteAttackActivationCue(AvatarActor, ActorInfo->AbilitySystemComponent.Get());
 	PlayAttackMontage();
 	if (ActorInfo->IsNetAuthority() && !bServerAttackExecuted)
 	{
@@ -195,6 +196,25 @@ void UArenaGameplayAbility_BasicAttack::PlayAttackMontage()
 	}
 }
 
+// 在客户端预测和服务器确认使用同一 PredictionKey 执行起手 Cue，拥有者立即听到且服务器确认不会重复播放。
+void UArenaGameplayAbility_BasicAttack::ExecuteAttackActivationCue(
+	AActor* AvatarActor,
+	UAbilitySystemComponent* SourceASC) const
+{
+	if (!AvatarActor || !SourceASC)
+	{
+		return;
+	}
+
+	FGameplayCueParameters ActivationCueParameters;
+	ActivationCueParameters.Instigator = AvatarActor;
+	ActivationCueParameters.EffectCauser = AvatarActor;
+	ActivationCueParameters.Location = AvatarActor->GetActorLocation();
+	SourceASC->ExecuteGameplayCue(
+		ArenaGameplayTags::GameplayCue_Ability_BasicAttack_Activate,
+		ActivationCueParameters);
+}
+
 // 仅在服务器沿最终瞄准方向扫描目标，并把选中命中点写入 GE 上下文供伤害和 Cue 共用。
 void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 	AActor* AvatarActor,
@@ -205,12 +225,6 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 	{
 		return;
 	}
-
-	FGameplayCueParameters ActivationCueParameters;
-	ActivationCueParameters.Instigator = AvatarActor;
-	ActivationCueParameters.EffectCauser = AvatarActor;
-	ActivationCueParameters.Location = AvatarActor->GetActorLocation();
-	SourceASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Ability_BasicAttack_Activate, ActivationCueParameters);
 
 	UWorld* World = AvatarActor->GetWorld();
 	if (!World)

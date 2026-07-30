@@ -4,9 +4,9 @@
 
 本文档是阶段五 C“轻量 MVC 背包系统”的开发规范，维护系统边界、阶段顺序、公开接口和验收标准。
 
-状态：`Partial`，最后更新：2026-07-27。
+状态：`Partial`，最后更新：2026-07-30。
 
-当前已完成阶段五 C-A 至 C-C 的 C++ 第一版、原生 fallback UI 和幂等资产脚本，并开始阶段五 C-D 的代码侧网络与生命周期收尾。最新 Editor DLL 已能加载全部背包原生类型；资产脚本已成功创建并在保存后验证共享冷却 GE、两种药水 DataAsset、两种 Pickup Blueprint、`WBP_Inventory`、`WBP_InventorySlot` 以及 `BP_ArenaPlayerController` 的 View 引用，重复执行没有产生 `_1/_2` 资产。两种药水 DataAsset 已保存瓶体 Mesh、红/蓝液体材质、瓶体/软木材质和相对缩放，丢弃后的原生 Pickup 不再依赖 Blueprint 组件外观。FastArray 已改为精确标记真实变化并使用 UE 5.6 `PostReplicatedReceive` 在完整 Delta 批次后刷新 View；药水使用会在满资源时提前拒绝，并在恢复失败时回滚冷却；同一 `ItemTag` 的冲突 DataAsset 和无效 Deferred Pickup 初始化也会被服务器拒绝。阶段权限已集中到 `AArenaGameState`，View、客户端意图和服务器操作使用同一矩阵；`Lvl_OverloadTest` 的测试 GameMode 可在 `Waiting` 开放完整操作。Automation Tests、PIE 和网络验收尚未完成，因此本阶段保持 `Partial`。
+当前已完成阶段五 C-A 至 C-C 的 C++ 第一版、原生 fallback UI 和幂等资产脚本，并开始阶段五 C-D 的代码侧网络与生命周期收尾。最新 Editor DLL 已能加载全部背包原生类型；资产脚本已成功创建并在保存后验证共享冷却 GE、两种药水 DataAsset、两种 Pickup Blueprint、`WBP_Inventory`、`WBP_InventorySlot` 以及 `BP_ArenaPlayerController` 的 View 引用，重复执行没有产生 `_1/_2` 资产。两种药水 DataAsset 已保存瓶体 Mesh、红/蓝液体材质、瓶体/软木材质和相对缩放，丢弃后的原生 Pickup 不再依赖 Blueprint 组件外观。FastArray 已改为精确标记真实变化并使用 UE 5.6 `PostReplicatedReceive` 在完整 Delta 批次后刷新 View；药水使用会在满资源时提前拒绝，并在恢复失败时回滚冷却；同一 `ItemTag` 的冲突 DataAsset 和无效 Deferred Pickup 初始化也会被服务器拒绝。阶段权限已集中到 `AArenaGameState`，View、客户端意图和服务器操作使用同一矩阵；`Lvl_OverloadTest` 的测试 GameMode 可在 `Waiting` 开放完整操作。七项 `ProjectArcaneArena.Inventory` Automation Tests 已通过；单人 PIE 已确认 `0/19/20/21/40/41` 堆栈分页、第 `11` 个同类药水拆分新堆栈、删除末页堆栈后页码回退、多 Tag OR 筛选、Health/Energy Potion 使用、满资源拒绝、共享冷却、部分/整组丢弃与重新拾取、Tab 轻点/长按/Escape、连续快速开关、背包打开时重新 Possess、双视角输入恢复、Upgrade 只读背包交接，以及超量拾取失败后同一 Pickup 恢复碰撞并可再次成功交互。Dead/Stunned、完整阶段权限、分辨率布局和多人网络验收尚未完成，因此本阶段保持 `Partial`。
 
 ---
 
@@ -161,7 +161,7 @@ Cooldown.Item.Consumable
 
 ### 阶段五 C-B：权威物品流程
 
-状态：`Partial`，C++、脚本及首批资产生成已完成并通过保存后自检，PIE 待验证。
+状态：`Partial`，C++、脚本及首批资产生成已完成并通过保存后自检，核心单人 PIE 已验证，多人权威待验证。
 
 * 新增交互 Pickup、G 目标选择、服务器距离/视线验证和竞争消费门闩。
 * 实现药水 GAS 使用、共享冷却、满资源失败保护和部分丢弃。
@@ -172,6 +172,7 @@ Cooldown.Item.Consumable
 * `TryAddItem()`、`TryUseItem()` 和 `TryDropItem()` 都在 Model 层重验阶段、Dead/Stunned 与 Authority，并使用服务器侧不可重入事务门闩，阻止 GameplayEffect、Actor `BeginPlay` 或 UI Delegate 的同步回调重复修改同一 FastArray。Drop 额外验证 Source Pawn 的 PlayerState 与背包所有者一致；Pickup 在调用背包前先占用消费门闩并关闭碰撞，失败时恢复门闩与原碰撞模式，保证阶段切换、多人竞争和回调重入最多成功一次。
 * 丢弃者保护优先使用 GameState 同步服务器时间；缺少 `AArenaGameState` 的测试世界回退到 `UWorld` 时间，避免保护期永久无法结束。
 * `Content/Python/inventory/setup_inventory_items.py` 已重新执行并保存共享冷却 GE、两个药水 DataAsset 与 Pickup Blueprint；红/蓝药水瓶的软引用世界 Mesh、三材质槽与缩放已写入 DataAsset，保存后重新加载验证了 Tag、恢复量、堆叠、GE、图标、世界外观、Pickup CDO 引用及 `_1/_2` 重复资产。
+* 单人 PIE 已使用超量事务制造真实加入失败，并通过先补入 `x9` 后重试同一个 `Quantity=1001` Pickup 验证：失败不会销毁 Actor 或污染背包，消费门闩与原碰撞模式恢复后可以再次成功交互。
 
 完成标准：拾取、使用和丢弃均只结算一次，客户端不能伪造物品、恢复或世界 Pickup。
 
@@ -194,16 +195,18 @@ Cooldown.Item.Consumable
 * `AArenaPlayerController::RefreshLocalUIInputLocks()` 是本地 UI 输入冻结的唯一所有者：它根据复制的 Upgrade 阶段以及 Inventory、BossIntro、BossOutro 和 Victory 的模式集合幂等持有至多一层 Move/Look 锁，不再让多个界面直接操作 `SetIgnoreMoveInput()` 的计数栈。玩家提前完成升级选择后仍保持冻结，直到全员完成并进入 Combat；模式交错、复制回调顺序变化和销毁清理不会留下额外锁层。
 * `Upgrade` 中打开背包会临时折叠升级选择并保持背包只读；升级 UI 向背包转交输入时不会调用 `FlushPressedKeys()` 或恢复游戏视角，关闭背包后再恢复当前候选与 `GameAndUI` 输入。选择升级进入 Combat 后，统一协调器会在没有其他占用模式时一次性恢复移动与观察。
 * Controller 同时监听当前 PlayerState ASC 的 `State.Dead`、`State.Stunned` 与 `Cooldown.Item.Consumable` Tag：状态变化会立即刷新背包权限，共享冷却期间只禁用 Use，Drop、筛选和翻页不受影响；PlayerState 更换、重连和 Controller 销毁时对称解绑，避免过期按钮或重复回调。
+* 单人 PIE 已确认真实 Widget 在 `0/19/20/21/40/41` 个堆栈下正确计算页数，第 `11` 个同类药水会拆出新堆栈，删除唯一末页堆栈后页码会自动回退，多 Tag 筛选按 OR 语义恢复正确物品集合和顺序。Tab 轻点、长按、Escape、连续快速开关十次及背包打开时重新 Possess 均未残留移动/观察锁；顶视角与第三人称关闭背包后均恢复鼠标、准星和移动。Upgrade 阶段打开只读背包会暂时隐藏候选，关闭后仍可完成选择并恢复移动。
 
 完成标准：顶视角和第三人称均可打开、操作和关闭背包，输入、鼠标和准星不会残留或串到玩法层。
 
 ### 阶段五 C-D：网络验收与收尾
 
-状态：`Partial`，源码权威与生命周期审计已完成，Automation/PIE/Dedicated Server 验收待执行。
+状态：`Partial`，源码权威与生命周期审计、七项 Automation Tests、单人堆叠/筛选和输入生命周期 PIE 已完成；Dead/Stunned、完整阶段权限、分辨率布局及多人/Dedicated Server 验收待执行。
 
 * 完成单人、两人 Listen Server、Dedicated Server 双客户端和异常生命周期回归。
 * 检查 OwnerOnly 复制、同物竞争、迟到 RPC、关卡重载和 UI Delegate 清理。
 * 已统一多界面输入锁所有权；`AArenaPlayerController::ResetIgnoreInputFlags()` 会在 `ClientRestart` 清空引擎 IgnoreInput 计数后重置项目记账并按当前 UI 阶段重新持锁，避免重生/重新 Possess 期间实际输入锁与布尔状态失配。延迟 ASC/冷却委托重绑、销毁解绑、Drop Pawn 归属、Pickup 失败回滚及非法数量拒绝也已补齐；丢弃后由 ItemData 重新构建对应红/蓝药水世界外观，不再退回通用球体。
+* 单人权威流程已确认 Health/Energy Potion 正常恢复、满资源不消耗、共享一秒冷却、部分丢弃、整组丢弃、重新拾取、同类堆叠溢出、末页删除回退、OR 筛选、Tab/Escape 输入生命周期、重新 Possess，以及 Pickup 事务失败后的碰撞和消费门闩回滚；状态/阶段边界、OwnerOnly、多客户端竞争、迟到 RPC 与 Dedicated Server 仍待验证。
 * 根据实际验证更新 `IMPLEMENTED_FEATURES.md` 和 `PENDING_VERIFICATION.md`。
 
 完成标准：背包数据、恢复、丢弃和世界 Actor 由服务器唯一决定，各端 UI 与所属玩家复制状态一致。
@@ -241,7 +244,7 @@ AArenaPlayerController::ServerDropInventoryItem(...)
 * 验证同类第十一个物品开始新堆栈，多 Tag OR 与父标签筛选准确。
 * 验证 Health/Energy 恢复、满资源失败、共享冷却、Dead/Stunned/只读阶段阻断和 GAS 复制。
 * 验证 Waiting/Combat/Upgrade/BossIntro/BossOutro/Victory/Defeat 权限矩阵，以及测试 GameMode 的 Waiting 完整操作开关。
-* 验证部分/整组丢弃、地面生成、重新拾取和两人竞争同一 Pickup；让一次拾取因无效定义或背包事务占用而失败后，确认 Pickup 恢复碰撞且仍可再次交互。
+* 验证部分/整组丢弃、地面生成、重新拾取和两人竞争同一 Pickup。
 * 验证背包只复制给拥有者，客户端伪造 StackId、数量、Actor 或迟到请求均被服务器拒绝。
 * 验证死亡、快速 Tab、阶段切换、重叠 UI、关卡旅行和 Widget 销毁会清理页面、弹窗、Delegate 与统一 UI 输入锁。
 * 分别在顶视角和第三人称验证 Tab、G、鼠标、准星、移动和主动技能输入恢复，并在 720p 与 1080p 检查槽位文字、详情操作和分页不重叠。

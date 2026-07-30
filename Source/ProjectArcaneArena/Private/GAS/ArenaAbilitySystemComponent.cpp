@@ -51,6 +51,37 @@ namespace
 			return FGameplayTag();
 		}
 	}
+
+	// 汇总同一目标同 Tick 的资源损失，供可靠音频消息选择唯一结果类型。
+	EArenaDamageFeedbackType ResolveDamageFeedbackBatchType(
+		const TArray<FArenaGameplayCueBatchItem>& GameplayCueBatch)
+	{
+		float TotalShieldDamage = 0.0f;
+		float TotalHealthDamage = 0.0f;
+		bool bBrokeShield = false;
+		for (const FArenaGameplayCueBatchItem& BatchItem : GameplayCueBatch)
+		{
+			const FArenaDamageFeedbackData& DamageFeedback = BatchItem.DamageFeedback;
+			TotalShieldDamage += FMath::Max(DamageFeedback.ActualShieldDamage, 0.0f);
+			TotalHealthDamage += FMath::Max(DamageFeedback.ActualHealthDamage, 0.0f);
+			bBrokeShield |= DamageFeedback.FeedbackType == EArenaDamageFeedbackType::ShieldBreak
+				|| DamageFeedback.FeedbackType == EArenaDamageFeedbackType::ShieldBreakWithHealthDamage;
+		}
+
+		if (TotalHealthDamage > KINDA_SMALL_NUMBER)
+		{
+			return bBrokeShield
+				? EArenaDamageFeedbackType::ShieldBreakWithHealthDamage
+				: EArenaDamageFeedbackType::HealthOnly;
+		}
+		if (TotalShieldDamage > KINDA_SMALL_NUMBER)
+		{
+			return bBrokeShield
+				? EArenaDamageFeedbackType::ShieldBreak
+				: EArenaDamageFeedbackType::ShieldOnly;
+		}
+		return EArenaDamageFeedbackType::None;
+	}
 }
 
 // 构造项目自定义 ASC，后续集中扩展输入、标签和项目辅助函数。
@@ -157,11 +188,16 @@ void UArenaAbilitySystemComponent::FlushPendingGameplayCueBatch()
 
 	TArray<FArenaGameplayCueBatchItem> GameplayCueBatch = MoveTemp(PendingGameplayCueBatch);
 	PendingGameplayCueBatch.Reset();
+	const EArenaDamageFeedbackType FeedbackSoundType = ResolveDamageFeedbackBatchType(GameplayCueBatch);
 	ForceReplication();
 	MulticastExecuteGameplayCueBatch(GameplayCueBatch);
+	if (FeedbackSoundType != EArenaDamageFeedbackType::None)
+	{
+		MulticastPlayDamageFeedbackSound(FeedbackSoundType);
+	}
 }
 
-// 每个客户端按固定顺序播放元素、结果和公共角色反馈；批量 RPC 只替换传输层。
+// 每个客户端逐段播放元素和结果 Cue，随后一次性汇总数字以外的角色反应。
 void UArenaAbilitySystemComponent::MulticastExecuteGameplayCueBatch_Implementation(
 	const TArray<FArenaGameplayCueBatchItem>& GameplayCueBatch)
 {
@@ -170,6 +206,8 @@ void UArenaAbilitySystemComponent::MulticastExecuteGameplayCueBatch_Implementati
 		return;
 	}
 
+	TArray<FArenaDamageFeedbackData> DamageFeedbackBatch;
+	DamageFeedbackBatch.Reserve(GameplayCueBatch.Num());
 	for (const FArenaGameplayCueBatchItem& BatchItem : GameplayCueBatch)
 	{
 		const FArenaDamageFeedbackData& DamageFeedback = BatchItem.DamageFeedback;
@@ -186,13 +224,32 @@ void UArenaAbilitySystemComponent::MulticastExecuteGameplayCueBatch_Implementati
 		{
 			InvokeGameplayCueEvent(DamageResultCue, EGameplayCueEvent::Executed, DamageFeedback.CueParameters);
 		}
+		DamageFeedbackBatch.Add(DamageFeedback);
+	}
 
-		if (AArenaCharacterBase* TargetCharacter = Cast<AArenaCharacterBase>(GetAvatarActor()))
+	if (AArenaCharacterBase* TargetCharacter = Cast<AArenaCharacterBase>(GetAvatarActor()))
+	{
+		if (UArenaHitReactionComponent* HitReactionComponent = TargetCharacter->GetHitReactionComponent())
 		{
-			if (UArenaHitReactionComponent* HitReactionComponent = TargetCharacter->GetHitReactionComponent())
-			{
-				HitReactionComponent->PresentDamageFeedback(DamageFeedback);
-			}
+			HitReactionComponent->PresentDamageFeedbackBatch(DamageFeedbackBatch);
+		}
+	}
+}
+
+// 各端可靠播放一次汇总命中结果音；Dedicated Server 不创建任何音频表现。
+void UArenaAbilitySystemComponent::MulticastPlayDamageFeedbackSound_Implementation(
+	EArenaDamageFeedbackType FeedbackType)
+{
+	if (GetNetMode() == NM_DedicatedServer || FeedbackType == EArenaDamageFeedbackType::None)
+	{
+		return;
+	}
+
+	if (AArenaCharacterBase* TargetCharacter = Cast<AArenaCharacterBase>(GetAvatarActor()))
+	{
+		if (UArenaHitReactionComponent* HitReactionComponent = TargetCharacter->GetHitReactionComponent())
+		{
+			HitReactionComponent->PresentDamageFeedbackSound(FeedbackType);
 		}
 	}
 }

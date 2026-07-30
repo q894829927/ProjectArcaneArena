@@ -9,6 +9,7 @@
 #include "Engine/World.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInterface.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "TimerManager.h"
 #include "UI/ArenaDamageNumberActor.h"
@@ -18,25 +19,107 @@ UArenaHitReactionComponent::UArenaHitReactionComponent()
 	PrimaryComponentTick.bCanEverTick = false;
 }
 
-// 统一消费一段复制反馈；世界表现对各端可见，本地 HUD 和相机仍受所有权限制。
+// 保留单条反馈兼容入口，并交给批次路径统一执行角色反应。
 void UArenaHitReactionComponent::PresentDamageFeedback(const FArenaDamageFeedbackData& DamageFeedback)
 {
+	TArray<FArenaDamageFeedbackData> SingleFeedbackBatch;
+	SingleFeedbackBatch.Add(DamageFeedback);
+	PresentDamageFeedbackBatch(SingleFeedbackBatch);
+	PresentDamageFeedbackSound(DamageFeedback.FeedbackType);
+}
+
+// 每段伤害保留独立数字，同 Tick 的闪光、CameraShake 和 HUD 只汇总播放一次；结果音由可靠 RPC 独立派发。
+void UArenaHitReactionComponent::PresentDamageFeedbackBatch(
+	const TArray<FArenaDamageFeedbackData>& DamageFeedbackBatch)
+{
 	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor
-		|| OwnerActor->GetNetMode() == NM_DedicatedServer
-		|| DamageFeedback.FeedbackType == EArenaDamageFeedbackType::None
-		|| DamageFeedback.GetTotalDamage() <= KINDA_SMALL_NUMBER)
+	if (!OwnerActor || OwnerActor->GetNetMode() == NM_DedicatedServer || DamageFeedbackBatch.IsEmpty())
 	{
 		return;
 	}
 
-	ApplyMaterialFlash(DamageFeedback.FeedbackType);
-	PlayFeedbackSounds(DamageFeedback.FeedbackType);
-	SpawnDamageNumber(
-		DamageFeedback.GetTotalDamage(),
-		DamageFeedback.CueParameters.AggregatedSourceTags.HasTagExact(ArenaGameplayTags::Damage_Critical),
-		DamageFeedback.FeedbackType);
-	PresentLocalPlayerFeedback(DamageFeedback);
+	float TotalShieldDamage = 0.0f;
+	float TotalHealthDamage = 0.0f;
+	float TotalHealthDamageRatio = 0.0f;
+	bool bBrokeShield = false;
+	const FArenaDamageFeedbackData* DominantHealthFeedback = nullptr;
+	const FArenaDamageFeedbackData* DominantTotalFeedback = nullptr;
+	float DominantHealthDamage = -1.0f;
+	float DominantTotalDamage = -1.0f;
+
+	for (const FArenaDamageFeedbackData& DamageFeedback : DamageFeedbackBatch)
+	{
+		if (DamageFeedback.FeedbackType == EArenaDamageFeedbackType::None
+			|| DamageFeedback.GetTotalDamage() <= KINDA_SMALL_NUMBER)
+		{
+			continue;
+		}
+
+		TotalShieldDamage += FMath::Max(DamageFeedback.ActualShieldDamage, 0.0f);
+		TotalHealthDamage += FMath::Max(DamageFeedback.ActualHealthDamage, 0.0f);
+		TotalHealthDamageRatio += FMath::Max(DamageFeedback.HealthDamageRatio, 0.0f);
+		bBrokeShield |= DamageFeedback.FeedbackType == EArenaDamageFeedbackType::ShieldBreak
+			|| DamageFeedback.FeedbackType == EArenaDamageFeedbackType::ShieldBreakWithHealthDamage;
+
+		// 每段结算仍生成自己的数字和暴击样式，批次只合并角色反应层。
+		SpawnDamageNumber(
+			DamageFeedback.GetTotalDamage(),
+			DamageFeedback.CueParameters.AggregatedSourceTags.HasTagExact(ArenaGameplayTags::Damage_Critical),
+			DamageFeedback.FeedbackType);
+
+		const bool bHasBetterTotalSource = DamageFeedback.bHasDamageSourceLocation
+			&& DominantTotalFeedback
+			&& !DominantTotalFeedback->bHasDamageSourceLocation
+			&& FMath::IsNearlyEqual(DamageFeedback.GetTotalDamage(), DominantTotalDamage);
+		if (!DominantTotalFeedback
+			|| DamageFeedback.GetTotalDamage() > DominantTotalDamage
+			|| bHasBetterTotalSource)
+		{
+			DominantTotalFeedback = &DamageFeedback;
+			DominantTotalDamage = DamageFeedback.GetTotalDamage();
+		}
+
+		const bool bHasBetterHealthSource = DamageFeedback.bHasDamageSourceLocation
+			&& DominantHealthFeedback
+			&& !DominantHealthFeedback->bHasDamageSourceLocation
+			&& FMath::IsNearlyEqual(DamageFeedback.ActualHealthDamage, DominantHealthDamage);
+		if (DamageFeedback.ActualHealthDamage > KINDA_SMALL_NUMBER
+			&& (!DominantHealthFeedback
+				|| DamageFeedback.ActualHealthDamage > DominantHealthDamage
+				|| bHasBetterHealthSource))
+		{
+			DominantHealthFeedback = &DamageFeedback;
+			DominantHealthDamage = DamageFeedback.ActualHealthDamage;
+		}
+	}
+
+	const FArenaDamageFeedbackData* DominantFeedback = TotalHealthDamage > KINDA_SMALL_NUMBER
+		? DominantHealthFeedback
+		: DominantTotalFeedback;
+	if (!DominantFeedback || TotalShieldDamage + TotalHealthDamage <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	FArenaDamageFeedbackData AggregatedFeedback = *DominantFeedback;
+	AggregatedFeedback.ActualShieldDamage = TotalShieldDamage;
+	AggregatedFeedback.ActualHealthDamage = TotalHealthDamage;
+	AggregatedFeedback.HealthDamageRatio = FMath::Clamp(TotalHealthDamageRatio, 0.0f, 1.0f);
+	if (TotalHealthDamage > KINDA_SMALL_NUMBER)
+	{
+		AggregatedFeedback.FeedbackType = bBrokeShield
+			? EArenaDamageFeedbackType::ShieldBreakWithHealthDamage
+			: EArenaDamageFeedbackType::HealthOnly;
+	}
+	else
+	{
+		AggregatedFeedback.FeedbackType = bBrokeShield
+			? EArenaDamageFeedbackType::ShieldBreak
+			: EArenaDamageFeedbackType::ShieldOnly;
+	}
+
+	ApplyMaterialFlash(AggregatedFeedback.FeedbackType);
+	PresentLocalPlayerFeedback(AggregatedFeedback);
 }
 
 // 使用单一 Actor/Widget 管线生成数字，并用循环槽位错开同 Tick 的重叠反馈。
@@ -82,7 +165,7 @@ void UArenaHitReactionComponent::SpawnDamageNumber(
 	}
 }
 
-// 结束时恢复共享材质参数，避免切图或销毁期间留下非零闪烁状态。
+// 结束时恢复原 Overlay 并清理表现对象，避免切图或销毁期间残留闪光。
 void UArenaHitReactionComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (GetWorld())
@@ -90,40 +173,36 @@ void UArenaHitReactionComponent::EndPlay(const EEndPlayReason::Type EndPlayReaso
 		GetWorld()->GetTimerManager().ClearTimer(HitFlashTimerHandle);
 	}
 	ResetMaterialFlash();
-	DynamicMaterials.Reset();
+	HitFlashMaterialInstance = nullptr;
+	OriginalOverlayMaterial = nullptr;
+	CachedHitFlashMesh = nullptr;
 	Super::EndPlay(EndPlayReason);
 }
 
-// 延迟到第一次受击再创建 MID，且 Dedicated Server 永远不分配表现对象。
-void UArenaHitReactionComponent::EnsureDynamicMaterials()
+// 延迟到第一次受击再创建项目 Overlay MID，Dedicated Server 永远不分配表现对象。
+void UArenaHitReactionComponent::EnsureHitFlashOverlay()
 {
-	if (!DynamicMaterials.IsEmpty())
+	if (HitFlashMaterialInstance)
 	{
 		return;
 	}
 
 	const ACharacter* CharacterOwner = Cast<ACharacter>(GetOwner());
 	USkeletalMeshComponent* MeshComponent = CharacterOwner ? CharacterOwner->GetMesh() : nullptr;
-	if (!MeshComponent || GetNetMode() == NM_DedicatedServer)
+	if (!MeshComponent || !HitFlashOverlayMaterial || GetNetMode() == NM_DedicatedServer)
 	{
 		return;
 	}
 
-	const int32 MaterialCount = MeshComponent->GetNumMaterials();
-	for (int32 MaterialIndex = 0; MaterialIndex < MaterialCount; ++MaterialIndex)
-	{
-		if (UMaterialInstanceDynamic* DynamicMaterial = MeshComponent->CreateAndSetMaterialInstanceDynamic(MaterialIndex))
-		{
-			DynamicMaterials.Add(DynamicMaterial);
-		}
-	}
+	CachedHitFlashMesh = MeshComponent;
+	HitFlashMaterialInstance = UMaterialInstanceDynamic::Create(HitFlashOverlayMaterial.Get(), this);
 }
 
-// ShieldOnly 保持青色，HealthOnly 使用红色，复合伤害以高亮破盾色为主。
+// ShieldOnly 保持青色，HealthOnly 使用红色，复合伤害以高亮破盾 Overlay 为主。
 void UArenaHitReactionComponent::ApplyMaterialFlash(EArenaDamageFeedbackType FeedbackType)
 {
-	EnsureDynamicMaterials();
-	if (DynamicMaterials.IsEmpty())
+	EnsureHitFlashOverlay();
+	if (!CachedHitFlashMesh || !HitFlashMaterialInstance)
 	{
 		return;
 	}
@@ -150,14 +229,15 @@ void UArenaHitReactionComponent::ApplyMaterialFlash(EArenaDamageFeedbackType Fee
 		return;
 	}
 
-	for (UMaterialInstanceDynamic* DynamicMaterial : DynamicMaterials)
+	// 每次从非伤害 Overlay 进入闪光时重新捕获，兼容其他本地表现系统临时替换 Overlay。
+	if (!bHitFlashOverlayApplied)
 	{
-		if (DynamicMaterial)
-		{
-			DynamicMaterial->SetVectorParameterValue(HitFlashColorParameterName, FlashColor);
-			DynamicMaterial->SetScalarParameterValue(HitFlashIntensityParameterName, FlashIntensity);
-		}
+		OriginalOverlayMaterial = CachedHitFlashMesh->GetOverlayMaterial();
 	}
+	HitFlashMaterialInstance->SetVectorParameterValue(HitFlashColorParameterName, FlashColor);
+	HitFlashMaterialInstance->SetScalarParameterValue(HitFlashIntensityParameterName, FlashIntensity);
+	CachedHitFlashMesh->SetOverlayMaterial(HitFlashMaterialInstance.Get());
+	bHitFlashOverlayApplied = true;
 
 	if (GetWorld())
 	{
@@ -170,19 +250,24 @@ void UArenaHitReactionComponent::ApplyMaterialFlash(EArenaDamageFeedbackType Fee
 	}
 }
 
-// MID 持续复用，只把统一强度参数清零。
+// 清零复用 MID，并且只在当前仍为伤害 Overlay 时恢复进入闪光前的材质。
 void UArenaHitReactionComponent::ResetMaterialFlash()
 {
-	for (UMaterialInstanceDynamic* DynamicMaterial : DynamicMaterials)
+	if (HitFlashMaterialInstance)
 	{
-		if (DynamicMaterial)
-		{
-			DynamicMaterial->SetScalarParameterValue(HitFlashIntensityParameterName, 0.0f);
-		}
+		HitFlashMaterialInstance->SetScalarParameterValue(HitFlashIntensityParameterName, 0.0f);
 	}
+	if (bHitFlashOverlayApplied
+		&& CachedHitFlashMesh
+		&& CachedHitFlashMesh->GetOverlayMaterial() == HitFlashMaterialInstance.Get())
+	{
+		CachedHitFlashMesh->SetOverlayMaterial(OriginalOverlayMaterial.Get());
+	}
+	bHitFlashOverlayApplied = false;
+	OriginalOverlayMaterial = nullptr;
 }
 
-// 仅本地控制玩家能影响自己的 HUD 和 PlayerCameraManager，远程 Pawn 不进入该路径。
+// 仅本地控制玩家能影响自己的 HUD 和 PlayerCameraManager，第三人称额外衰减震屏幅度。
 void UArenaHitReactionComponent::PresentLocalPlayerFeedback(const FArenaDamageFeedbackData& DamageFeedback)
 {
 	AArenaPlayerCharacter* PlayerCharacter = Cast<AArenaPlayerCharacter>(GetOwner());
@@ -224,6 +309,10 @@ void UArenaHitReactionComponent::PresentLocalPlayerFeedback(const FArenaDamageFe
 		CameraShakeScale = DamageFeedback.HealthDamageRatio * HealthDamageShakeMultiplier;
 		CameraShakeClass = ResolveHealthCameraShake(DamageFeedback.HealthDamageRatio);
 	}
+	if (PlayerCharacter->IsUsingThirdPersonView())
+	{
+		CameraShakeScale *= ThirdPersonCameraShakeScaleMultiplier;
+	}
 	CameraShakeScale = FMath::Clamp(CameraShakeScale, 0.0f, MaxCameraShakeScale);
 
 	if (CameraShakeClass && CameraShakeScale > KINDA_SMALL_NUMBER && PlayerController->PlayerCameraManager)
@@ -247,8 +336,8 @@ TSubclassOf<UCameraShakeBase> UArenaHitReactionComponent::ResolveHealthCameraSha
 	return HeavyDamageCameraShakeClass;
 }
 
-// 复合伤害叠加破盾高频层与生命低频层，其余分类只播放一个对应音层。
-void UArenaHitReactionComponent::PlayFeedbackSounds(EArenaDamageFeedbackType FeedbackType) const
+// 播放服务器汇总后的单一结果音层，并覆盖第三方 SoundCue 的短距离衰减以适配竞技场镜头。
+void UArenaHitReactionComponent::PresentDamageFeedbackSound(EArenaDamageFeedbackType FeedbackType) const
 {
 	const AActor* OwnerActor = GetOwner();
 	if (!OwnerActor || !GetWorld())
@@ -260,7 +349,14 @@ void UArenaHitReactionComponent::PlayFeedbackSounds(EArenaDamageFeedbackType Fee
 	{
 		if (Sound)
 		{
-			UGameplayStatics::PlaySoundAtLocation(this, Sound, OwnerActor->GetActorLocation());
+			UGameplayStatics::PlaySoundAtLocation(
+				this,
+				Sound,
+				OwnerActor->GetActorLocation(),
+				1.0f,
+				1.0f,
+				0.0f,
+				HitFeedbackAttenuationSettings.Get());
 		}
 	};
 
@@ -277,7 +373,6 @@ void UArenaHitReactionComponent::PlayFeedbackSounds(EArenaDamageFeedbackType Fee
 		break;
 	case EArenaDamageFeedbackType::ShieldBreakWithHealthDamage:
 		PlaySound(ShieldBreakSound);
-		PlaySound(HealthHitSound);
 		break;
 	default:
 		break;

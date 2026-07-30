@@ -15,7 +15,7 @@ class PROJECTARCANEARENA_API AArenaDamageNumberActor : public AActor
 public:
 	AArenaDamageNumberActor();
 
-	// 让伤害数字以轻量方式向上漂浮，作为临时受击反馈。
+	// 让伤害数字按 Ease-Out 轨迹上浮，并在生命周期末段渐隐。
 	virtual void Tick(float DeltaSeconds) override;
 
 	// 设置显示数值，并同步到内部 Widget。
@@ -42,7 +42,10 @@ protected:
 	float FloatSpeed = 35.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|UI", meta = (ClampMin = "0.0"))
-	float LifeSpan = 0.8f;
+	float LifeSpan = 0.9f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|UI", meta = (ClampMin = "0.0", ClampMax = "0.95"))
+	float FadeStartNormalized = 0.6f;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|UI")
 	float DamageAmount = 0.0f;
@@ -55,4 +58,6 @@ protected:
 
 private:
 	FVector2D CachedBaseDrawSize = FVector2D::ZeroVector;
+	FVector PresentationStartLocation = FVector::ZeroVector;
+	float ElapsedPresentationTime = 0.0f;
 };
