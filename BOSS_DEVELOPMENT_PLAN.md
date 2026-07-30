@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-阶段四 A“Boss 召唤物”和阶段五 A“Boss Intro 同步闭环”均已完成实际验收。当前开发方向进入阶段五 B，优先补齐 Boss 死亡与 Victory 的同步收尾演出；阶段五整体保持 `Partial`，阶段二和阶段三中尚未完成的多人及异常生命周期回归继续保留。
+阶段四 A“Boss 召唤物”、阶段五 A“Boss Intro 同步闭环”、阶段五 B“Boss 死亡与 Victory 演出”和阶段六 A“伤害反馈表现收尾”均已完成对应验收。当前推荐方向进入阶段六 B，优先完成整局平衡、双视角可读性和作品集演示回归；Dedicated Server、网络压力与其他历史异常生命周期检查继续独立保留。
 
 ---
 
@@ -404,7 +404,7 @@ Boss 战斗规则不再扩展，主要动画、VFX、音效、HUD 和 Intro 已�
 - 共用闪光已改为项目 Overlay MID，不再修改悟空等第三方主材质槽；连续伤害刷新 Timer，并且只在当前 Overlay 仍为伤害 MID 时恢复旧值。
 - 伤害数字已加入 Ease-Out 上浮和末段渐隐，HUD 方向提示按实际 Widget 尺寸适配 720p/1080p 与双视角；第三人称 CameraShake 默认衰减到顶视角的 `65%`。
 - `Content/Python/damage_feedback/setup_damage_feedback_polish.py` 已在编辑器成功执行一次，创建并保存统一 Overlay、四个 Perlin CameraShake，并把表现资产与现有三类结果音效连接到 Player、近战/远程 Enemy 和 Boss；九个相关资产通过编辑器资产验证。
-- 阶段六 A 状态为 `Implemented`。脚本二次幂等性、Boss 四类伤害、同 Tick 多段抑制、Overlay 恢复、双视角、Listen Server 和 Dedicated Server 表现仍在 `PENDING_VERIFICATION.md`，完成前不标记为 `Verified`。
+- 阶段六 A 状态为 `Verified`。普通目标四类反馈、同 Tick 多段抑制、玩家本地受伤反馈、周期与组合伤害、Boss 攻击、Overlay 恢复、双人反馈归属和资产脚本幂等性均已通过实际验收；Dedicated Server 与网络丢包压力测试作为项目级网络加固继续保留，不阻塞本阶段完成。
 
 ### 阶段边界
 

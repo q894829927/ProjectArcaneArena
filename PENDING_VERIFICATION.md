@@ -1076,63 +1076,18 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - BasicAttack 的物理命中特效在攻击者与观察端都清晰可见，并使用同一个权威命中位置。
 - 合并只改变表现 RPC 数量，不改变 Health、Shield、Crit、OnDamage、OnCrit、OnKill 或 Overload 的权威结算次数。
 
-## Damage Feedback Presentation 资产配置与安全退化
+## Damage Feedback Dedicated Server 与网络压力回归
 
-> 当前状态：批次收口、Overlay、数字动画和 HUD 自适应代码已完成；`SA_ArenaHitFeedback` 的远程命中可听性和 `SC_Slash_Cyberpunk_Cue` 破盾音已通过单人 PIE，二次幂等性及其余运行时测试继续保留。
-
-### 测试方法
-
-1. 再执行一次 `Content/Python/damage_feedback/setup_damage_feedback_polish.py`；确认继续复用一个 `M_ArenaHitFlashOverlay` 和四个 `CS_*`，Player、近战/远程 Enemy、Boss 和 `BP_ArenaEnemy_OverloadDummy` 的 `HitReactionComponent` 引用保持有效，`GCN_BasicAttack_Activate` 只追加一个 `SC_Basic_Slash_Cue`，且没有 `_1/_2`。
-2. 检查四类角色的 `HitReactionComponent.HitFeedbackAttenuationSettings` 均为 `SA_ArenaHitFeedback`，`ShieldBreakSound` 均为 `SC_Slash_Cyberpunk_Cue`；从镜头附近和 Fireball 最大常用射程分别命中，结果音都应保持可听且仍有空间方向。
-3. 分别在 Manny、悟空、Muriel、普通敌人和 Boss Mesh 上触发 ShieldOnly、ShieldBreak、HealthOnly 和复合伤害，确认 Overlay 能覆盖不同第三方主材质并在定时结束后恢复原 Overlay。
-4. 在闪光期间让另一表现临时替换 Mesh Overlay，确认伤害 Timer 到期不会覆盖后来设置的 Overlay；未配置 `HitFlashOverlayMaterial` 时只跳过闪光。
-5. 在 `WBP_PlayerHUD` 中按需提供 `DamageDirectionIndicator`、`ShieldBreakText` 并实现 `On Damage Feedback` 动画；未提供时验证原生回退布局。
-6. 分别在 Listen Server、Client 和 Dedicated Server 路径检查未配置表现资源时的退化行为。
-
-### 通过标准
-
-- Dedicated Server 不创建 MID、音频、DamageNumber、Widget 或 CameraShake。
-- 未配置 Overlay Material、Sound、CameraShake 或 HUD 可选控件时安全退化，不崩溃且不影响伤害结算。
-- 连续受击复用同一个 Overlay MID、刷新复位 Timer，并且不修改角色各主材质槽。
-- BasicAttack 无论命中或打空都播放一次激活挥击音；命中后仍只额外播放目标对应的一次结果音。
-- 在 PIE Network Emulation 的 `150ms RTT + 2%/5% Packet Loss` 下连续测试 BasicAttack、Fireball、LightningStorm、FireZone 和敌人攻击；每次实际扣除 Shield/Health 都应听到一次对应结果音，不因视觉批次丢包而间歇静音。
-
-## 四类伤害反馈与事件边界
+> 当前状态：阶段六 A 的资产幂等性、四类反馈、同 Tick 合并、周期与组合伤害、Boss 表现、Overlay 恢复和双人反馈归属均已通过实际验收，功能状态为 `Verified`。以下仅作为项目级网络加固保留。
 
 ### 测试方法
 
-1. 先记录 `GE_Init_PlayerAttributes`、`GE_Init_EnemyAttributes`、`GA_BasicAttack` 和 `GA_EnemyMeleeAttack` 的原值；测试结束后必须恢复，避免把验收数值带入正式平衡配置。
-2. 世界反馈阶段：把玩家 `AttackPower/CritChance` 设为 `0/0`、敌人 `Defense` 设为 `0`，依次把敌人初始 `Shield/Health` 与 `GA_BasicAttack.BaseDamage` 配成 `30/100/10`、`10/100/10`、`10/100/30`、`0/100/20`；每次重新开始 PIE 后只攻击一次。
-3. 本地玩家反馈阶段：把敌人 `AttackPower/CritChance` 设为 `0/0`、玩家 `Defense` 设为 `0`，用同样四组 `Shield/Health` 和 `GA_EnemyMeleeAttack.BaseDamage` 让敌人只命中本地玩家一次。
-4. 两个阶段都开启 `arena.Net.AbilityAudit 1`，同时观察 Shield/Health、批次日志、元素 Cue、结果 Cue、唯一数字、Overlay、HUD 方向提示和 CameraShake。
-5. 对 Shield 已为零的目标继续伤害，再用一个不修改 Damage Meta Attribute 的 Instant GE 直接把正数 Shield Override 为 `0`。
-6. Dash 期间确认存在 `State.Invincible` 后重复相同攻击。
-7. 把目标设为 `Shield=10, Health=15`，使用 `Damage=30` 制造一次同时破盾、伤血并致死的结算，比较视觉分类与 `Trigger.OnShieldBreak`。
+1. Dedicated Server 双客户端分别重复 `HealthOnly`、`ShieldBreakWithHealthDamage`、LightningStorm 和 Boss FireZone。
+2. 使用 PIE Network Emulation 的 `150ms RTT + 2%/5% Packet Loss` 连续测试 BasicAttack、Fireball、LightningStorm、FireZone 和敌人攻击。
+3. 检查 Dedicated Server 不创建 MID、音频、DamageNumber、Widget 或 CameraShake；表现缺失时仍不影响权威伤害。
 
 ### 通过标准
 
-- 四组结果依次为 `ShieldOnly`、`ShieldBreak`、`ShieldBreakWithHealthDamage`、`HealthOnly`，实际属性分别为 `20/100`、`0/100`、`0/80`、`0/80`。
-- 每段结算只播放一个结果 Cue 和一个数字；复合伤害不重复播放完整 ShieldHit 或 HealthHit。
-- 同一目标同 Tick 制造三段以上结算时，每段 Cue 和数字都保留，但 Overlay、结果音效、CameraShake 和 HUD 只刷新一次；Health 损失比例累加后不超过 `1`。
-- Shield 原本为零、直接属性修改和零实际损失不产生破盾反馈；无敌不产生任何受伤反馈。
-- 致死复合伤害仍显示 `ShieldBreakWithHealthDamage`，但保持现有规则，不派发存活目标专用 `Trigger.OnShieldBreak`。
-- `OnDamage -> OnCrit -> OnKill -> 存活目标 OnShieldBreak` 的玩法事件顺序没有变化。
-
-## Damage Feedback 周期伤害、Boss 与多人归属
-
-### 测试方法
-
-1. 分别使用 Burning、LightningStorm、Overload、Boss FireZone、GroundSlam、Charge 和敌人远程投射物制造四类资源损失。
-2. 在 1280x720 和 1920x1080 下，分别从顶视角和第三人称的前、后、左、右攻击本地玩家，观察方向角、屏幕提示和 UI 重叠。
-3. 2-player Listen Server 分别让 Host 和 Client 受伤，并让两人同帧同时受伤。
-4. Dedicated Server 双客户端重复 HealthOnly 和复合伤害。
-5. 让旧 `BP_ArenaEnemyCharacter` 的 `K2_OnDamaged` 蓝图图表仍保留原节点，确认统一反馈后不会因 Health Delegate 再播放第二次完整闪白或数字。
-
-### 通过标准
-
-- 每次真实周期伤害独立分类且同 Tick 只占一个批量 Multicast；元素 Cue、结果 Cue和数字不丢失、不重复。
-- Host 受伤只影响 Host HUD/相机，Client 受伤只影响 Client HUD/相机；双方仍能看到彼此的世界空间 Cue 和数字。
-- ShieldOnly 不显示红色方向边缘；HealthOnly 和复合伤害能区分前后左右；无来源时安全回退为无方向表现。
-- 同 Tick 多来源时优先显示 Health 损失最大的一段方向；没有 Health 损失时使用总损失最大的一段方向。
-- GroundSlam、Charge 和 FireZone 不改变各自服务器伤害次数、取消清理、Shield-first 或死亡流程。
-- 普通数字按 Shield/Break/Health/复合使用青蓝、亮蓝、淡红、复合色；暴击使用更大金色；同 Tick 数字不再完全重叠，并在约 `0.9s` 内 Ease-Out 上浮、最后 `40%` 渐隐。
+- 每次实际 Shield/Health 损失仍只有一个汇总结果音，元素 Cue、结果 Cue 和逐段数字不因丢包产生权威重复。
+- Host/Client 的 HUD 与 CameraShake 只影响对应受伤玩家，世界 Cue 和数字仍可被双方观察。
+- Dedicated Server 无本地表现对象、资源依赖错误或残留 Timer。
