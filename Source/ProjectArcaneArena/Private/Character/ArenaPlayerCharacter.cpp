@@ -1,6 +1,7 @@
 #include "Character/ArenaPlayerCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Core/ArenaGameMode.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerController.h"
@@ -283,7 +284,7 @@ void AArenaPlayerCharacter::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EAr
 	RefreshMovementState();
 }
 
-// State.Dead 增加时关闭本地背包并执行死亡流程，移除时恢复移动和再次死亡门闩。
+// State.Dead 增加时执行死亡流程，移除时恢复移动并重置玩法与统计的再次死亡门闩。
 void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag != ArenaGameplayTags::State_Dead)
@@ -294,6 +295,19 @@ void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag,
 	RefreshMovementState();
 	if (NewCount <= 0)
 	{
+		if (HasAuthority())
+		{
+			if (const AArenaGameState* GameState = GetWorld()
+				? GetWorld()->GetGameState<AArenaGameState>()
+				: nullptr)
+			{
+				if (UArenaBalanceTelemetryComponent* Telemetry =
+					GameState->GetBalanceTelemetryComponent())
+				{
+					Telemetry->RecordPlayerRevived(GetPlayerState<AArenaPlayerState>());
+				}
+			}
+		}
 		const bool bWasDead = bDeathHandled;
 		bDeathHandled = false;
 		if (bWasDead)

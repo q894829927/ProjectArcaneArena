@@ -28,7 +28,7 @@ class PROJECTARCANEARENA_API UArenaAbilitySystemComponent : public UAbilitySyste
 public:
 	UArenaAbilitySystemComponent();
 
-	// 在 GAS 成功提交 Cost/Cooldown 后，由服务器统一路由玩家主动技能施放事件。
+	// 在 GAS 成功提交 Cost/Cooldown 后，服务器先记录主动技能统计，再路由玩家施放事件。
 	virtual void NotifyAbilityCommit(UGameplayAbility* Ability) override;
 
 	// 根据输入标签查找对应 AbilitySpec，并交给 GAS 标准激活流程处理。
@@ -37,12 +37,13 @@ public:
 	// 在权威端暂存一段完整伤害反馈，并在下一 Tick 与该目标的其他结算一起发送。
 	void QueueAuthoritativeDamageFeedback(const FArenaDamageFeedbackData& DamageFeedback);
 
-	// 在服务端按伤害、暴击、首次击杀顺序路由事件，并按召唤物资格标签过滤结果触发。
+	// 在服务端记录实际 Shield/Health 损失，再按伤害、暴击和首次击杀顺序路由事件。
 	void RouteAuthoritativeDamageEvent(
 		const FGameplayEffectSpec& DamageSpec,
 		UAbilitySystemComponent* TargetAbilitySystemComponent,
 		const FGameplayTagContainer& TargetTagsBeforeDamage,
-		float AppliedDamage);
+		float AppliedShieldDamage,
+		float AppliedHealthDamage);
 
 	// 在服务端向护盾拥有者路由一次伤害驱动的破盾事件，供自身被动 Ability 响应。
 	void RouteAuthoritativeShieldBreakEvent(

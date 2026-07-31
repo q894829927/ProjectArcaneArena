@@ -4,6 +4,9 @@
 #include "Character/ArenaPlayerCharacter.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Core/ArenaBalanceTelemetryComponent.h"
+#include "Core/ArenaGameState.h"
+#include "Core/ArenaPlayerState.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayEffect_EnergyRestore.h"
 #include "GAS/ArenaGameplayEffect_HealthRestore.h"
@@ -56,7 +59,7 @@ void AArenaPickupActor::BeginPlay()
 	}
 }
 
-// 成功恢复后设置消费门闩，确保同帧多人重叠时只有首个有效玩家拾取。
+// 成功恢复后记录实际增量并设置消费门闩，确保同帧多人重叠只处理首个玩家。
 void AArenaPickupActor::HandlePickupOverlap(
 	UPrimitiveComponent* OverlappedComponent,
 	AActor* OtherActor,
@@ -71,19 +74,40 @@ void AArenaPickupActor::HandlePickupOverlap(
 	}
 
 	AArenaPlayerCharacter* PlayerCharacter = Cast<AArenaPlayerCharacter>(OtherActor);
-	if (!PlayerCharacter || !TryApplyRestore(PlayerCharacter))
+	float RestoredAmount = 0.0f;
+	if (!PlayerCharacter || !TryApplyRestore(PlayerCharacter, RestoredAmount))
 	{
 		return;
 	}
 
+	if (const AArenaGameState* GameState = GetWorld()
+		? GetWorld()->GetGameState<AArenaGameState>()
+		: nullptr)
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			GameState->GetBalanceTelemetryComponent())
+		{
+			Telemetry->RecordPickupTransaction(
+				PlayerCharacter->GetPlayerState<AArenaPlayerState>(),
+				EArenaBalancePickupTransaction::Collected,
+				PickupType == EArenaPickupType::Health
+					? ArenaGameplayTags::Item_Effect_Restore_Health.GetTag()
+					: ArenaGameplayTags::Item_Effect_Restore_Energy.GetTag(),
+				1,
+				RestoredAmount);
+		}
+	}
 	bConsumed = true;
 	PickupCollisionComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Destroy();
 }
 
-// 恢复前后比较权威属性，防止满资源、Max=0 或失效 GE 配置误消耗掉落物。
-bool AArenaPickupActor::TryApplyRestore(AArenaPlayerCharacter* PlayerCharacter)
+// 恢复前后比较权威属性并返回实际增量，满资源或无效 GE 不消费也不统计。
+bool AArenaPickupActor::TryApplyRestore(
+	AArenaPlayerCharacter* PlayerCharacter,
+	float& OutRestoredAmount)
 {
+	OutRestoredAmount = 0.0f;
 	UAbilitySystemComponent* PlayerASC = PlayerCharacter ? PlayerCharacter->GetAbilitySystemComponent() : nullptr;
 	const UArenaAttributeSet* AttributeSet = PlayerASC
 		? Cast<const UArenaAttributeSet>(PlayerASC->GetAttributeSet(UArenaAttributeSet::StaticClass()))
@@ -124,5 +148,6 @@ bool AArenaPickupActor::TryApplyRestore(AArenaPlayerCharacter* PlayerCharacter)
 	PlayerASC->ApplyGameplayEffectSpecToSelf(*RestoreSpecHandle.Data.Get());
 
 	const float ValueAfter = bHealthPickup ? AttributeSet->GetHealth() : AttributeSet->GetEnergy();
-	return ValueAfter > ValueBefore + KINDA_SMALL_NUMBER;
+	OutRestoredAmount = FMath::Max(ValueAfter - ValueBefore, 0.0f);
+	return OutRestoredAmount > KINDA_SMALL_NUMBER;
 }

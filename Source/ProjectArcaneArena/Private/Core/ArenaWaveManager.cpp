@@ -4,6 +4,7 @@
 #include "Character/ArenaBossCharacter.h"
 #include "Character/ArenaEnemyCharacter.h"
 #include "Components/CapsuleComponent.h"
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerController.h"
 #include "Core/ArenaPlayerState.h"
@@ -74,7 +75,7 @@ void AArenaWaveManager::Initialize(
 	}
 }
 
-// 从 Waiting/Upgrade 推进一波；Boss 波在生成完成后进入 Intro，普通波直接进入 Combat。
+// 从 Waiting/Upgrade 推进一波，并在阶段切换前创建服务器真实时间统计记录。
 void AArenaWaveManager::StartNextWave()
 {
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
@@ -115,6 +116,14 @@ void AArenaWaveManager::StartNextWave()
 	ArenaGameState->SetBossOutroTiming(FArenaBossOutroTiming());
 	ArenaGameState->SetCurrentWaveIndex(CurrentWaveArrayIndex + 1);
 	ArenaGameState->SetRemainingEnemyCount(0);
+	if (UArenaBalanceTelemetryComponent* Telemetry =
+		ArenaGameState->GetBalanceTelemetryComponent())
+	{
+		Telemetry->BeginWave(
+			CurrentWaveArrayIndex + 1,
+			bCurrentWaveIsBossWave,
+			PendingEnemyClasses.Num());
+	}
 	if (!bCurrentWaveIsBossWave)
 	{
 		ArenaGameState->SetGamePhase(EArenaGamePhase::Combat);
@@ -252,7 +261,7 @@ bool AArenaWaveManager::BuildPendingSpawnList(int32 WaveArrayIndex)
 	return !PendingEnemyClasses.IsEmpty();
 }
 
-// 每次计时器只生成一个敌人；Boss 会先完成人数缩放和复制状态，再启动 Intro。
+// 每次计时器只生成一个敌人；成功生成后统计一次，Boss 再完成人数缩放和 Intro。
 void AArenaWaveManager::SpawnNextEnemy()
 {
 	if (!PendingEnemyClasses.IsValidIndex(NextPendingSpawnIndex) || SpawnPoints.IsEmpty())
@@ -279,6 +288,16 @@ void AArenaWaveManager::SpawnNextEnemy()
 		AliveEnemies.Add(Enemy);
 		Enemy->OnEnemyDeath.AddUniqueDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
 		Enemy->OnDestroyed.AddUniqueDynamic(this, &AArenaWaveManager::HandleEnemyDestroyed);
+		if (AArenaGameState* ArenaGameState = GetWorld()
+			? GetWorld()->GetGameState<AArenaGameState>()
+			: nullptr)
+		{
+			if (UArenaBalanceTelemetryComponent* Telemetry =
+				ArenaGameState->GetBalanceTelemetryComponent())
+			{
+				Telemetry->RecordEnemySpawn(Cast<AArenaBossCharacter>(Enemy) != nullptr);
+			}
+		}
 		if (bCurrentWaveIsBossWave)
 		{
 			AArenaBossCharacter* Boss = Cast<AArenaBossCharacter>(Enemy);
@@ -439,7 +458,7 @@ void AArenaWaveManager::ClearBossIntroTimer()
 	}
 }
 
-// Boss 正常死亡后冻结战斗、保留尸体与 ActiveBoss，并发布统一 Outro 时序。
+// Boss 正常死亡后先结束 Boss 波统计，再冻结战斗并发布统一 Outro 时序。
 void AArenaWaveManager::BeginBossOutro(AArenaBossCharacter* DeadBoss)
 {
 	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
@@ -451,6 +470,11 @@ void AArenaWaveManager::BeginBossOutro(AArenaBossCharacter* DeadBoss)
 
 	ClearBossIntroTimer();
 	ClearBossOutroTimer();
+	if (UArenaBalanceTelemetryComponent* Telemetry =
+		ArenaGameState->GetBalanceTelemetryComponent())
+	{
+		Telemetry->EndWave();
+	}
 	DeadBoss->DestroyAllBossSummons();
 
 	FGameplayTagContainer PlayerActiveAbilityTags;
@@ -593,7 +617,7 @@ int32 AArenaWaveManager::GetBossScalingPlayerCount() const
 	return ParticipatingPlayerCount;
 }
 
-// 死亡广播只处理当前 Alive 集合；最终 Boss 正常死亡转入 Outro，其余目标维持唯一计数与掉落。
+// 死亡广播只处理当前 Alive 集合并记录一次击杀；最终 Boss 正常死亡再转入 Outro。
 void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 {
 	if (!HasAuthority() || !Enemy || AliveEnemies.Remove(Enemy) == 0)
@@ -603,6 +627,16 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 
 	Enemy->OnEnemyDeath.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDeath);
 	Enemy->OnDestroyed.RemoveDynamic(this, &AArenaWaveManager::HandleEnemyDestroyed);
+	if (AArenaGameState* ArenaGameState = GetWorld()
+		? GetWorld()->GetGameState<AArenaGameState>()
+		: nullptr)
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			ArenaGameState->GetBalanceTelemetryComponent())
+		{
+			Telemetry->RecordEnemyKilled(Cast<AArenaBossCharacter>(Enemy) != nullptr);
+		}
+	}
 	if (AArenaBossCharacter* DeadBoss = Cast<AArenaBossCharacter>(Enemy))
 	{
 		ClearBossIntroTimer();
@@ -649,6 +683,11 @@ void AArenaWaveManager::HandleEnemyDestroyed(AActor* DestroyedActor)
 			if (bCurrentWaveIsBossWave && bIsFinalWave && AliveEnemies.IsEmpty())
 			{
 				PendingEnemyClasses.Reset();
+				if (UArenaBalanceTelemetryComponent* Telemetry =
+					ArenaGameState->GetBalanceTelemetryComponent())
+				{
+					Telemetry->EndWave();
+				}
 				ArenaGameState->SetGamePhase(EArenaGamePhase::Victory);
 				return;
 			}
@@ -658,7 +697,7 @@ void AArenaWaveManager::HandleEnemyDestroyed(AActor* DestroyedActor)
 	CheckWaveCompletion();
 }
 
-// 每名受管理敌人只经过本入口一次；延迟完成生成可区分真实失败与同帧自动拾取消耗。
+// 每名受管理敌人只经过本入口一次；成功完成生成后统计一次世界 Pickup。
 void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy)
 {
 	if (!HasAuthority() || !Enemy || !PickupDropTable || !GetWorld())
@@ -705,6 +744,18 @@ void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy)
 
 	// FinishSpawning 期间允许附近玩家立即拾取并销毁 Actor，该路径仍属于成功掉落。
 	Pickup->FinishSpawning(SpawnTransform);
+	if (AArenaGameState* ArenaGameState = GetWorld()->GetGameState<AArenaGameState>())
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			ArenaGameState->GetBalanceTelemetryComponent())
+		{
+			Telemetry->RecordPickupTransaction(
+				nullptr,
+				EArenaBalancePickupTransaction::Spawned,
+				FGameplayTag(),
+				1);
+		}
+	}
 }
 
 // 只统计有效 Class 和正权重，确保错误条目不会影响其他可用掉落。
@@ -749,7 +800,7 @@ TSubclassOf<AArenaPickupActor> AArenaWaveManager::DrawWeightedPickupClass()
 	return LastValidClass;
 }
 
-// 全部敌人清空后进入直达 Victory 或 Upgrade；正常最终 Boss 的 Outro 由独立路径拥有。
+// 全部敌人清空后先固化波次统计，再进入 Victory 或 Upgrade；Boss Outro 走独立路径。
 void AArenaWaveManager::CheckWaveCompletion()
 {
 	if (NextPendingSpawnIndex < PendingEnemyClasses.Num() || !AliveEnemies.IsEmpty() || bSpawnFailureInCurrentWave)
@@ -768,6 +819,11 @@ void AArenaWaveManager::CheckWaveCompletion()
 		return;
 	}
 
+	if (UArenaBalanceTelemetryComponent* Telemetry =
+		ArenaGameState->GetBalanceTelemetryComponent())
+	{
+		Telemetry->EndWave();
+	}
 	PendingEnemyClasses.Reset();
 	if (CurrentWaveArrayIndex >= WaveData->Waves.Num() - 1)
 	{

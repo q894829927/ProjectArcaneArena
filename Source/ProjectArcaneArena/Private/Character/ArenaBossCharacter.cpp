@@ -4,6 +4,7 @@
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimMontage.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Core/ArenaLogCategories.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
@@ -56,7 +57,7 @@ FGameplayTag AArenaBossCharacter::GetCurrentBossPhaseTag() const
 	return FGameplayTag();
 }
 
-// 服务器登记召唤物并添加明确的构筑事件资格；未进入集合的 Actor 不会被 Boss 生命周期接管。
+// 服务器登记召唤物、添加事件资格并在成功后累计一次 Boss 召唤统计。
 bool AArenaBossCharacter::RegisterBossSummon(AArenaEnemyCharacter* SummonedEnemy)
 {
 	if (!HasAuthority() || !IsValid(SummonedEnemy) || SummonedEnemy == this)
@@ -97,6 +98,16 @@ bool AArenaBossCharacter::RegisterBossSummon(AArenaEnemyCharacter* SummonedEnemy
 	SummonedEnemy->OnEnemyDeath.AddUniqueDynamic(this, &AArenaBossCharacter::HandleBossSummonDeath);
 	SummonedEnemy->OnDestroyed.AddUniqueDynamic(this, &AArenaBossCharacter::HandleBossSummonDestroyed);
 	AddBossSummonGameplayTags(SummonedEnemy);
+	if (const AArenaGameState* GameState = GetWorld()
+		? GetWorld()->GetGameState<AArenaGameState>()
+		: nullptr)
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			GameState->GetBalanceTelemetryComponent())
+		{
+			Telemetry->RecordBossSummons(1);
+		}
+	}
 	return true;
 }
 
@@ -452,7 +463,7 @@ void AArenaBossCharacter::UnbindBossPhaseDelegates()
 	BoundBossGameState.Reset();
 }
 
-// 初始化只添加 Phase 1，不播放转换 Cue；重复调用不会叠加标签计数。
+// 初始化 Phase 1 并启动真实阶段计时；不播放转换 Cue且重复调用不叠加标签。
 void AArenaBossCharacter::InitializeBossPhaseState()
 {
 	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
@@ -465,6 +476,14 @@ void AArenaBossCharacter::InitializeBossPhaseState()
 
 	BossASC->AddLooseGameplayTag(ArenaGameplayTags::Boss_Phase_One);
 	BossASC->AddReplicatedLooseGameplayTag(ArenaGameplayTags::Boss_Phase_One);
+	if (const AArenaGameState* GameState = BoundBossGameState.Get())
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			GameState->GetBalanceTelemetryComponent())
+		{
+			Telemetry->RecordBossPhaseChanged(this, 1);
+		}
+	}
 }
 
 // 仅在 Combat 使用当前 MaxHealth 计算目标阶段，并保持阶段只向前推进。
@@ -514,7 +533,7 @@ void AArenaBossCharacter::EvaluateBossPhase(float NewHealth)
 	}
 }
 
-// 新阶段先到达 ASC，再移除旧阶段，避免父标签 Boss.Phase 在客户端短暂归零。
+// 新阶段先到达 ASC 再移除旧阶段，并在属性与 Cue 完成后更新服务器阶段统计。
 void AArenaBossCharacter::AdvanceToBossPhase(const FGameplayTag& NewPhaseTag, int32 NewPhaseNumber)
 {
 	UArenaAbilitySystemComponent* BossASC = GetArenaAbilitySystemComponent();
@@ -542,6 +561,14 @@ void AArenaBossCharacter::AdvanceToBossPhase(const FGameplayTag& NewPhaseTag, in
 		ApplyEnrageEffect();
 	}
 	ExecutePhaseTransitionCue(NewPhaseNumber);
+	if (const AArenaGameState* GameState = BoundBossGameState.Get())
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			GameState->GetBalanceTelemetryComponent())
+		{
+			Telemetry->RecordBossPhaseChanged(this, NewPhaseNumber);
+		}
+	}
 
 	UE_LOG(
 		LogArenaBoss,

@@ -5,6 +5,8 @@
 #include "Character/ArenaCharacterBase.h"
 #include "Character/ArenaPlayerCharacter.h"
 #include "Components/ArenaHitReactionComponent.h"
+#include "Core/ArenaBalanceTelemetryComponent.h"
+#include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerState.h"
 #include "Engine/World.h"
 #include "GAS/ArenaGameplayTags.h"
@@ -89,24 +91,42 @@ UArenaAbilitySystemComponent::UArenaAbilitySystemComponent()
 {
 }
 
-// 只在服务器确认完整 Commit 后派发事件，避免客户端预测、被动技能或敌人技能重复触发奖励。
+// 服务器确认 Commit 后先记录玩家/敌人主动技能，再保持既有玩家 OnAbilityCast 奖励路由。
 void UArenaAbilitySystemComponent::NotifyAbilityCommit(UGameplayAbility* Ability)
 {
 	Super::NotifyAbilityCommit(Ability);
 
-	const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(GetOwnerActor());
-	AArenaPlayerCharacter* PlayerAvatar = Cast<AArenaPlayerCharacter>(GetAvatarActor());
 	if (!IsOwnerActorAuthoritative()
 		|| !Ability
-		|| !ArenaPlayerState
-		|| !PlayerAvatar
 		|| HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
 	{
 		return;
 	}
 
 	const FGameplayTagContainer& AbilityAssetTags = Ability->GetAssetTags();
-	if (!AbilityAssetTags.HasTagExact(ArenaGameplayTags::Ability_Type_PlayerActive))
+	const bool bIsPlayerActiveAbility =
+		AbilityAssetTags.HasTagExact(ArenaGameplayTags::Ability_Type_PlayerActive);
+	const bool bIsEnemyAbility = AbilityAssetTags.HasTag(ArenaGameplayTags::Ability_Enemy);
+	if (bIsPlayerActiveAbility || bIsEnemyAbility)
+	{
+		if (const UWorld* World = GetWorld())
+		{
+			if (const AArenaGameState* GameState = World->GetGameState<AArenaGameState>())
+			{
+				if (UArenaBalanceTelemetryComponent* Telemetry =
+					GameState->GetBalanceTelemetryComponent())
+				{
+					Telemetry->RecordAbilityCommit(this, AbilityAssetTags);
+				}
+			}
+		}
+	}
+
+	const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(GetOwnerActor());
+	AArenaPlayerCharacter* PlayerAvatar = Cast<AArenaPlayerCharacter>(GetAvatarActor());
+	if (!ArenaPlayerState
+		|| !PlayerAvatar
+		|| !bIsPlayerActiveAbility)
 	{
 		return;
 	}
@@ -254,13 +274,16 @@ void UArenaAbilitySystemComponent::MulticastPlayDamageFeedbackSound_Implementati
 	}
 }
 
-// 由权威来源派发实际伤害、暴击与首次击杀，并按召唤物显式资格标签过滤结果事件。
+// 权威来源先记录实际 Shield/Health 损失，再派发伤害、暴击与首次击杀结果事件。
 void UArenaAbilitySystemComponent::RouteAuthoritativeDamageEvent(
 	const FGameplayEffectSpec& DamageSpec,
 	UAbilitySystemComponent* TargetAbilitySystemComponent,
 	const FGameplayTagContainer& TargetTagsBeforeDamage,
-	float AppliedDamage)
+	float AppliedShieldDamage,
+	float AppliedHealthDamage)
 {
+	const float AppliedDamage =
+		FMath::Max(AppliedShieldDamage, 0.0f) + FMath::Max(AppliedHealthDamage, 0.0f);
 	if (!IsOwnerActorAuthoritative() || !TargetAbilitySystemComponent || AppliedDamage <= KINDA_SMALL_NUMBER)
 	{
 		return;
@@ -313,6 +336,25 @@ void UArenaAbilitySystemComponent::RouteAuthoritativeDamageEvent(
 	// 在任何伤害被动同步执行前锁定本次击杀结果，避免嵌套伤害改变原始事件判定。
 	const bool bKilledTarget = !TargetTagsBeforeDamage.HasTag(ArenaGameplayTags::State_Dead)
 		&& TargetAbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead);
+
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AArenaGameState* GameState = World->GetGameState<AArenaGameState>())
+		{
+			if (UArenaBalanceTelemetryComponent* Telemetry =
+				GameState->GetBalanceTelemetryComponent())
+			{
+				Telemetry->RecordAuthoritativeDamage(
+					DamageSpec,
+					this,
+					TargetAbilitySystemComponent,
+					AppliedShieldDamage,
+					AppliedHealthDamage,
+					bCriticalHit,
+					bKilledTarget);
+			}
+		}
+	}
 
 	// 事件发送给来源 ASC，自身拥有的被动 Ability 通过 AbilityTriggers 响应。
 	HandleGameplayEvent(DamageEventTag, &EventPayload);

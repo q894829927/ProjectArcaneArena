@@ -4,6 +4,7 @@
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerState.h"
 #include "Engine/StaticMesh.h"
@@ -159,7 +160,7 @@ bool AArenaInventoryPickupActor::CanBeInteractedBy(const AArenaPlayerState* Play
 	return true;
 }
 
-// Authority 在调用背包前先占用门闩；加入失败时恢复原碰撞模式，成功后只销毁一次 Actor。
+// Authority 占用门闩并完成背包加入；成功后记录所属玩家拾取事务并只销毁一次 Actor。
 bool AArenaInventoryPickupActor::TryCollect(AArenaPlayerState* PlayerState)
 {
 	if (!HasAuthority() || !CanBeInteractedBy(PlayerState))
@@ -187,6 +188,20 @@ bool AArenaInventoryPickupActor::TryCollect(AArenaPlayerState* PlayerState)
 		return false;
 	}
 
+	if (const AArenaGameState* GameState = GetWorld()
+		? GetWorld()->GetGameState<AArenaGameState>()
+		: nullptr)
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			GameState->GetBalanceTelemetryComponent())
+		{
+			Telemetry->RecordPickupTransaction(
+				PlayerState,
+				EArenaBalancePickupTransaction::Collected,
+				ItemData->ItemTag,
+				Quantity);
+		}
+	}
 	Destroy();
 	return true;
 }

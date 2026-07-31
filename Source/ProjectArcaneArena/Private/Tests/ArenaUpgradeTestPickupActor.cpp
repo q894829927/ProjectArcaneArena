@@ -37,7 +37,7 @@ const FUpgradePickupPresentation* FindUpgradePickupPresentation(FName UpgradeID)
 		{ FName(TEXT("Upgrade.MoveSpeed")), TEXT("Move Speed"), TEXT("Increase movement speed"), FColor(90, 220, 255) },
 		{ FName(TEXT("Upgrade.Fireball.Damage")), TEXT("Fireball Damage"), TEXT("Fireball damage +20% per stack"), FColor(255, 145, 55) },
 		{ FName(TEXT("Upgrade.Fireball.Burning")), TEXT("Burning Fireball"), TEXT("Fireball applies Burning"), FColor(255, 85, 40) },
-		{ FName(TEXT("Upgrade.LightningStorm.Damage")), TEXT("Storm Damage"), TEXT("Storm damage +20% per stack"), FColor(85, 185, 255) },
+		{ FName(TEXT("Upgrade.LightningStorm.Damage")), TEXT("Storm Damage"), TEXT("Storm damage +16% per stack"), FColor(85, 185, 255) },
 		{ FName(TEXT("Upgrade.LightningStorm.Shocked")), TEXT("Shocked"), TEXT("Storm applies Shocked for 4s"), FColor(115, 125, 255) },
 		{ FName(TEXT("Upgrade.Combo.Overload")), TEXT("Overload"), TEXT("Lightning on Burning explodes"), FColor(220, 90, 255) },
 		{ FName(TEXT("Upgrade.Trigger.EnergyOnKill")), TEXT("Energy on Kill"), TEXT("Kills restore Energy"), FColor(75, 255, 205) },

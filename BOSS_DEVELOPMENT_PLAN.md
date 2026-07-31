@@ -11,7 +11,7 @@
 - 使用 `Planned`、`Partial`、`Implemented`、`Verified` 描述阶段状态，不使用勾选框维护完成状态。
 - 默认完成当前阶段的验收标准后再进入下一阶段；用户明确调整范围时，可以修改阶段顺序，但必须同步更新对应边界。
 
-阶段四 A“Boss 召唤物”、阶段五 A“Boss Intro 同步闭环”、阶段五 B“Boss 死亡与 Victory 演出”和阶段六 A“伤害反馈表现收尾”均已完成对应验收。当前推荐方向进入阶段六 B，优先完成整局平衡、双视角可读性和作品集演示回归；Dedicated Server、网络压力与其他历史异常生命周期检查继续独立保留。
+阶段四 A“Boss 召唤物”、阶段五 A“Boss Intro 同步闭环”、阶段五 B“Boss 死亡与 Victory 演出”、阶段六 A“伤害反馈表现收尾”和阶段六 B“完整流程与数值平衡”均已完成作品集范围验收。阶段六 B 最终单人完整流程为 Victory，实测 `338.664s`，Boss Combat 为 `134.192s`，三阶段与召唤均完整出现；Dedicated Server、网络压力与其他历史异常生命周期检查继续独立保留。
 
 ---
 
@@ -398,13 +398,18 @@ Boss 战斗规则不再扩展，主要动画、VFX、音效、HUD 和 Intro 已�
 
 ### 当前实现进度
 
-状态：`Partial`，最后更新：2026-07-30。
+状态：`Partial`，最后更新：2026-07-31。
 
 - 阶段六 A 已完成共用伤害反馈的 C++ 收口：Boss 与 Player、普通敌人继续使用同一 `UArenaHitReactionComponent`，每段权威伤害保留独立元素 Cue、结果 Cue 和世界数字，同 Tick 的 Overlay、CameraShake 与本地 HUD 合并为一次；唯一汇总结果音通过独立可靠消息播放，避免视觉批次丢包造成命中音断续。
 - 共用闪光已改为项目 Overlay MID，不再修改悟空等第三方主材质槽；连续伤害刷新 Timer，并且只在当前 Overlay 仍为伤害 MID 时恢复旧值。
 - 伤害数字已加入 Ease-Out 上浮和末段渐隐，HUD 方向提示按实际 Widget 尺寸适配 720p/1080p 与双视角；第三人称 CameraShake 默认衰减到顶视角的 `65%`。
 - `Content/Python/damage_feedback/setup_damage_feedback_polish.py` 已在编辑器成功执行一次，创建并保存统一 Overlay、四个 Perlin CameraShake，并把表现资产与现有三类结果音效连接到 Player、近战/远程 Enemy 和 Boss；九个相关资产通过编辑器资产验证。
 - 阶段六 A 状态为 `Verified`。普通目标四类反馈、同 Tick 多段抑制、玩家本地受伤反馈、周期与组合伤害、Boss 攻击、Overlay 恢复、双人反馈归属和资产脚本幂等性均已通过实际验收；Dedicated Server 与网络丢包压力测试作为项目级网络加固继续保留，不阻塞本阶段完成。
+- 阶段六 B 已新增服务器专用 `UArenaBalanceTelemetryComponent`，由 `AArenaGameState` 持有但不复制。统计使用真实时间，记录 Run/Wave/Combat/Boss Phase 时长、Boss Combat、技能 Commit、实际 Shield/Health 损失、升级、Pickup、药水和召唤结果；客户端预测和失败事务不会进入统计。
+- `arena.Balance.Telemetry` 控制非 Shipping 统计，`arena.Balance.Dump` 可在 PIE 中输出当前权威快照。Victory、Defeat 或有效中断只会向 `Saved/BalanceReports` 的四张 CSV 追加一次；Shipping 路径完全不采集或写文件。
+- 阶段六 B 当前为 `Verified`（作品集 Demo 范围）。固定种子 `20260731` 的三局未调参基线均为 Victory，随后最终近似配置完成一局完整 Victory：总时长 `338.664s`、Combat `307.163s`、Boss Combat `134.192s`，Boss 三阶段、Charge、FireZone、Enraged 和召唤均实际出现。该结果用于确认完整流程与展示节奏，不代表统计意义上的商业平衡。
+- 阶段六 B 的正式流程保留 `8 个普通波 + Boss / 8 次升级`。前四次升级用于建立主要构筑方向，中间两次形成协同，最后两次补足叠层、分支或传奇变化；Boss 平衡以完整八次正式升级后的成型构筑为基准。
+- `Content/Python/balance/apply_resume_demo_balance.py` 已应用作品集 Demo 的最终近似配置：Boss 单人基础 Health/MaxHealth `3000`，普通 Enemy `100`，LightningStorm 增幅每层 `16%`，八个普通波使用 `0.75/1.0s` SpawnInterval。最终 Smoke Run 已完成，不再要求多轮精确平衡实验或双人平衡验收。
 
 ### 阶段边界
 
@@ -417,6 +422,7 @@ Boss 战斗规则不再扩展，主要动画、VFX、音效、HUD 和 Intro 已�
 - 玩家死亡后 Boss 能重新选择存活目标，全员死亡后正确进入 Defeat。
 - 两种视角下预警、镜头、HUD 和 VFX 均可读，视角切换不会复制 Ability、Area Actor、召唤物或伤害。
 - Boss 相关待验证条目完成后已从 `PENDING_VERIFICATION.md` 删除，功能记录与实际行为一致。
+- 最终作品集 Smoke Run 的 Boss Combat 为 `134.192s`，落在原诊断参考 `120–160s` 内；完整流程实测 `338.664s`，虽然短于早期 `8–10min` 目标，但八次升级、Boss 三阶段、Charge/FireZone、Enraged 和召唤均完整展示，因此按用户确认的 Demo 范围结束调参。
 
 ### 后续边界
 

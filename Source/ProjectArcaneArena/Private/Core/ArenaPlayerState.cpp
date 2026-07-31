@@ -1,6 +1,9 @@
 #include "Core/ArenaPlayerState.h"
 
+#include "Core/ArenaBalanceTelemetryComponent.h"
+#include "Core/ArenaGameState.h"
 #include "Core/ArenaUpgradeDataAsset.h"
+#include "Engine/World.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "Item/ArenaInventoryComponent.h"
@@ -162,7 +165,7 @@ void AArenaPlayerState::BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsse
 	ForceNetUpdate();
 }
 
-// 记录已验证升级的数据资产和永久堆叠，并关闭本轮候选。
+// 记录已验证升级和永久堆叠，随后把结果层数上报服务器平衡统计并关闭候选。
 void AArenaPlayerState::CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade)
 {
 	if (!HasAuthority() || !Upgrade || Upgrade->UpgradeID.IsNone())
@@ -187,6 +190,21 @@ void AArenaPlayerState::CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade
 		NewUpgrade.UpgradeID = UpgradeID;
 		NewUpgrade.UpgradeData = Upgrade;
 		NewUpgrade.StackCount = 1;
+	}
+
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AArenaGameState* GameState = World->GetGameState<AArenaGameState>())
+		{
+			if (UArenaBalanceTelemetryComponent* Telemetry =
+				GameState->GetBalanceTelemetryComponent())
+			{
+				Telemetry->RecordUpgradeSelected(
+					this,
+					UpgradeID,
+					GetUpgradeStackCount(UpgradeID));
+			}
+		}
 	}
 
 	UpgradeCandidates.Reset();

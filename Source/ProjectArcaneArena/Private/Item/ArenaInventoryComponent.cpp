@@ -1,6 +1,7 @@
 #include "Item/ArenaInventoryComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerState.h"
 #include "Engine/World.h"
@@ -149,7 +150,7 @@ bool UArenaInventoryComponent::TryAddItem(UArenaItemDataAsset* ItemData, int32 Q
 	return true;
 }
 
-// Authority 用不可重入事务应用可回滚冷却与恢复 GE；只有属性增加后才消费条目。
+// Authority 用可回滚 GE 完成恢复；只有属性和条目都成功变化后才记录一次药水使用。
 bool UArenaInventoryComponent::TryUseItem(FGuid StackId)
 {
 	if (bInventoryMutationInProgress)
@@ -237,6 +238,30 @@ bool UArenaInventoryComponent::TryUseItem(FGuid StackId)
 	}
 
 	--Entry->Quantity;
+	if (const AArenaGameState* GameState = GetWorld()
+		? GetWorld()->GetGameState<AArenaGameState>()
+		: nullptr)
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			GameState->GetBalanceTelemetryComponent())
+		{
+			FGameplayTag RestoreItemTag = ItemData->ItemTag;
+			if (ItemData->ItemTags.HasTag(ArenaGameplayTags::Item_Effect_Restore_Health))
+			{
+				RestoreItemTag = ArenaGameplayTags::Item_Effect_Restore_Health.GetTag();
+			}
+			else if (ItemData->ItemTags.HasTag(ArenaGameplayTags::Item_Effect_Restore_Energy))
+			{
+				RestoreItemTag = ArenaGameplayTags::Item_Effect_Restore_Energy.GetTag();
+			}
+			Telemetry->RecordPickupTransaction(
+				ArenaPlayerState,
+				EArenaBalancePickupTransaction::Used,
+				RestoreItemTag,
+				1,
+				ResourceAfter - ResourceBefore);
+		}
+	}
 	if (Entry->Quantity > 0)
 	{
 		InventoryList.MarkItemDirty(*Entry);
@@ -246,7 +271,7 @@ bool UArenaInventoryComponent::TryUseItem(FGuid StackId)
 	return true;
 }
 
-// Authority 验证丢弃 Pawn 属于背包 PlayerState，再以不可重入事务确认 Pickup 落地后扣除堆栈。
+// Authority 验证归属并确认 Pickup 落地，扣除堆栈后才记录一次成功丢弃事务。
 bool UArenaInventoryComponent::TryDropItem(FGuid StackId, int32 Quantity, APawn* SourcePawn)
 {
 	if (bInventoryMutationInProgress)
@@ -312,6 +337,20 @@ bool UArenaInventoryComponent::TryDropItem(FGuid StackId, int32 Quantity, APawn*
 	}
 
 	Entry->Quantity -= Quantity;
+	if (const AArenaGameState* GameState = GetWorld()
+		? GetWorld()->GetGameState<AArenaGameState>()
+		: nullptr)
+	{
+		if (UArenaBalanceTelemetryComponent* Telemetry =
+			GameState->GetBalanceTelemetryComponent())
+		{
+			Telemetry->RecordPickupTransaction(
+				ArenaPlayerState,
+				EArenaBalancePickupTransaction::Dropped,
+				Entry->ItemData->ItemTag,
+				Quantity);
+		}
+	}
 	if (Entry->Quantity > 0)
 	{
 		InventoryList.MarkItemDirty(*Entry);

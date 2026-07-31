@@ -1,5 +1,6 @@
 #include "Core/ArenaGameMode.h"
 
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Character/ArenaPlayerCharacter.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerController.h"
@@ -633,7 +634,7 @@ void AArenaGameMode::TryAdvanceAfterUpgradeSelections()
 	}
 }
 
-// 检查 PlayerState ASC 的长期死亡状态，避免 Pawn 关联短暂为空时误判全员失败。
+// 记录当前新死亡玩家并检查长期死亡状态，避免 Pawn 关联短暂为空时误判全员失败。
 void AArenaGameMode::NotifyPlayerDeath()
 {
 	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
@@ -646,6 +647,7 @@ void AArenaGameMode::NotifyPlayerDeath()
 	}
 
 	bool bFoundParticipatingPlayer = false;
+	bool bAllParticipatingPlayersDead = true;
 	for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
 	{
 		const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
@@ -656,13 +658,21 @@ void AArenaGameMode::NotifyPlayerDeath()
 		}
 
 		bFoundParticipatingPlayer = true;
-		if (!ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+		if (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
 		{
-			return;
+			if (UArenaBalanceTelemetryComponent* Telemetry =
+				ArenaGameState->GetBalanceTelemetryComponent())
+			{
+				Telemetry->RecordPlayerDeath(ArenaPlayerState);
+			}
+		}
+		else
+		{
+			bAllParticipatingPlayersDead = false;
 		}
 	}
 
-	if (bFoundParticipatingPlayer)
+	if (bFoundParticipatingPlayer && bAllParticipatingPlayersDead)
 	{
 		if (WaveManager)
 		{

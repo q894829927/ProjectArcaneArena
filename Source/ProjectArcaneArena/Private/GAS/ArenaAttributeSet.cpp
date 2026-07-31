@@ -254,12 +254,13 @@ void UArenaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModCallb
 			UAbilitySystemComponent* SourceASC = Data.EffectSpec.GetEffectContext().GetInstigatorAbilitySystemComponent();
 			if (UArenaAbilitySystemComponent* ArenaSourceASC = Cast<UArenaAbilitySystemComponent>(SourceASC))
 			{
-				// 先更新死亡状态再同步触发被动，同时 TargetTags 快照仍保留命中前 Burning/Shocked。
+				// 先更新死亡状态，再把实际 Shield/Health 损失交给统计与被动事件统一权威路由。
 				ArenaSourceASC->RouteAuthoritativeDamageEvent(
 					Data.EffectSpec,
 					TargetASC,
 					TargetTagsBeforeDamage,
-					AppliedDamage);
+					AppliedShieldDamage,
+					AppliedHealthDamage);
 			}
 
 			if (bShieldBrokenByDamage)

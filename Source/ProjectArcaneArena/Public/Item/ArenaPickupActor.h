@@ -59,8 +59,8 @@ private:
 		bool bFromSweep,
 		const FHitResult& SweepResult);
 
-	// 通过目标玩家 ASC 应用对应恢复 GE，只有属性实际增加才返回成功。
-	bool TryApplyRestore(AArenaPlayerCharacter* PlayerCharacter);
+	// 通过目标玩家 ASC 应用恢复 GE，并返回权威属性实际增加量供统计使用。
+	bool TryApplyRestore(AArenaPlayerCharacter* PlayerCharacter, float& OutRestoredAmount);
 
 	bool bConsumed = false;
 };

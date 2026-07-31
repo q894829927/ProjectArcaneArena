@@ -5,6 +5,7 @@
 #include "ArenaGameState.generated.h"
 
 class AArenaBossCharacter;
+class UArenaBalanceTelemetryComponent;
 
 UENUM(BlueprintType)
 enum class EArenaGamePhase : uint8
@@ -99,6 +100,13 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	EArenaGamePhase GetGamePhase() const { return GamePhase; }
+
+	// 返回仅服务器使用的非复制平衡统计组件；客户端实例存在但保持无操作。
+	UFUNCTION(BlueprintPure, Category = "Arena|Balance")
+	UArenaBalanceTelemetryComponent* GetBalanceTelemetryComponent() const
+	{
+		return BalanceTelemetryComponent;
+	}
 
 	// 返回指定阶段是否允许打开只读或可操作的背包界面。
 	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
@@ -201,6 +209,9 @@ public:
 	FArenaIntegerStateChangedSignature OnVictoryRestartRequiredCountChanged;
 
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Balance")
+	TObjectPtr<UArenaBalanceTelemetryComponent> BalanceTelemetryComponent;
+
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GamePhase, Category = "Arena|Game State")
 	EArenaGamePhase GamePhase = EArenaGamePhase::Waiting;
 

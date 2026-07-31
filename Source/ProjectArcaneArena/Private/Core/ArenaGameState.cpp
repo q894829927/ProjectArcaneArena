@@ -1,11 +1,14 @@
 #include "Core/ArenaGameState.h"
 
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Net/UnrealNetwork.h"
 
-// 构造复制游戏状态，波次规则只在服务器写入这些字段。
+// 构造复制游戏状态和非复制平衡统计组件，玩法字段仍只由服务器规则层写入。
 AArenaGameState::AArenaGameState()
 {
 	bReplicates = true;
+	BalanceTelemetryComponent =
+		CreateDefaultSubobject<UArenaBalanceTelemetryComponent>(TEXT("BalanceTelemetryComponent"));
 }
 
 // 复制波次、Boss、演出时序、背包阶段规则与 Victory Ready 快照，客户端仅观察权威状态。
@@ -68,7 +71,7 @@ float AArenaGameState::GetBossOutroRemainingTime() const
 	return FMath::Max(BossOutroTiming.EndServerTimeSeconds - GetServerWorldTimeSeconds(), 0.0f);
 }
 
-// 服务器更新游戏阶段，并让监听服务器本地 UI 与远端 OnRep 获得一致通知。
+// 服务器更新游戏阶段，同时让统计观察旧/新阶段并驱动监听服务器和远端表现。
 void AArenaGameState::SetGamePhase(EArenaGamePhase NewPhase)
 {
 	if (!HasAuthority() || GamePhase == NewPhase)
@@ -78,6 +81,10 @@ void AArenaGameState::SetGamePhase(EArenaGamePhase NewPhase)
 
 	const EArenaGamePhase OldPhase = GamePhase;
 	GamePhase = NewPhase;
+	if (BalanceTelemetryComponent)
+	{
+		BalanceTelemetryComponent->HandleGamePhaseChanged(OldPhase, GamePhase);
+	}
 	OnGamePhaseChanged.Broadcast(OldPhase, GamePhase);
 	ForceNetUpdate();
 }
