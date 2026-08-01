@@ -26,6 +26,7 @@
 #include "UI/ArenaUpgradeSelectionWidget.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogArenaBossPresentation, Log, All);
+DEFINE_LOG_CATEGORY_STATIC(LogArenaPlayerControllerInput, Log, All);
 
 namespace
 {
@@ -118,6 +119,36 @@ void AArenaPlayerController::BeginPlay()
 	BindUpgradeState();
 	BindInventoryState();
 	BindGameStateHUD();
+
+	if (IsLocalController() && GetWorld())
+	{
+		// OpenLevel 可能在菜单按钮的 Slate 回调内同步完成；下一 Tick 再恢复游戏焦点可避开回调收尾覆盖。
+		GetWorld()->GetTimerManager().SetTimerForNextTick(
+			this,
+			&AArenaPlayerController::RestoreGameplayInputAfterTravel);
+	}
+}
+
+// 在旅行后的首个 Tick 按当前本地视角重新应用 GameOnly；若已有高优先级 UI，则保留对应输入模式。
+void AArenaPlayerController::RestoreGameplayInputAfterTravel()
+{
+	if (!IsLocalController()
+		|| bUpgradeInputMode
+		|| bInventoryInputMode
+		|| bBossIntroInputMode
+		|| bBossOutroInputMode
+		|| bVictoryInputMode)
+	{
+		return;
+	}
+
+	SetThirdPersonInputMode(bThirdPersonInputMode, false);
+	UE_LOG(LogArenaPlayerControllerInput, Log,
+		TEXT("Controller %s restored gameplay viewport focus after travel. Pawn=%s MoveIgnored=%d LookIgnored=%d."),
+		*GetNameSafe(this),
+		*GetNameSafe(GetPawn()),
+		IsMoveInputIgnored() ? 1 : 0,
+		IsLookInputIgnored() ? 1 : 0);
 }
 
 // PlayerState 在客户端完成复制后重新绑定 GAS HUD、OwnerOnly 升级和背包状态。

@@ -20,6 +20,8 @@
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogArenaPlayerInput, Log, All);
+
 // 构造玩家角色，配置顶视角相机、基础移动参数和默认输入资产。
 AArenaPlayerCharacter::AArenaPlayerCharacter()
 {
@@ -61,6 +63,14 @@ void AArenaPlayerCharacter::BeginPlay()
 	Super::BeginPlay();
 	BindGameStateDelegates();
 	RefreshMovementState();
+}
+
+// 客户端完成关卡旅行、首次接管或重生后重新安装角色输入映射，覆盖 Standalone/Cooked 下更严格的初始化时序。
+void AArenaPlayerCharacter::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+	RebuildDefaultInputMappings();
+	AddDefaultMappingContext();
 }
 
 // 在切换过程中平滑推进视角混合值，到达目标后停止不必要的 Tick。
@@ -474,6 +484,7 @@ void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+	RebuildDefaultInputMappings();
 	AddDefaultMappingContext();
 
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent);
@@ -536,6 +547,8 @@ void AArenaPlayerCharacter::AddDefaultMappingContext() const
 		return;
 	}
 
+	// LocalPlayer 子系统会跨关卡保留；先移除同一 Context，再添加可同时避免旅行丢失和重生重复叠加。
+	InputSubsystem->RemoveMappingContext(DefaultMappingContext);
 	InputSubsystem->AddMappingContext(DefaultMappingContext, InputMappingPriority);
 }
 
@@ -580,22 +593,22 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	InventoryInteractAction = CreateDefaultSubobject<UInputAction>(TEXT("InteractInventoryPickup"));
 	InventoryInteractAction->ValueType = EInputActionValueType::Boolean;
 
-	UInputModifierSwizzleAxis* MoveSwizzle = CreateDefaultSubobject<UInputModifierSwizzleAxis>(TEXT("MoveSwizzle"));
-	MoveSwizzle->Order = EInputAxisSwizzle::YXZ;
+	MoveSwizzleModifier = CreateDefaultSubobject<UInputModifierSwizzleAxis>(TEXT("MoveSwizzle"));
+	MoveSwizzleModifier->Order = EInputAxisSwizzle::YXZ;
 
-	UInputModifierNegate* MoveNegate = CreateDefaultSubobject<UInputModifierNegate>(TEXT("MoveNegate"));
+	MoveNegateModifier = CreateDefaultSubobject<UInputModifierNegate>(TEXT("MoveNegate"));
 
 	FEnhancedActionKeyMapping& MoveForwardMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::W);
-	MoveForwardMapping.Modifiers.Add(MoveSwizzle);
+	MoveForwardMapping.Modifiers.Add(MoveSwizzleModifier);
 
 	FEnhancedActionKeyMapping& MoveBackwardMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::S);
-	MoveBackwardMapping.Modifiers.Add(MoveNegate);
-	MoveBackwardMapping.Modifiers.Add(MoveSwizzle);
+	MoveBackwardMapping.Modifiers.Add(MoveNegateModifier);
+	MoveBackwardMapping.Modifiers.Add(MoveSwizzleModifier);
 
 	FEnhancedActionKeyMapping& MoveRightMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::D);
 
 	FEnhancedActionKeyMapping& MoveLeftMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::A);
-	MoveLeftMapping.Modifiers.Add(MoveNegate);
+	MoveLeftMapping.Modifiers.Add(MoveNegateModifier);
 
 	DefaultMappingContext->MapKey(BasicAttackAction, EKeys::LeftMouseButton);
 	DefaultMappingContext->MapKey(FireballAction, EKeys::Q);
@@ -610,6 +623,61 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	DefaultMappingContext->MapKey(BossIntroSkipAction, EKeys::SpaceBar);
 	DefaultMappingContext->MapKey(InventoryToggleAction, EKeys::Tab);
 	DefaultMappingContext->MapKey(InventoryInteractAction, EKeys::G);
+}
+
+// 在 Blueprint 属性加载和 Cook 反序列化之后重建全部原生键位，确保正式启动流程不依赖构造期数组副作用。
+void AArenaPlayerCharacter::RebuildDefaultInputMappings()
+{
+	if (!DefaultMappingContext
+		|| !MoveAction
+		|| !SprintAction
+		|| !BasicAttackAction
+		|| !FireballAction
+		|| !DashAction
+		|| !ShieldAction
+		|| !UltimateAction
+		|| !ViewToggleAction
+		|| !LookAction
+		|| !BossIntroSkipAction
+		|| !InventoryToggleAction
+		|| !InventoryInteractAction
+		|| !MoveSwizzleModifier
+		|| !MoveNegateModifier)
+	{
+		UE_LOG(LogArenaPlayerInput, Error, TEXT("Player %s cannot rebuild native input mappings because one or more input subobjects are missing."), *GetNameSafe(this));
+		return;
+	}
+
+	DefaultMappingContext->UnmapAll();
+	MoveSwizzleModifier->Order = EInputAxisSwizzle::YXZ;
+
+	FEnhancedActionKeyMapping& MoveForwardMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::W);
+	MoveForwardMapping.Modifiers.Add(MoveSwizzleModifier);
+
+	FEnhancedActionKeyMapping& MoveBackwardMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::S);
+	MoveBackwardMapping.Modifiers.Add(MoveNegateModifier);
+	MoveBackwardMapping.Modifiers.Add(MoveSwizzleModifier);
+
+	DefaultMappingContext->MapKey(MoveAction, EKeys::D);
+	FEnhancedActionKeyMapping& MoveLeftMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::A);
+	MoveLeftMapping.Modifiers.Add(MoveNegateModifier);
+
+	DefaultMappingContext->MapKey(BasicAttackAction, EKeys::LeftMouseButton);
+	DefaultMappingContext->MapKey(FireballAction, EKeys::Q);
+	DefaultMappingContext->MapKey(DashAction, EKeys::E);
+	DefaultMappingContext->MapKey(ShieldAction, EKeys::F);
+	DefaultMappingContext->MapKey(UltimateAction, EKeys::R);
+	DefaultMappingContext->MapKey(ViewToggleAction, EKeys::Zero);
+	DefaultMappingContext->MapKey(ViewToggleAction, EKeys::NumPadZero);
+	DefaultMappingContext->MapKey(LookAction, EKeys::Mouse2D);
+	DefaultMappingContext->MapKey(SprintAction, EKeys::LeftShift);
+	DefaultMappingContext->MapKey(SprintAction, EKeys::RightShift);
+	DefaultMappingContext->MapKey(BossIntroSkipAction, EKeys::SpaceBar);
+	DefaultMappingContext->MapKey(InventoryToggleAction, EKeys::Tab);
+	DefaultMappingContext->MapKey(InventoryInteractAction, EKeys::G);
+
+	UE_LOG(LogArenaPlayerInput, Log, TEXT("Player %s rebuilt %d native Enhanced Input mappings."),
+		*GetNameSafe(this), DefaultMappingContext->GetMappings().Num());
 }
 
 // 将本地技能输入转换为 GameplayTag，控制阶段或背包锁定时拒绝，其余资格由 ASC/GAS 决定。

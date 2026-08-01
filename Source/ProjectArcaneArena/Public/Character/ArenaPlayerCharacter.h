@@ -13,6 +13,8 @@ class AArenaGameState;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
+class UInputModifierNegate;
+class UInputModifierSwizzleAxis;
 class USpringArmComponent;
 class UAbilitySystemComponent;
 class UArenaAbilitySystemComponent;
@@ -42,6 +44,8 @@ public:
 protected:
 	// 绑定复制 GameState 阶段，使 Intro、Outro 与 Victory 在服务器和所属客户端共用同一移动门控。
 	virtual void BeginPlay() override;
+	// 客户端在关卡旅行、首次接管或重生后重新安装 Enhanced Input 映射，避免持久 LocalPlayer 丢失角色级 Context。
+	virtual void PawnClientRestart() override;
 	// 仅在视角过渡期间更新相机插值，第三人称稳定后由 Look 输入直接刷新。
 	virtual void Tick(float DeltaSeconds) override;
 	// 服务端 Possess 后初始化 AvatarActor，并授予默认属性和启动技能。
@@ -100,6 +104,8 @@ private:
 	void SetSprinting(bool bNewSprinting);
 	// 将默认输入映射加入本地玩家的 Enhanced Input 子系统。
 	void AddDefaultMappingContext() const;
+	// 在对象序列化完成后重建原生键位，避免 Blueprint 或 Cook 覆盖构造期 Mapping 数组。
+	void RebuildDefaultInputMappings();
 	// 创建模板阶段使用的 C++ 默认输入资产，后续可迁移到项目资产。
 	void CreateDefaultInputMappings();
 	// 把本地输入转换成 GAS InputTag，由 ASC 决定是否激活 Ability。
@@ -189,6 +195,12 @@ private:
 
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> InventoryInteractAction;
+
+	UPROPERTY(VisibleDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputModifierSwizzleAxis> MoveSwizzleModifier;
+
+	UPROPERTY(VisibleDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputModifierNegate> MoveNegateModifier;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	int32 InputMappingPriority = 0;

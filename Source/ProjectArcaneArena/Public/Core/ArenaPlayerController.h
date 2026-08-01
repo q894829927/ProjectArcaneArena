@@ -106,6 +106,9 @@ protected:
 	void K2_OnBossOutroEnded(bool bWasInterrupted);
 
 private:
+	// 正式关卡旅行完成后的首个 Tick 重新把焦点交还游戏视口，避免菜单 Slate 回调覆盖 GameOnly 输入模式。
+	void RestoreGameplayInputAfterTravel();
+
 	// 创建本地玩家 HUD，Dedicated Server 和非本地 Controller 不创建 UI。
 	void CreatePlayerHUD();
 

@@ -11,6 +11,15 @@ Status meanings:
 
 ## Core Framework
 
+### Main Menu Startup Flow - Implemented
+
+* `AArenaMainMenuGameMode`, `AArenaMainMenuPlayerController`, and `UArenaMainMenuWidget` provide an isolated title-screen flow that does not initialize the combat PlayerController, HUD, GAS, waves, inventory, upgrades, or a default Pawn.
+* The View exposes only Start/Quit intent delegates. The local Controller owns viewport creation, visible mouse and `UIOnly` focus, duplicate-request suppression, travel to `/Game/TopDown/Lvl_TopDown`, and the shared engine quit path used by Standalone and PIE.
+* `AArenaPlayerCharacter::PawnClientRestart()` idempotently rebuilds and reinstalls all native Enhanced Input mappings after cooked map travel, initial local possession, or respawn. Runtime reconstruction occurs after Blueprint/Cook serialization, and the same Context is removed before re-adding so the persistent `LocalPlayer` subsystem cannot retain an empty, missing, or duplicated gameplay mapping when leaving the menu. `AArenaPlayerController` reapplies the current GameOnly view input mode on the next Tick after travel so the originating Slate button callback cannot reclaim gameplay focus.
+* The native responsive fallback presents `PROJECT ARCANE ARENA`, `开始游戏`, and `退出游戏` with distinct normal, hover, pressed, and disabled states. A child `WBP_MainMenu` can replace the visual tree by supplying optional `StartGameButton` and `QuitGameButton` controls without moving navigation logic into Blueprint.
+* `Content/Python/setup_main_menu.py` idempotently creates and verifies `WBP_MainMenu`, the menu Controller/GameMode Blueprints, and an empty `Lvl_MainMenu` under `/Game/UI/MainMenu`. It updates only `GameDefaultMap` after the level and its GameMode Override save successfully, preserving `EditorStartupMap` and `GlobalDefaultGameMode`.
+* The narrow `ProjectArcaneArenaEditor` target compiles successfully, the four assets pass repeated script validation without `_1/_2` duplicates, and a runtime smoke test confirms startup loads `Lvl_MainMenu` with `BP_ArenaMainMenuGameMode_C` without PlayerStart, Pawn, HUD, or combat-wave initialization. Captured 1280x720 and 1280x800 runtime frames verify the fallback title and buttons remain centered and unclipped; pointer/keyboard interaction and PIE/Standalone quit behavior remain pending manual verification.
+
 ### Gameplay Framework — Implemented
 
 * `AArenaGameMode`, `AArenaGameState`, `AArenaPlayerController`, and `AArenaPlayerState` provide the project gameplay framework.

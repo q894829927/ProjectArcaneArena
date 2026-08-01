@@ -1,5 +1,21 @@
 # Project Arcane Arena 待验证清单
 
+## 主菜单启动流程
+
+当前实现状态：窄范围 Editor 编译、四个资产的幂等生成与自检、`GameDefaultMap` 配置和运行启动冒烟均已通过。日志确认使用 `BP_ArenaMainMenuGameMode_C` 加载 `Lvl_MainMenu`，且不再查找出生点、生成 Pawn/HUD 或启动战斗波次；1280x720 与 1280x800 的含 UI 截图确认标题和按钮居中且未裁切。以下仅保留实际输入、关卡旅行、退出和可调整窗口验收。
+
+### 测试方法
+
+1. 使用可调整大小窗口启动 Standalone，实际操作鼠标与键盘焦点，确认第一次点击不被视口吞掉，按钮 Hover/Pressed 状态持续正常。
+2. 点击 `开始游戏`，确认只打开一次 `/Game/TopDown/Lvl_TopDown`，正式 HUD、玩家、GAS 和第一波按原流程初始化，URL 不包含 `?listen`；快速双击不得重复旅行。
+3. 进入正式关卡后检查日志包含 `rebuilt 17 native Enhanced Input mappings` 和 `restored gameplay viewport focus after travel`，随后验证 `WASD`、`LMB`、`Q/E/F/R`、`Tab`、`G`、`Shift` 与 `0` 均立即响应；不得要求先点击背景或重复切换窗口。
+4. 在 PIE 点击 `退出游戏` 确认结束 PIE；在 Standalone 点击后确认关闭游戏窗口。快速双击退出不得产生空指针或重复委托日志。
+
+### 通过标准
+
+- 开始按钮可靠进入正式战斗关卡，退出按钮在 PIE 与 Standalone 都使用正确平台行为。
+- 可调整窗口下文字与按钮不重叠、不裁切，鼠标与键盘焦点可持续操作。
+
 本文档只记录当前尚未完成验证的事项，功能事实仍以 `IMPLEMENTED_FEATURES.md` 为准。
 
 ## 维护规则
