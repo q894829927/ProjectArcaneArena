@@ -29,6 +29,12 @@ Status meanings:
 * Ordinary waves use `1.0x / 1.0x / 1.25x / 1.5x` enemy-count multipliers for one through four participants. Boss MaxHealth uses the existing GAS scaling path at `1.0x / 1.75x / 2.25x / 2.75x`.
 * `setup_main_menu.py` configures the Lobby GameState/PlayerState, preserves the empty menu map, and reports whether `Lvl_TopDown` exposes at least four manually placed PlayerStarts. Packaged multi-instance and two-machine verification remains pending.
 
+### Local Performance And Network Stats - Implemented
+
+* `AArenaPlayerController` samples local FPS from platform real time and reads the owning `APlayerState` engine Ping, then refreshes presentation at a configurable low-frequency interval without replication or gameplay authority changes.
+* `UArenaPlayerHUDWidget` displays `FPS` and `Ping` in the upper-left through an optional `PerformanceStatsText`; existing HUD Blueprints receive a native Canvas fallback automatically.
+* The overlay is enabled by default and `P` toggles it locally in both top-down and third-person views. Host latency displays the engine-local zero-millisecond result.
+
 ### Gameplay Framework — Implemented
 
 * `AArenaGameMode`, `AArenaGameState`, `AArenaPlayerController`, and `AArenaPlayerState` provide the project gameplay framework.

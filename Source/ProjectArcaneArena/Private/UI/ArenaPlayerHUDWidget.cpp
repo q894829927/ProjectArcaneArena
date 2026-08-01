@@ -142,6 +142,32 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 	Super::NativeConstruct();
 
 	UCanvasPanel* RootCanvas = WidgetTree ? Cast<UCanvasPanel>(GetRootWidget()) : nullptr;
+	if (!PerformanceStatsText && WidgetTree && RootCanvas)
+	{
+		PerformanceStatsText = WidgetTree->ConstructWidget<UTextBlock>(
+			UTextBlock::StaticClass(),
+			TEXT("PerformanceStatsText_Runtime"));
+		PerformanceStatsText->SetText(NSLOCTEXT(
+			"ArenaPlayerHUDWidget",
+			"PerformanceStatsPending",
+			"FPS: --\nPing: -- ms"));
+		PerformanceStatsText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
+		PerformanceStatsText->SetVisibility(ESlateVisibility::HitTestInvisible);
+
+		FSlateFontInfo StatsFont = PerformanceStatsText->GetFont();
+		StatsFont.Size = 16;
+		StatsFont.OutlineSettings.OutlineSize = 1;
+		PerformanceStatsText->SetFont(StatsFont);
+
+		if (UCanvasPanelSlot* StatsSlot = RootCanvas->AddChildToCanvas(PerformanceStatsText))
+		{
+			StatsSlot->SetAnchors(FAnchors(0.0f, 0.0f));
+			StatsSlot->SetAlignment(FVector2D(0.0f, 0.0f));
+			StatsSlot->SetPosition(FVector2D(18.0f, 18.0f));
+			StatsSlot->SetAutoSize(true);
+		}
+	}
+
 	if (!AimReticleText && WidgetTree && RootCanvas)
 	{
 		AimReticleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("AimReticleText_Runtime"));
@@ -547,6 +573,30 @@ void UArenaPlayerHUDWidget::NativeConstruct()
 	SetBossOutroPresentation(false, 0.0f, 0.0f);
 	SetVictoryPresentation(false, false, 0, 0);
 	ClearDamageFeedbackPresentation();
+}
+
+// 切换本地性能统计的可见性，Collapsed 状态不会占用 HUD 布局或拦截输入。
+void UArenaPlayerHUDWidget::SetPerformanceStatsVisible(bool bVisible)
+{
+	if (PerformanceStatsText)
+	{
+		PerformanceStatsText->SetVisibility(
+			bVisible ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
+	}
+}
+
+// 将本地真实帧率和复制 PlayerState 的往返延迟格式化为稳定的整数显示。
+void UArenaPlayerHUDWidget::UpdatePerformanceStats(float FramesPerSecond, float PingMilliseconds)
+{
+	if (!PerformanceStatsText)
+	{
+		return;
+	}
+
+	PerformanceStatsText->SetText(FText::Format(
+		NSLOCTEXT("ArenaPlayerHUDWidget", "PerformanceStatsFormat", "FPS: {0}\nPing: {1} ms"),
+		FText::AsNumber(FMath::Max(FMath::RoundToInt(FramesPerSecond), 0)),
+		FText::AsNumber(FMath::Max(FMath::RoundToInt(PingMilliseconds), 0))));
 }
 
 // 切换准星显示；HitTestInvisible 保证它不会拦截任何战斗输入。

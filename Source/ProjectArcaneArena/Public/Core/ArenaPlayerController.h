@@ -83,6 +83,10 @@ public:
 protected:
 	// 初始化本地输入模式，确保第一次鼠标点击不会被视口捕获吞掉。
 	virtual void BeginPlay() override;
+	// 在 Controller 输入层绑定 P，使两种视角共用同一个本地统计开关。
+	virtual void SetupInputComponent() override;
+	// 使用平台真实时间汇总本地帧率，并按低频间隔刷新 HUD 与网络 Ping。
+	virtual void PlayerTick(float DeltaTime) override;
 	virtual void OnRep_PlayerState() override;
 
 	// Pawn 切换后重试 HUD 绑定，兼容未来重生流程。
@@ -106,6 +110,11 @@ protected:
 	void K2_OnBossOutroEnded(bool bWasInterrupted);
 
 private:
+	// 切换左上角本地帧率和网络延迟显示，不复制该偏好或统计值。
+	void TogglePerformanceStats();
+	// 清空当前采样窗口，避免隐藏期间或关卡切换时间污染下一次 FPS 平均值。
+	void ResetPerformanceStatsSample();
+
 	// 正式关卡旅行完成后的首个 Tick 重新把焦点交还游戏视口，避免菜单 Slate 回调覆盖 GameOnly 输入模式。
 	void RestoreGameplayInputAfterTravel();
 
@@ -294,6 +303,12 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|UI", meta = (AllowPrivateAccess = "true", ClampMin = "0.01"))
 	float PlayerHUDBindingRetryInterval = 0.1f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|UI|Performance", meta = (AllowPrivateAccess = "true"))
+	bool bPerformanceStatsVisibleByDefault = true;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|UI|Performance", meta = (AllowPrivateAccess = "true", ClampMin = "0.1"))
+	float PerformanceStatsUpdateInterval = 0.25f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Intro")
 	FName BossIntroCameraActorTag = TEXT("BossIntroCamera");
 
@@ -378,7 +393,10 @@ private:
 	FGuid SelectedInventoryStackId;
 	int32 InventoryPageIndex = 0;
 	double InventoryTabPressStartTime = 0.0;
+	double PerformanceStatsSampleStartTime = 0.0;
+	int32 PerformanceStatsFrameCount = 0;
 	bool bThirdPersonInputMode = false;
+	bool bPerformanceStatsVisible = true;
 	bool bUpgradeInputMode = false;
 	bool bInventoryInputMode = false;
 	bool bInventoryTabPressActive = false;

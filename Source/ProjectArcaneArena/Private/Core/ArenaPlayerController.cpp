@@ -10,13 +10,16 @@
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaUpgradeDataAsset.h"
 #include "Components/Button.h"
+#include "Components/InputComponent.h"
 #include "Components/Widget.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PawnMovementComponent.h"
+#include "GameFramework/PlayerState.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "HAL/PlatformTime.h"
+#include "InputCoreTypes.h"
 #include "Item/ArenaInventoryComponent.h"
 #include "Item/ArenaInventoryPickupActor.h"
 #include "Item/ArenaItemDataAsset.h"
@@ -111,6 +114,8 @@ void AArenaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
+	bPerformanceStatsVisible = bPerformanceStatsVisibleByDefault;
+	ResetPerformanceStatsSample();
 	CreatePlayerHUD();
 	CreateUpgradeSelectionWidget();
 	CreateInventoryWidget();
@@ -127,6 +132,71 @@ void AArenaPlayerController::BeginPlay()
 			this,
 			&AArenaPlayerController::RestoreGameplayInputAfterTravel);
 	}
+}
+
+// 在本地 Controller 输入组件上直接绑定 P，避免统计开关依赖 Pawn 或当前相机模式。
+void AArenaPlayerController::SetupInputComponent()
+{
+	Super::SetupInputComponent();
+
+	if (InputComponent)
+	{
+		InputComponent->BindKey(EKeys::P, IE_Pressed, this, &AArenaPlayerController::TogglePerformanceStats);
+	}
+}
+
+// 以平台真实时间计算稳定 FPS，并从 PlayerState 获取引擎维护的毫秒 Ping 后低频刷新 HUD。
+void AArenaPlayerController::PlayerTick(float DeltaTime)
+{
+	Super::PlayerTick(DeltaTime);
+
+	if (!IsLocalController() || !bPerformanceStatsVisible || !PlayerHUDWidget)
+	{
+		return;
+	}
+
+	const double CurrentRealTime = FPlatformTime::Seconds();
+	if (PerformanceStatsSampleStartTime <= 0.0)
+	{
+		PerformanceStatsSampleStartTime = CurrentRealTime;
+		PerformanceStatsFrameCount = 0;
+	}
+
+	++PerformanceStatsFrameCount;
+	const double SampleDuration = CurrentRealTime - PerformanceStatsSampleStartTime;
+	if (SampleDuration < FMath::Max(static_cast<double>(PerformanceStatsUpdateInterval), 0.1))
+	{
+		return;
+	}
+
+	const float FramesPerSecond = static_cast<float>(PerformanceStatsFrameCount / SampleDuration);
+	const APlayerState* LocalPlayerState = GetPlayerState<APlayerState>();
+	const float PingMilliseconds = LocalPlayerState ? LocalPlayerState->GetPingInMilliseconds() : 0.0f;
+	PlayerHUDWidget->UpdatePerformanceStats(FramesPerSecond, PingMilliseconds);
+	ResetPerformanceStatsSample();
+}
+
+// 切换本地统计叠层并重置采样窗口，Host 的本地往返延迟按引擎结果显示为零毫秒。
+void AArenaPlayerController::TogglePerformanceStats()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+
+	bPerformanceStatsVisible = !bPerformanceStatsVisible;
+	ResetPerformanceStatsSample();
+	if (PlayerHUDWidget)
+	{
+		PlayerHUDWidget->SetPerformanceStatsVisible(bPerformanceStatsVisible);
+	}
+}
+
+// 重建真实时间采样窗口，防止暂停、隐藏或旅行间隔被计入下一次 FPS 平均值。
+void AArenaPlayerController::ResetPerformanceStatsSample()
+{
+	PerformanceStatsSampleStartTime = FPlatformTime::Seconds();
+	PerformanceStatsFrameCount = 0;
 }
 
 // 在旅行后的首个 Tick 按当前本地视角重新应用 GameOnly；若已有高优先级 UI，则保留对应输入模式。
@@ -193,6 +263,7 @@ void AArenaPlayerController::CreatePlayerHUD()
 	{
 		PlayerHUDWidget->AddToViewport();
 		PlayerHUDWidget->SetVisibility(ESlateVisibility::HitTestInvisible);
+		PlayerHUDWidget->SetPerformanceStatsVisible(bPerformanceStatsVisible);
 		PlayerHUDWidget->SetThirdPersonReticleVisible(bThirdPersonInputMode);
 		PlayerHUDWidget->OnVictoryRestartRequested.AddUniqueDynamic(
 			this,

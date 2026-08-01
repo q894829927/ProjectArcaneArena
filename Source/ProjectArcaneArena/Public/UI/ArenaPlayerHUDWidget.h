@@ -25,6 +25,14 @@ class PROJECTARCANEARENA_API UArenaPlayerHUDWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	// 切换本地性能统计文本的可见性；该信息只属于拥有者客户端的表现层。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetPerformanceStatsVisible(bool bVisible);
+
+	// 使用 Controller 汇总的真实帧率和 PlayerState Ping 刷新左上角统计文本。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void UpdatePerformanceStats(float FramesPerSecond, float PingMilliseconds);
+
 	// 仅切换第三人称中心准星的表现可见性，不参与目标或伤害判定。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetThirdPersonReticleVisible(bool bVisible);
@@ -162,6 +170,9 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> AimReticleText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> PerformanceStatsText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> PhaseText;
