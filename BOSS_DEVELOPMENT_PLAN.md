@@ -210,7 +210,7 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 使用 Infinite `GE_Boss_Enrage` 修改 AttackPower、MoveSpeed 或其他明确配置的 GAS 属性。
 - 使用 GameplayCue 表现阶段转换和 Enraged 状态，Boss 死亡时自动清理。
 - Boss 生成时由服务器统计参战 `AArenaPlayerState`，快照人数并应用一次初始化缩放 GE。
-- 默认 Health 缩放为一名玩家 `1.0x`、两名玩家 `1.75x`；同时正确更新 MaxHealth 和当前 Health。
+- 默认 Health 缩放为一至四名玩家 `1.0x / 1.75x / 2.25x / 2.75x`；同时正确更新 MaxHealth 和当前 Health。
 - Boss 生成后的玩家死亡或暂时丢失 Pawn 不触发重新缩放，避免当前生命比例跳变。
 
 ### 当前实现进度
@@ -233,19 +233,19 @@ Boss 单技能闭环、ActiveBoss 复制、Boss HUD、最终波 Victory 和死�
 - 已验证 GroundSlam、Charge、FireZone 执行期间跨阶段不会中断当前技能；Phase 3 的 AttackPower `10 -> 13`、MoveSpeed `300 -> 360`，且 Enrage GE、Tag、Cue 各只有一份。
 - 已验证 Boss 死亡和进入 Victory 后不会残留阶段 Tag 或 Enrage 表现。
 - 已验证 Boss 在 Phase 1/2 被单次致死伤害直接击杀时不会短暂进入 Phase 3，也不会触发 Enrage。
-- 已实现阶段三 B 的服务器一次性人数快照：`AArenaWaveManager` 在 Boss 写入 `ActiveBoss` 前统计所有拥有有效 ASC 的 `AArenaPlayerState`；死亡或暂时没有 Pawn 的已连接玩家仍计入，零人回退单人，当前三人及以上按双人倍率封顶。
-- `AArenaBossCharacter::InitializePlayerCountScaling()` 仅允许 Authority 首次执行，保存人数与倍率快照并拒绝重复叠加；默认一人 `1.0x`、两人 `1.75x`，Boss 生成后的死亡、复活、掉线或 Pawn 变化不会重新计算。
+- 已实现阶段三 B 的服务器一次性人数快照：`AArenaWaveManager` 在 Boss 写入 `ActiveBoss` 前统计所有拥有有效 ASC 的 `AArenaPlayerState`；死亡或暂时没有 Pawn 的已连接玩家仍计入，零人回退单人，超过四人按四人倍率封顶。
+- `AArenaBossCharacter::InitializePlayerCountScaling()` 仅允许 Authority 首次执行，保存人数与倍率快照并拒绝重复叠加；默认一至四人分别为 `1.0x / 1.75x / 2.25x / 2.75x`，基础 `1200` 对应 `1200 / 2100 / 2700 / 3300`。Boss 生成后的死亡、复活、掉线或 Pawn 变化不会重新计算。
 - 已新增 Instant `UArenaGameplayEffect_BossPlayerCountScaling` 与 `SetByCaller.Boss.MaxHealthDelta`，以实际初始 MaxHealth 计算 Additive 增量；随后复用 `UArenaGameplayEffect_HealthRestore` 和 Healing Meta Attribute 补满当前 Health，不直接写属性。
 - 人数缩放应用窗口会临时抑制 Health 阶段回调，避免双人 Boss 在 `1200/2100` 中间状态错误进入 Phase 2；缩放和补满完成后继续以新 MaxHealth 计算 `70%/35%` 阈值。
 - 首轮双人 PIE 暴露出 Dedicated 服务器会在客户端 `PostLogin` 前启动 Boss 波；`AArenaGameMode` 已改为由 Waiting 阶段玩家登录启动并重置首波等待计时器，确保同批客户端 PlayerState 注册后再生成 Boss。
-- 已新增幂等 `Content/Python/boss/setup_boss_player_scaling.py`，用于创建 `GE_Boss_PlayerCountScaling` 并配置 Boss 的 `1.0/1.75` 倍率与 Effect Class；脚本不会修改 Behavior Tree、StartupAbilities 或波次数据。
+- 已新增幂等 `Content/Python/boss/setup_boss_player_scaling.py`，用于创建 `GE_Boss_PlayerCountScaling` 并配置 Boss 的四档人数倍率与 Effect Class；脚本不会修改 Behavior Tree、StartupAbilities 或波次数据。
 - 已完成阶段三 B 编译、资产脚本执行和双人核心复测：两名客户端完成 `PostLogin` 后才启动 Boss 波，服务器快照为两人，Host/Client 观察到 Boss 初始 `Health/MaxHealth = 2100/2100`。
 
 尚未完成或尚未验证：
 
 - 尚未验证 Stun、Defeat 和 Actor 直接销毁路径的阶段/Cue 清理；治疗不回退测试延期到 Boss 具备实际回血来源后执行，不阻塞阶段三 A。
 - 尚未完成阶段门控后的 Behavior Tree 单人回归和两人 Listen Server 标签、HUD、属性、Cue、技能解锁一致性。
-- 阶段三 B 尚未验证单人有效 PlayerState 的 `1200/1200` 路径、重复调用防重、死亡/无 Pawn 后的快照冻结，以及双人缩放后的 `1470/735` 阶段阈值。
+- 阶段三 B 的单人和双人核心路径已有记录；Direct IP 三、四人的 `2700/3300` 初始 Health、阶段阈值和双端一致性仍在 `PENDING_VERIFICATION.md` 等待打包多人验收。
 
 ### 阶段边界
 

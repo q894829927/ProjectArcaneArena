@@ -1,5 +1,24 @@
 # Project Arcane Arena 待验证清单
 
+## Direct IP 2-4 人多人闭环
+
+### 测试方法
+
+1. 完整编译并重启编辑器后执行 `Content/Python/setup_main_menu.py`，确认脚本连接 Lobby `GameState/PlayerState`，并在 `Lvl_TopDown` 手动放置至少四个互不重叠且位于可行走地面的 `PlayerStart`。
+2. 使用 2-4 个打包实例验证 Host 容量、`IPv4[:Port]` 加入、成员列表、Client Ready/Cancel、Host Start 和未填满容量时仍可开始；第五名加入四人房间必须被拒绝。
+3. 确认菜单到正式地图只执行一次 Seamless Travel，每名玩家只生成一个 Pawn，全部预期 Pawn/ASC 初始化后首波只启动一次；模拟一个旅行失败者时十秒后按已到达成员继续。
+4. 在 Combat、Upgrade、BossIntro、BossOutro 和 Boss 战中尝试新连接，确认返回“比赛已经开始”且不产生新 PlayerState/Pawn。
+5. 验证普通波一至四人倍率为 `1.0/1.0/1.25/1.5`，Boss 基础 `1200` 对应 `1200/2100/2700/3300`，Boss 条目始终只有一个。
+6. 验证非法 IP、协议前缀、空格、非法端口、无响应地址、房间已满、Host 关闭和 Client 主动离开均回到可操作菜单，并且错误只显示一次。
+7. 完成一次两台真实电脑的局域网、虚拟局域网或公网 UDP `7777` 端口映射流程，验证 Upgrade 全员选择、全员死亡 Defeat、Victory 全员 Ready 和 Host 关闭行为。
+
+### 通过标准
+
+- Lobby 与正式战斗均只有服务器决定成员资格、Ready、旅行、敌人生成、缩放和伤害；客户端不能绕过容量、Ready 或晚加入限制。
+- Host 选择四人容量但两人 Ready 时可以开始；未 Ready Client 会阻止开始，离开后条件会按当前成员立即重算。
+- Seamless Travel 不继承菜单 Widget，不重复首波；Victory 的非 Seamless Restart 仍清空 GAS、升级、背包、Ready 和临时相机状态。
+- Host/Client 主动离开、连接失败和关卡旅行失败不会残留输入锁、无 Pawn 菜单世界或不可再次点击的 Connecting 页面。
+
 ## 主菜单启动流程
 
 当前实现状态：窄范围 Editor 编译、四个资产的幂等生成与自检、`GameDefaultMap` 配置和运行启动冒烟均已通过。日志确认使用 `BP_ArenaMainMenuGameMode_C` 加载 `Lvl_MainMenu`，且不再查找出生点、生成 Pawn/HUD 或启动战斗波次；1280x720 与 1280x800 的含 UI 截图确认标题和按钮居中且未裁切。以下仅保留实际输入、关卡旅行、退出和可调整窗口验收。

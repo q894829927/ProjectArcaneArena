@@ -27,11 +27,30 @@ GAMEPLAY_MAP_PACKAGE = "/Game/TopDown/Lvl_TopDown"
 GAME_DEFAULT_MAP_OBJECT_PATH = f"{MENU_LEVEL_PATH}.Lvl_MainMenu"
 
 
+def _to_class_reference(unreal_type_or_class):
+    """把原生 Python 包装类型统一转换为 TSubclassOf 可稳定设置和比较的 UClass 引用。"""
+    static_class = getattr(unreal_type_or_class, "static_class", None)
+    return static_class() if callable(static_class) else unreal_type_or_class
+
+
+def _class_path(class_reference):
+    """返回类引用的稳定对象路径，验证失败时同时展示实际值和预期值。"""
+    resolved_class = _to_class_reference(class_reference)
+    get_path_name = getattr(resolved_class, "get_path_name", None)
+    return get_path_name() if callable(get_path_name) else str(resolved_class)
+
+
 def _validate_prerequisites():
     """任何写入前验证最新 DLL、编辑器工厂、正式地图和已有目标资产类型。"""
     widget_parent = tools.require_unreal_type("ArenaMainMenuWidget")
     controller_parent = tools.require_unreal_type("ArenaMainMenuPlayerController")
     game_mode_parent = tools.require_unreal_type("ArenaMainMenuGameMode")
+    lobby_player_state_class = _to_class_reference(
+        tools.require_unreal_type("ArenaLobbyPlayerState")
+    )
+    menu_game_state_class = _to_class_reference(
+        tools.require_unreal_type("ArenaMainMenuGameState")
+    )
     widget_blueprint_class = tools.require_unreal_type("WidgetBlueprint")
     tools.require_unreal_type("WidgetBlueprintFactory")
     tools.require_unreal_type("WorldFactory")
@@ -69,6 +88,8 @@ def _validate_prerequisites():
         widget_parent,
         controller_parent,
         game_mode_parent,
+        lobby_player_state_class,
+        menu_game_state_class,
         widget_blueprint_class,
     )
 
@@ -134,8 +155,10 @@ def _configure_blueprint_defaults(
     controller_path,
     game_mode_class,
     game_mode_path,
+    lobby_player_state_class,
+    menu_game_state_class,
 ):
-    """连接菜单 View、Controller、GameMode，并保持菜单关卡不生成任何 Pawn 或 HUD。"""
+    """连接菜单 MVC 类与 Seamless Lobby，并保持菜单关卡不生成任何 Pawn 或 HUD。"""
     controller_defaults = unreal.get_default_object(controller_class)
     controller_defaults.modify()
     controller_defaults.set_editor_property("main_menu_widget_class", widget_class)
@@ -153,6 +176,15 @@ def _configure_blueprint_defaults(
     game_mode_defaults.set_editor_property("default_pawn_class", None)
     game_mode_defaults.set_editor_property("spectator_class", None)
     game_mode_defaults.set_editor_property("hud_class", None)
+    game_mode_defaults.set_editor_property(
+        "player_state_class",
+        lobby_player_state_class,
+    )
+    game_mode_defaults.set_editor_property(
+        "game_state_class",
+        menu_game_state_class,
+    )
+    game_mode_defaults.set_editor_property("use_seamless_travel", True)
 
     tools.save_asset(MENU_WIDGET_PATH)
     tools.save_asset(controller_path)
@@ -285,6 +317,8 @@ def _verify_menu_assets(
     widget_class,
     controller_class,
     game_mode_class,
+    lobby_player_state_class,
+    menu_game_state_class,
 ):
     """重新加载并核对父类、CDO、关卡 Override 和唯一资产集合，防止部分保存被误报成功。"""
     reloaded_widget_class = tools.load_blueprint_class(MENU_WIDGET_PATH)
@@ -320,6 +354,26 @@ def _verify_menu_assets(
             raise RuntimeError(
                 f"Menu GameMode unexpectedly configures {property_name}."
             )
+    actual_player_state_class = game_mode_defaults.get_editor_property(
+        "player_state_class"
+    )
+    if _class_path(actual_player_state_class) != _class_path(lobby_player_state_class):
+        raise RuntimeError(
+            "Menu Lobby PlayerStateClass verification failed: "
+            f"actual={_class_path(actual_player_state_class)}, "
+            f"expected={_class_path(lobby_player_state_class)}."
+        )
+    actual_game_state_class = game_mode_defaults.get_editor_property(
+        "game_state_class"
+    )
+    if _class_path(actual_game_state_class) != _class_path(menu_game_state_class):
+        raise RuntimeError(
+            "Menu Lobby GameStateClass verification failed: "
+            f"actual={_class_path(actual_game_state_class)}, "
+            f"expected={_class_path(menu_game_state_class)}."
+        )
+    if not game_mode_defaults.get_editor_property("use_seamless_travel"):
+        raise RuntimeError("Menu GameMode must enable seamless travel for Lobby players.")
 
     saved_world = tools.require_asset(MENU_LEVEL_PATH, unreal.World)
     saved_game_mode = saved_world.get_world_settings().get_editor_property(
@@ -351,12 +405,44 @@ def _verify_menu_assets(
         )
 
 
+def _validate_gameplay_player_starts():
+    """只读取正式地图并核对四个 PlayerStart；安全位置和 NavMesh 仍由关卡设计者手动确认。"""
+    gameplay_world = tools.require_asset(GAMEPLAY_MAP_PACKAGE, unreal.World)
+    try:
+        persistent_level = gameplay_world.get_editor_property("persistent_level")
+        actors = persistent_level.get_editor_property("actors")
+        player_start_count = sum(
+            1 for actor in actors if actor and isinstance(actor, unreal.PlayerStart)
+        )
+    except Exception as error:
+        unreal.log_warning(
+            "Could not inspect Lvl_TopDown PlayerStarts through this Unreal Python "
+            f"build. Manually verify at least four non-overlapping PlayerStarts on "
+            f"NavMesh. Details: {error}"
+        )
+        return
+
+    if player_start_count < 4:
+        unreal.log_warning(
+            f"Lvl_TopDown currently exposes {player_start_count} PlayerStart actor(s). "
+            "Direct IP four-player play requires at least four non-overlapping "
+            "PlayerStarts placed on navigable ground. The script does not move or "
+            "create gameplay spawn points automatically."
+        )
+    else:
+        unreal.log(
+            f"Lvl_TopDown PlayerStart validation passed: {player_start_count} found."
+        )
+
+
 def main():
     """按预检、创建、连接、保存、切换默认地图的顺序生成主菜单资产。"""
     (
         widget_parent,
         controller_parent,
         game_mode_parent,
+        lobby_player_state_class,
+        menu_game_state_class,
         widget_blueprint_class,
     ) = _validate_prerequisites()
     _ensure_directory()
@@ -384,6 +470,8 @@ def main():
             controller_path,
             game_mode_class,
             game_mode_path,
+            lobby_player_state_class,
+            menu_game_state_class,
         )
         task.enter_progress_frame(1, "Connected menu Blueprint defaults")
 
@@ -400,7 +488,10 @@ def main():
             widget_class,
             controller_class,
             game_mode_class,
+            lobby_player_state_class,
+            menu_game_state_class,
         )
+        _validate_gameplay_player_starts()
         task.enter_progress_frame(1, "Verified menu assets and class defaults")
 
     unreal.log(

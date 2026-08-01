@@ -8,6 +8,7 @@
 #include "Core/ArenaUpgradeDataAsset.h"
 #include "Core/ArenaWaveDataAsset.h"
 #include "Core/ArenaWaveManager.h"
+#include "EngineUtils.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayEffect_UpgradeRecovery.h"
@@ -15,10 +16,13 @@
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
 #include "Item/ArenaPickupDropTableDataAsset.h"
+#include "GameFramework/PlayerStart.h"
+#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogArenaUpgrades, Log, All);
+DEFINE_LOG_CATEGORY_STATIC(LogArenaNetworkFlow, Log, All);
 
-// 构造游戏模式，指定项目默认的 GameState、Controller、PlayerState 和 Pawn。
+// 构造正式游戏模式并保持非 Seamless Restart，确保 Victory 重开不会继承旧 GAS 或背包状态。
 AArenaGameMode::AArenaGameMode()
 {
 	GameStateClass = AArenaGameState::StaticClass();
@@ -26,9 +30,41 @@ AArenaGameMode::AArenaGameMode()
 	PlayerStateClass = AArenaPlayerState::StaticClass();
 	DefaultPawnClass = AArenaPlayerCharacter::StaticClass();
 	WaveManagerClass = AArenaWaveManager::StaticClass();
+	bUseSeamlessTravel = false;
 }
 
-// 服务器生成随机种子、同步测试背包规则、绑定阶段委托并创建 WaveManager。
+// Lobby 参数只在正式地图初始化时读取一次，后续新连接不能通过自己的 URL 改写比赛边界。
+void AArenaGameMode::InitGame(
+	const FString& MapName,
+	const FString& Options,
+	FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+
+	bRejectLateJoins = UGameplayStatics::HasOption(Options, TEXT("ArenaMatchStarted"))
+		&& UGameplayStatics::ParseOption(Options, TEXT("ArenaMatchStarted")) == TEXT("1");
+	const FString ExpectedPlayersOption = UGameplayStatics::ParseOption(Options, TEXT("ExpectedPlayers"));
+	ExpectedInitialPlayerCount = FMath::Clamp(
+		ExpectedPlayersOption.IsNumeric() ? FCString::Atoi(*ExpectedPlayersOption) : 1,
+		1,
+		4);
+}
+
+// 新登录先通过引擎容量和基础校验，再拒绝已经开始的 Direct IP 比赛。
+void AArenaGameMode::PreLogin(
+	const FString& Options,
+	const FString& Address,
+	const FUniqueNetIdRepl& UniqueId,
+	FString& ErrorMessage)
+{
+	Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
+	if (ErrorMessage.IsEmpty() && bRejectLateJoins)
+	{
+		ErrorMessage = TEXT("比赛已经开始，无法中途加入。");
+	}
+}
+
+// 服务器生成随机种子、同步测试背包规则、创建 WaveManager，并启动 Lobby 初始玩家等待闸门。
 void AArenaGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -60,6 +96,16 @@ void AArenaGameMode::BeginPlay()
 	WaveManager->SetUpgradeSystemEnabled(true);
 	WaveManager->OnUpgradePhaseStarted.AddUObject(this, &AArenaGameMode::HandleUpgradePhaseStarted);
 	WaveManager->Initialize(WaveData, PickupDropTable, UpgradeRandomSeed);
+	ValidateMultiplayerPlayerStarts();
+	if (ExpectedInitialPlayerCount > 1)
+	{
+		GetWorldTimerManager().SetTimer(
+			InitialPlayerJoinTimeoutHandle,
+			this,
+			&AArenaGameMode::HandleInitialPlayerJoinTimeout,
+			FMath::Max(InitialPlayerJoinTimeout, 1.0f),
+			false);
+	}
 	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
 	if (WaveData && ArenaGameState && !ArenaGameState->PlayerArray.IsEmpty())
 	{
@@ -71,6 +117,7 @@ void AArenaGameMode::BeginPlay()
 void AArenaGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	GetWorldTimerManager().ClearTimer(InitialWaveTimerHandle);
+	GetWorldTimerManager().ClearTimer(InitialPlayerJoinTimeoutHandle);
 	if (AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>())
 	{
 		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(this, &AArenaGameMode::HandleGamePhaseChanged);
@@ -83,7 +130,7 @@ void AArenaGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	Super::EndPlay(EndPlayReason);
 }
 
-// Super 完成 RestartPlayer/Possess 后 ASC 已初始化，此时测试升级可复用正式服务器授予流程。
+// Super 完成 RestartPlayer/Possess 后 ASC 已初始化，此时授予测试升级并重新检查首波人数闸门。
 void AArenaGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
 {
 	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
@@ -94,6 +141,11 @@ void AArenaGameMode::HandleStartingNewPlayer_Implementation(APlayerController* N
 		ApplyDebugStartingUpgrades(NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr);
 	}
 #endif
+
+	if (HasAuthority())
+	{
+		ScheduleInitialWaveStart();
+	}
 }
 
 // 优先使用蓝图配置的固定测试种子，否则由会话 GUID 派生非零种子；客户端只接收复制值。
@@ -206,21 +258,122 @@ void AArenaGameMode::SetVictoryRestartReady(AArenaPlayerController* RequestingCo
 	TryRestartAfterVictoryReady();
 }
 
-// 每次初始登录都重新开始同一计时器，让同批 PIE/Listen 客户端完成 PlayerState 注册后再快照人数。
+// 达到预期初始化人数后只安排一次首波；后续 PostLogin/HandleStarting 回调不会重置计时器。
 void AArenaGameMode::ScheduleInitialWaveStart()
 {
-	if (!HasAuthority() || !WaveManager || !WaveData)
+	if (!HasAuthority() || !WaveManager || !WaveData || bInitialWaveStartScheduled)
 	{
 		return;
 	}
+	const int32 InitializedPlayerCount = CountInitializedInitialPlayers();
+	if (InitializedPlayerCount < ExpectedInitialPlayerCount)
+	{
+		UE_LOG(
+			LogArenaNetworkFlow,
+			Verbose,
+			TEXT("Waiting for initial players: %d/%d initialized."),
+			InitializedPlayerCount,
+			ExpectedInitialPlayerCount);
+		return;
+	}
 
-	GetWorldTimerManager().ClearTimer(InitialWaveTimerHandle);
+	bInitialWaveStartScheduled = true;
+	GetWorldTimerManager().ClearTimer(InitialPlayerJoinTimeoutHandle);
 	GetWorldTimerManager().SetTimer(
 		InitialWaveTimerHandle,
 		this,
 		&AArenaGameMode::StartNextWave,
 		FMath::Max(InitialWaveDelay, 0.1f),
 		false);
+	UE_LOG(
+		LogArenaNetworkFlow,
+		Log,
+		TEXT("Initial wave scheduled after %d/%d players initialized."),
+		InitializedPlayerCount,
+		ExpectedInitialPlayerCount);
+}
+
+// 超时后缩小预期人数快照并继续；零人时短暂重试，避免无人世界提前生成整波敌人。
+void AArenaGameMode::HandleInitialPlayerJoinTimeout()
+{
+	if (!HasAuthority() || bInitialWaveStartScheduled)
+	{
+		return;
+	}
+
+	const int32 InitializedPlayerCount = CountInitializedInitialPlayers();
+	if (InitializedPlayerCount <= 0)
+	{
+		UE_LOG(LogArenaNetworkFlow, Warning, TEXT("Initial player wait expired with no initialized players; retrying in one second."));
+		GetWorldTimerManager().SetTimer(
+			InitialPlayerJoinTimeoutHandle,
+			this,
+			&AArenaGameMode::HandleInitialPlayerJoinTimeout,
+			1.0f,
+			false);
+		return;
+	}
+
+	if (InitializedPlayerCount < ExpectedInitialPlayerCount)
+	{
+		UE_LOG(
+			LogArenaNetworkFlow,
+			Warning,
+			TEXT("Only %d/%d expected players initialized before timeout; continuing with arrived players."),
+			InitializedPlayerCount,
+			ExpectedInitialPlayerCount);
+		ExpectedInitialPlayerCount = InitializedPlayerCount;
+	}
+	ScheduleInitialWaveStart();
+}
+
+// 只有 Pawn 已存在且 ASC Avatar 指向该 Pawn 时才视为完成 Seamless Travel 的玩法初始化。
+int32 AArenaGameMode::CountInitializedInitialPlayers() const
+{
+	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (!ArenaGameState)
+	{
+		return 0;
+	}
+
+	int32 InitializedPlayerCount = 0;
+	for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+	{
+		const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
+		const APawn* PlayerPawn = ArenaPlayerState ? ArenaPlayerState->GetPawn() : nullptr;
+		const UArenaAbilitySystemComponent* PlayerASC = ArenaPlayerState
+			? ArenaPlayerState->GetArenaAbilitySystemComponent()
+			: nullptr;
+		if (PlayerPawn && PlayerASC && PlayerASC->GetAvatarActor() == PlayerPawn)
+		{
+			++InitializedPlayerCount;
+		}
+	}
+	return InitializedPlayerCount;
+}
+
+// Lobby 人数超过关卡安全出生点时记录错误，位置仍由关卡设计者手动放置和验证 NavMesh。
+void AArenaGameMode::ValidateMultiplayerPlayerStarts() const
+{
+	if (ExpectedInitialPlayerCount <= 1 || !GetWorld())
+	{
+		return;
+	}
+
+	int32 PlayerStartCount = 0;
+	for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It)
+	{
+		++PlayerStartCount;
+	}
+	if (PlayerStartCount < ExpectedInitialPlayerCount)
+	{
+		UE_LOG(
+			LogArenaNetworkFlow,
+			Error,
+			TEXT("Gameplay map has %d PlayerStarts but Lobby expects %d players. Add non-overlapping PlayerStarts on NavMesh."),
+			PlayerStartCount,
+			ExpectedInitialPlayerCount);
+	}
 }
 
 // 为所有 PlayerState 生成独立候选；候选只复制给拥有者，服务器保留同一份用于选择校验。

@@ -238,7 +238,7 @@ bool AArenaWaveManager::ValidateWaveConfiguration(int32 WaveArrayIndex) const
 	return bValidBossEntry;
 }
 
-// 将波次条目展开为待生成类列表，过滤空类和非法数量。
+// 按波次开始时的一至四人快照展开普通敌人数；Boss 波保持配置的唯一 Boss。
 bool AArenaWaveManager::BuildPendingSpawnList(int32 WaveArrayIndex)
 {
 	PendingEnemyClasses.Reset();
@@ -247,17 +247,33 @@ bool AArenaWaveManager::BuildPendingSpawnList(int32 WaveArrayIndex)
 		return false;
 	}
 
-	for (const FArenaWaveEnemyEntry& Entry : WaveData->Waves[WaveArrayIndex].Enemies)
+	const FArenaWaveConfig& WaveConfig = WaveData->Waves[WaveArrayIndex];
+	const int32 ParticipatingPlayerCount = GetBossScalingPlayerCount();
+	const float EnemyCountMultiplier = WaveConfig.bBossWave
+		? 1.0f
+		: GetEnemyCountMultiplier(ParticipatingPlayerCount);
+	for (const FArenaWaveEnemyEntry& Entry : WaveConfig.Enemies)
 	{
 		if (!Entry.EnemyClass || Entry.Count <= 0)
 		{
 			continue;
 		}
-		for (int32 CountIndex = 0; CountIndex < Entry.Count; ++CountIndex)
+		const int32 ExpandedCount = WaveConfig.bBossWave
+			? Entry.Count
+			: FMath::Max(Entry.Count, FMath::RoundToInt(static_cast<float>(Entry.Count) * EnemyCountMultiplier));
+		for (int32 CountIndex = 0; CountIndex < ExpandedCount; ++CountIndex)
 		{
 			PendingEnemyClasses.Add(Entry.EnemyClass);
 		}
 	}
+	UE_LOG(
+		LogArenaWaves,
+		Log,
+		TEXT("Expanded wave %d for %d players with %.2fx enemy-count multiplier (%d enemies)."),
+		WaveArrayIndex + 1,
+		ParticipatingPlayerCount,
+		EnemyCountMultiplier,
+		PendingEnemyClasses.Num());
 	return !PendingEnemyClasses.IsEmpty();
 }
 
@@ -615,6 +631,20 @@ int32 AArenaWaveManager::GetBossScalingPlayerCount() const
 			ArenaGameState->PlayerArray.Num());
 	}
 	return ParticipatingPlayerCount;
+}
+
+// 普通波只为三、四人增加最小数量密度，一至两人继续使用原始 DataAsset 数量。
+float AArenaWaveManager::GetEnemyCountMultiplier(const int32 ParticipatingPlayerCount) const
+{
+	if (ParticipatingPlayerCount >= 4)
+	{
+		return FMath::Max(FourPlayerEnemyCountMultiplier, 1.0f);
+	}
+	if (ParticipatingPlayerCount == 3)
+	{
+		return FMath::Max(ThreePlayerEnemyCountMultiplier, 1.0f);
+	}
+	return 1.0f;
 }
 
 // 死亡广播只处理当前 Alive 集合并记录一次击杀；最终 Boss 正常死亡再转入 Outro。

@@ -93,6 +93,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Scaling", meta = (ClampMin = "0.01"))
 	float TwoPlayerHealthMultiplier = 1.75f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Scaling", meta = (ClampMin = "0.01"))
+	float ThreePlayerHealthMultiplier = 2.25f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Scaling", meta = (ClampMin = "0.01"))
+	float FourPlayerHealthMultiplier = 2.75f;
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Boss|Scaling")
 	TSubclassOf<UGameplayEffect> PlayerCountScalingEffectClass;
 

@@ -219,6 +219,8 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/boss/setup_boss_pla
 
 - `SinglePlayerHealthMultiplier = 1.0`
 - `TwoPlayerHealthMultiplier = 1.75`
+- `ThreePlayerHealthMultiplier = 2.25`
+- `FourPlayerHealthMultiplier = 2.75`
 - `PlayerCountScalingEffectClass = GE_Boss_PlayerCountScaling`
 
 脚本不会修改 `BT_ArenaBoss`、`StartupAbilities` 或波次数据。单人 Boss 默认保持 `1200` MaxHealth；双人 Boss 默认在写入 `ActiveBoss` 前缩放并恢复为 `2100/2100`。

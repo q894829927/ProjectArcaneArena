@@ -51,7 +51,7 @@ def _create_scaling_effect(scaling_effect_class):
 
 
 def _configure_boss_character(scaling_effect_class):
-    """写入单人和双人倍率及缩放 GE，不触碰 Boss 的技能与 AI 配置。"""
+    """写入一至四人倍率及缩放 GE，不触碰 Boss 的技能与 AI 配置。"""
     _, boss_class = tools.require_blueprint(
         BOSS_CHARACTER_PATH,
         tools.require_unreal_type("ArenaBossCharacter"),
@@ -60,6 +60,8 @@ def _configure_boss_character(scaling_effect_class):
     boss_defaults.modify()
     boss_defaults.set_editor_property("single_player_health_multiplier", 1.0)
     boss_defaults.set_editor_property("two_player_health_multiplier", 1.75)
+    boss_defaults.set_editor_property("three_player_health_multiplier", 2.25)
+    boss_defaults.set_editor_property("four_player_health_multiplier", 2.75)
     boss_defaults.set_editor_property(
         "player_count_scaling_effect_class",
         scaling_effect_class,
@@ -85,7 +87,7 @@ def main():
 
     unreal.log(
         "Boss player-count scaling setup completed. "
-        "Single-player uses 1.0x and two-player uses 1.75x MaxHealth. "
+        "One through four players use 1.0x/1.75x/2.25x/2.75x MaxHealth. "
         "Behavior Tree, StartupAbilities, and wave data were not modified."
     )
 

@@ -39,6 +39,10 @@ class PROJECTARCANEARENA_API AArenaGameMode : public AGameModeBase
 public:
 	AArenaGameMode();
 
+	// Lobby Seamless Travel 写入的预期初始人数；服务器等待这些玩家完成 Pawn 与 ASC 初始化。
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Network")
+	int32 ExpectedInitialPlayerCount = 1;
+
 	// 玩家死亡后由服务器检查所有参战玩家，仅在全员死亡时进入失败阶段。
 	void NotifyPlayerDeath();
 
@@ -63,6 +67,16 @@ public:
 #endif
 
 protected:
+	// 读取 Lobby 旅行参数并保存拒绝晚加入与预期初始人数规则。
+	virtual void InitGame(const FString& MapName, const FString& Options, FString& ErrorMessage) override;
+
+	// 正式比赛开始后拒绝新的 Direct IP 登录；Seamless Travel 的既有 Lobby 成员不经过此入口。
+	virtual void PreLogin(
+		const FString& Options,
+		const FString& Address,
+		const FUniqueNetIdRepl& UniqueId,
+		FString& ErrorMessage) override;
+
 	virtual void BeginPlay() override;
 	// 关卡结束或服务器旅行前清理阶段委托与首波计时器，避免旧 GameMode 收到迟到回调。
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -74,8 +88,14 @@ protected:
 	virtual void Logout(AController* Exiting) override;
 
 private:
-	// 从最近一次玩家登录重新安排首波，避免 Dedicated PIE 在 PlayerState 到达前生成 Boss。
+	// 仅在预期玩家全部完成 Pawn/ASC 初始化后安排一次首波，避免 Seamless Travel 重复开波。
 	void ScheduleInitialWaveStart();
+	// 十秒等待结束后按实际已初始化人数继续，旅行失败的玩家不会永久阻塞比赛。
+	void HandleInitialPlayerJoinTimeout();
+	// 统计同时具有 ArenaPlayerState、Pawn、ASC 和正确 Avatar 的已初始化参战玩家。
+	int32 CountInitializedInitialPlayers() const;
+	// 多人正式地图启动时检查 PlayerStart 数量并输出明确配置错误。
+	void ValidateMultiplayerPlayerStarts() const;
 	// 由服务器使用可选固定种子或会话随机种子初始化随机流，并同步实际种子供客户端观察。
 	void InitializeUpgradeRandomStream();
 	// 为所有有效玩家生成本轮独立候选，并在全员无奖励可选时继续检查推进条件。
@@ -122,6 +142,9 @@ private:
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave", meta = (ClampMin = "0.0"))
 	float InitialWaveDelay = 1.0f;
 
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Network", meta = (ClampMin = "1.0"))
+	float InitialPlayerJoinTimeout = 10.0f;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Upgrade")
 	TArray<TObjectPtr<UArenaUpgradeDataAsset>> UpgradePool;
 
@@ -149,7 +172,10 @@ private:
 	TObjectPtr<AArenaWaveManager> WaveManager;
 
 	FTimerHandle InitialWaveTimerHandle;
+	FTimerHandle InitialPlayerJoinTimeoutHandle;
 	int32 UpgradeRandomSeed = 0;
 	FRandomStream UpgradeRandomStream;
 	bool bVictoryRestartTravelStarted = false;
+	bool bRejectLateJoins = false;
+	bool bInitialWaveStartScheduled = false;
 };

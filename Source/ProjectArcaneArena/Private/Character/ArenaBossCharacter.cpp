@@ -193,7 +193,7 @@ bool AArenaBossCharacter::CanAcceptBossSummons(int32 RequestedCount) const
 	return RequestedCount > 0 && GetRemainingSummonCapacity() > 0;
 }
 
-// 服务器冻结生成时人数并经由两个 Instant GE 依次扩大 MaxHealth、补满 Health，任何重复调用都不会叠加。
+// 服务器冻结一至四人生成快照，并经由两个 Instant GE 依次扩大 MaxHealth、补满 Health。
 bool AArenaBossCharacter::InitializePlayerCountScaling(int32 ParticipatingPlayerCount)
 {
 	if (!HasAuthority())
@@ -225,20 +225,33 @@ bool AArenaBossCharacter::InitializePlayerCountScaling(int32 ParticipatingPlayer
 	{
 		UE_LOG(LogArenaBoss, Warning, TEXT("Boss %s found no valid ArenaPlayerState; falling back to single-player scaling."), *GetNameSafe(this));
 	}
-	else if (ParticipatingPlayerCount > 2)
+	else if (ParticipatingPlayerCount > 4)
 	{
 		UE_LOG(
 			LogArenaBoss,
 			Warning,
-			TEXT("Boss %s found %d players; the current two-player demo caps scaling at the two-player multiplier."),
+			TEXT("Boss %s found %d players; Direct IP scaling caps at the four-player multiplier."),
 			*GetNameSafe(this),
 			ParticipatingPlayerCount);
 	}
 
-	ScalingPlayerCountSnapshot = FMath::Clamp(ParticipatingPlayerCount, 1, 2);
-	AppliedHealthMultiplier = ScalingPlayerCountSnapshot >= 2
-		? FMath::Max(TwoPlayerHealthMultiplier, 0.01f)
-		: FMath::Max(SinglePlayerHealthMultiplier, 0.01f);
+	ScalingPlayerCountSnapshot = FMath::Clamp(ParticipatingPlayerCount, 1, 4);
+	switch (ScalingPlayerCountSnapshot)
+	{
+	case 4:
+		AppliedHealthMultiplier = FMath::Max(FourPlayerHealthMultiplier, 0.01f);
+		break;
+	case 3:
+		AppliedHealthMultiplier = FMath::Max(ThreePlayerHealthMultiplier, 0.01f);
+		break;
+	case 2:
+		AppliedHealthMultiplier = FMath::Max(TwoPlayerHealthMultiplier, 0.01f);
+		break;
+	case 1:
+	default:
+		AppliedHealthMultiplier = FMath::Max(SinglePlayerHealthMultiplier, 0.01f);
+		break;
+	}
 	bHasAttemptedPlayerCountScaling = true;
 
 	const float InitialMaxHealth = BossAttributes->GetMaxHealth();

@@ -14,11 +14,20 @@ Status meanings:
 ### Main Menu Startup Flow - Implemented
 
 * `AArenaMainMenuGameMode`, `AArenaMainMenuPlayerController`, and `UArenaMainMenuWidget` provide an isolated title-screen flow that does not initialize the combat PlayerController, HUD, GAS, waves, inventory, upgrades, or a default Pawn.
-* The View exposes only Start/Quit intent delegates. The local Controller owns viewport creation, visible mouse and `UIOnly` focus, duplicate-request suppression, travel to `/Game/TopDown/Lvl_TopDown`, and the shared engine quit path used by Standalone and PIE.
+* The View exposes single-player, multiplayer, Lobby, and quit intent delegates. The local Controller owns viewport creation, visible mouse and `UIOnly` focus, duplicate-request suppression, travel to `/Game/TopDown/Lvl_TopDown`, and the shared engine quit path used by Standalone and PIE.
 * `AArenaPlayerCharacter::PawnClientRestart()` idempotently rebuilds and reinstalls all native Enhanced Input mappings after cooked map travel, initial local possession, or respawn. Runtime reconstruction occurs after Blueprint/Cook serialization, and the same Context is removed before re-adding so the persistent `LocalPlayer` subsystem cannot retain an empty, missing, or duplicated gameplay mapping when leaving the menu. `AArenaPlayerController` reapplies the current GameOnly view input mode on the next Tick after travel so the originating Slate button callback cannot reclaim gameplay focus.
 * The native responsive fallback presents `PROJECT ARCANE ARENA`, `开始游戏`, and `退出游戏` with distinct normal, hover, pressed, and disabled states. A child `WBP_MainMenu` can replace the visual tree by supplying optional `StartGameButton` and `QuitGameButton` controls without moving navigation logic into Blueprint.
 * `Content/Python/setup_main_menu.py` idempotently creates and verifies `WBP_MainMenu`, the menu Controller/GameMode Blueprints, and an empty `Lvl_MainMenu` under `/Game/UI/MainMenu`. It updates only `GameDefaultMap` after the level and its GameMode Override save successfully, preserving `EditorStartupMap` and `GlobalDefaultGameMode`.
 * The narrow `ProjectArcaneArenaEditor` target compiles successfully, the four assets pass repeated script validation without `_1/_2` duplicates, and a runtime smoke test confirms startup loads `Lvl_MainMenu` with `BP_ArenaMainMenuGameMode_C` without PlayerStart, Pawn, HUD, or combat-wave initialization. Captured 1280x720 and 1280x800 runtime frames verify the fallback title and buttons remain centered and unclipped; pointer/keyboard interaction and PIE/Standalone quit behavior remain pending manual verification.
+
+### Direct IP Listen Server Lobby - Implemented
+
+* `UArenaDirectConnectSubsystem` validates `IPv4[:Port]` or `localhost[:Port]`, hosts a `2-4` player Listen Lobby on UDP `7777`, preserves local connection/error state across travel, and handles network/travel failure without OnlineSubsystem or third-party services.
+* `AArenaMainMenuGameState` and `AArenaLobbyPlayerState` replicate capacity, travel lock, Host identity, and per-Client Ready state. Host can start with any current count from two up to capacity only when every non-Host member is Ready.
+* `UArenaMainMenuWidget` has functional native Front, Multiplayer Setup, Lobby, and Connecting pages. `AArenaMainMenuPlayerController` converts UI intent into server-validated Ready/Start RPCs and keeps UI state presentation-only.
+* Menu-to-game travel is seamless and carries `ArenaMatchStarted`, `ExpectedPlayers`, and `MaxPlayers`. `AArenaGameMode` rejects late Direct IP joins, waits for expected Pawn/ASC initialization, and falls back to arrived players after ten seconds without scheduling the first wave twice.
+* Ordinary waves use `1.0x / 1.0x / 1.25x / 1.5x` enemy-count multipliers for one through four participants. Boss MaxHealth uses the existing GAS scaling path at `1.0x / 1.75x / 2.25x / 2.75x`.
+* `setup_main_menu.py` configures the Lobby GameState/PlayerState, preserves the empty menu map, and reports whether `Lvl_TopDown` exposes at least four manually placed PlayerStarts. Packaged multi-instance and two-machine verification remains pending.
 
 ### Gameplay Framework — Implemented
 

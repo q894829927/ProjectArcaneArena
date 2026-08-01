@@ -68,8 +68,10 @@ private:
 	void FinishBossOutro();
 	// 终局、销毁和关卡退出路径统一清理 Outro Timer。
 	void ClearBossOutroTimer();
-	// 统计 Boss 生成瞬间所有拥有有效 ASC 的 ArenaPlayerState，死亡或暂时无 Pawn 的玩家仍计入。
+	// 统计波次开始或 Boss 生成瞬间所有拥有有效 ASC 的 ArenaPlayerState，死亡或暂时无 Pawn 仍计入。
 	int32 GetBossScalingPlayerCount() const;
+	// 把一至四人快照映射为普通波敌人数倍率，Boss 条目始终保持唯一。
+	float GetEnemyCountMultiplier(int32 ParticipatingPlayerCount) const;
 	// 为当前死亡敌人执行一次服务器掉落抽取，失败不会影响波次推进。
 	void TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy);
 	// 按掉落表有效正权重抽取一个 Pickup Class。
@@ -105,6 +107,12 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Boss Outro", meta = (ClampMin = "0.0"))
 	float BossOutroBlendDuration = 0.6f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave|Scaling", meta = (ClampMin = "1.0"))
+	float ThreePlayerEnemyCountMultiplier = 1.25f;
+
+	UPROPERTY(EditDefaultsOnly, Category = "Arena|Wave|Scaling", meta = (ClampMin = "1.0"))
+	float FourPlayerEnemyCountMultiplier = 1.5f;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UArenaWaveDataAsset> WaveData;
