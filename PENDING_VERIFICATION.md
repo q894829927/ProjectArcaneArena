@@ -1,5 +1,19 @@
 # Project Arcane Arena 待验证清单
 
+## 打包版 GameplayCue 与技能特效
+
+### 测试方法
+
+1. 修改 Cook 配置后重新执行一次完整 Windows 打包，并输出到新的空目录，避免旧 `pak/ucas/utoc` 被误当作最新结果。
+2. 在打包版分别释放 BasicAttack、Fireball、Dash、Shield 和 LightningStorm，确认激活、持续和命中特效均存在且生命周期正常。
+3. 进入 Boss 战，确认 GroundSlam、Charge、FireZone、Summon、阶段转换、Enraged 和死亡 Cue 均可见。
+4. 查看打包运行日志，确认 GameplayCue Runtime Object Library 能扫描 `/Game/GAS` 与 `/Game/Boss`，且没有缺失 `GCN_*`、Niagara、材质或音效资源的加载错误。
+
+### 通过标准
+
+- 打包版与 PIE 使用相同的 GameplayCue 表现；每个技能只播放一次权威 Cue，持续 Cue 能正常移除。
+- Cook 产物的 AssetRegistry 或 PackageStore 中包含 `/Game/GAS/GameplayCues` 与 `/Game/Boss/GAS/GameplayCue` 下的 `GCN_*` 资产。
+
 ## 本地帧率与网络延迟显示
 
 ### 测试方法
