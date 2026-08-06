@@ -38,8 +38,8 @@ public:
 	// Returns current dash input direction, or zero when standing still.
 	FVector GetLastMovementInputDirection() const { return LastMovementInputDirection; }
 
-	// 背包打开前在本地和服务器停止奔跑，避免 UI 期间保留加速状态。
-	void StopSprintingForInventory();
+	// 本地交互菜单打开前在本地和服务器停止奔跑，避免 UI 期间保留加速状态。
+	void StopSprintingForLocalMenu();
 
 protected:
 	// 绑定复制 GameState 阶段，使 Intro、Outro 与 Victory 在服务器和所属客户端共用同一移动门控。
@@ -86,8 +86,8 @@ private:
 	void UnbindGameStateDelegates();
 	// 判断当前复制阶段是否锁定玩家控制，供移动、视角、奔跑和技能输入共用。
 	bool IsPlayerControlLockedByPhase() const;
-	// 查询所属本地 Controller 是否打开背包，不把本地 UI 状态复制成玩法状态。
-	bool IsInventoryInputLocked() const;
+	// 检查背包或 ESC 菜单是否正在占用本地玩法输入，不参与网络状态。
+	bool IsLocalUIInputLocked() const;
 	// 根据 Dead、Stunned 与终局演出阶段的优先级统一刷新移动组件状态。
 	void RefreshMovementState();
 	// 阶段切换时清理移动意图，并在控制锁定阶段结束后按 GAS 状态恢复移动。

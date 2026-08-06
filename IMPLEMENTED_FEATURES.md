@@ -226,6 +226,13 @@ Status meanings:
 * If the Blueprint omits phase/wave/enemy-count bindings, the C++ HUD creates a compact top-center fallback so Combat, Upgrade, Victory, wave index, and remaining enemies remain visible during prototype testing.
 * The HUD displays the authority-generated match upgrade seed in the top-right through an optional `RandomSeedText` binding or a native fallback, updating from replicated GameState events without Tick.
 
+### ESC Menu — Implemented
+
+* `Escape` opens a local `UArenaPauseMenuWidget` with Resume, Settings, Return to Main Menu, and Quit Game actions. The native fallback is fully usable without a Widget Blueprint; Settings currently shows an explicit placeholder and owns no configuration state.
+* `AArenaPlayerController` gives the menu highest local UI priority, closes Inventory, temporarily hides Upgrade choices, stops Sprint and pending movement, hides the third-person reticle, and restores the correct Upgrade, Victory, Boss presentation, top-down, or third-person input mode when the menu closes.
+* Multiplayer gameplay is not globally paused. Only the owning player's movement, look, interaction, view switching, Sprint, and active-skill input are locked; menu state is local and is not replicated or represented by a GameplayTag.
+* Return to Main Menu reuses `UArenaDirectConnectSubsystem::LeaveNetworkGame()`: a Listen Host returns connected clients with the existing host flow, while a Client disconnects only itself. Quit Game remains a local platform action through `UKismetSystemLibrary::QuitGame()`.
+
 ### Runtime Inventory — Partial
 
 * `UArenaInventoryComponent` lives on `AArenaPlayerState` and stores server-authored `FArenaInventoryEntry` stacks in an OwnerOnly `FFastArraySerializer`; stable server-generated `StackId` values prevent filtered or compacted UI slots from addressing the wrong stack. Mutations now dirty only newly added, quantity-changed, removed, or reordered entries, and the owning client refreshes after UE 5.6 `PostReplicatedReceive` completes the full Delta batch. The runtime module explicitly links `NetCore`, which owns the public FastArray implementation.

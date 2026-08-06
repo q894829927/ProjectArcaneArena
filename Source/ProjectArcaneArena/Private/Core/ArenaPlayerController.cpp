@@ -6,12 +6,14 @@
 #include "Character/ArenaPlayerCharacter.h"
 #include "Character/ArenaBossCharacter.h"
 #include "Core/ArenaGameMode.h"
+#include "Core/ArenaDirectConnectSubsystem.h"
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaUpgradeDataAsset.h"
 #include "Components/Button.h"
 #include "Components/InputComponent.h"
 #include "Components/Widget.h"
+#include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
@@ -23,8 +25,10 @@
 #include "Item/ArenaInventoryComponent.h"
 #include "Item/ArenaInventoryPickupActor.h"
 #include "Item/ArenaItemDataAsset.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Math/RotationMatrix.h"
 #include "UI/ArenaInventoryWidget.h"
+#include "UI/ArenaPauseMenuWidget.h"
 #include "UI/ArenaPlayerHUDWidget.h"
 #include "UI/ArenaUpgradeSelectionWidget.h"
 
@@ -59,7 +63,7 @@ namespace
 	}
 }
 
-// 构造玩家控制器，设置基础鼠标输入并指定可直接使用的原生升级与背包界面类。
+// 构造玩家控制器，设置基础鼠标输入并指定可直接使用的原生升级、背包与 ESC 菜单类。
 AArenaPlayerController::AArenaPlayerController()
 {
 	bShowMouseCursor = true;
@@ -68,6 +72,7 @@ AArenaPlayerController::AArenaPlayerController()
 	DefaultMouseCursor = EMouseCursor::Default;
 	UpgradeSelectionWidgetClass = UArenaUpgradeSelectionWidget::StaticClass();
 	InventoryWidgetClass = UArenaInventoryWidget::StaticClass();
+	PauseMenuWidgetClass = UArenaPauseMenuWidget::StaticClass();
 }
 
 // 使用本地相机朝向把世界伤害来源转换为屏幕角度，远程玩家不会调用该入口。
@@ -109,7 +114,7 @@ void AArenaPlayerController::ShowLocalDamageFeedback(
 		DamageFeedback.FeedbackType);
 }
 
-// 开始时创建 HUD、升级和背包 View，并绑定本地或 Authority 端需要的复制状态。
+// 开始时创建 HUD、升级、背包和 ESC 菜单 View，并绑定本地或 Authority 端需要的复制状态。
 void AArenaPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
@@ -119,6 +124,7 @@ void AArenaPlayerController::BeginPlay()
 	CreatePlayerHUD();
 	CreateUpgradeSelectionWidget();
 	CreateInventoryWidget();
+	CreatePauseMenuWidget();
 	SetThirdPersonInputMode(false);
 	TryBindPlayerHUD();
 	BindUpgradeState();
@@ -134,7 +140,7 @@ void AArenaPlayerController::BeginPlay()
 	}
 }
 
-// 在本地 Controller 输入组件上直接绑定 P，避免统计开关依赖 Pawn 或当前相机模式。
+// 在本地 Controller 输入组件上绑定 P 与 Escape，避免常驻本地 UI 开关依赖 Pawn 或相机模式。
 void AArenaPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
@@ -142,6 +148,7 @@ void AArenaPlayerController::SetupInputComponent()
 	if (InputComponent)
 	{
 		InputComponent->BindKey(EKeys::P, IE_Pressed, this, &AArenaPlayerController::TogglePerformanceStats);
+		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AArenaPlayerController::TogglePauseMenu);
 	}
 }
 
@@ -176,6 +183,172 @@ void AArenaPlayerController::PlayerTick(float DeltaTime)
 	ResetPerformanceStatsSample();
 }
 
+// 游戏输入下由 Escape 打开菜单；UIOnly 下 Widget 的 Escape 也转回此入口关闭。
+void AArenaPlayerController::TogglePauseMenu()
+{
+	if (!IsLocalController())
+	{
+		return;
+	}
+	SetPauseMenuInputMode(!bPauseMenuInputMode);
+}
+
+// ESC 菜单拥有最高本地 UI 优先级；多人中仅锁当前玩家输入，不暂停服务器世界。
+void AArenaPlayerController::SetPauseMenuInputMode(bool bEnabled)
+{
+	if (!IsLocalController() || bPauseMenuInputMode == bEnabled)
+	{
+		return;
+	}
+
+	if (bEnabled)
+	{
+		if (!PauseMenuWidget)
+		{
+			CreatePauseMenuWidget();
+		}
+		if (!PauseMenuWidget)
+		{
+			return;
+		}
+
+		bPauseMenuInputMode = true;
+		ResetInventoryTabPressState();
+		if (bInventoryInputMode)
+		{
+			SetInventoryInputMode(false);
+		}
+		RefreshUpgradeSelectionUI();
+		RefreshLocalUIInputLocks();
+
+		if (AArenaPlayerCharacter* PlayerCharacter = Cast<AArenaPlayerCharacter>(GetPawn()))
+		{
+			PlayerCharacter->StopSprintingForLocalMenu();
+		}
+		if (APawn* ControlledPawn = GetPawn())
+		{
+			ControlledPawn->ConsumeMovementInputVector();
+			if (UPawnMovementComponent* MovementComponent = ControlledPawn->GetMovementComponent())
+			{
+				MovementComponent->StopMovementImmediately();
+			}
+		}
+
+		FlushPressedKeys();
+		bEnableClickEvents = true;
+		bEnableMouseOverEvents = true;
+		bShowMouseCursor = true;
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetThirdPersonReticleVisible(false);
+		}
+		PauseMenuWidget->ShowPauseMenu();
+
+		FInputModeUIOnly InputMode;
+		if (UWidget* InitialFocusTarget = PauseMenuWidget->GetInitialFocusTarget())
+		{
+			InputMode.SetWidgetToFocus(InitialFocusTarget->TakeWidget());
+		}
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(InputMode);
+		if (UWidget* InitialFocusTarget = PauseMenuWidget->GetInitialFocusTarget())
+		{
+			InitialFocusTarget->SetKeyboardFocus();
+		}
+		return;
+	}
+
+	bPauseMenuInputMode = false;
+	FlushPressedKeys();
+	if (PauseMenuWidget)
+	{
+		PauseMenuWidget->HidePauseMenu();
+	}
+	RefreshLocalUIInputLocks();
+	RestoreInputModeAfterPauseMenu();
+}
+
+// 菜单关闭后按当前复制阶段恢复原先应拥有焦点的 UI，普通战斗则保留鼠标位置返回双视角输入。
+void AArenaPlayerController::RestoreInputModeAfterPauseMenu()
+{
+	if (!IsLocalController() || bPauseMenuInputMode)
+	{
+		return;
+	}
+
+	RefreshUpgradeSelectionUI();
+	if (bUpgradeInputMode)
+	{
+		return;
+	}
+
+	if (bVictoryInputMode)
+	{
+		bEnableClickEvents = true;
+		bEnableMouseOverEvents = true;
+		bShowMouseCursor = true;
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetVisibility(ESlateVisibility::SelfHitTestInvisible);
+			PlayerHUDWidget->SetThirdPersonReticleVisible(false);
+		}
+		FInputModeGameAndUI InputMode;
+		InputMode.SetHideCursorDuringCapture(false);
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		SetInputMode(InputMode);
+		return;
+	}
+
+	if (bBossIntroInputMode || bBossOutroInputMode)
+	{
+		bEnableClickEvents = false;
+		bEnableMouseOverEvents = false;
+		bShowMouseCursor = false;
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetThirdPersonReticleVisible(false);
+		}
+		FInputModeGameOnly InputMode;
+		InputMode.SetConsumeCaptureMouseDown(false);
+		SetInputMode(InputMode);
+		return;
+	}
+
+	bEnableClickEvents = false;
+	bEnableMouseOverEvents = false;
+	SetThirdPersonInputMode(bThirdPersonInputMode, false);
+}
+
+// 继续按钮和 UIOnly Escape 共用幂等关闭路径。
+void AArenaPlayerController::HandlePauseMenuResumeRequested()
+{
+	SetPauseMenuInputMode(false);
+}
+
+// 返回主菜单复用 DirectConnectSubsystem，Listen Host 会让所有客户端一起安全离开。
+void AArenaPlayerController::HandlePauseMenuReturnToMainMenuRequested()
+{
+	SetPauseMenuInputMode(false);
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UArenaDirectConnectSubsystem* DirectConnect =
+			GameInstance->GetSubsystem<UArenaDirectConnectSubsystem>())
+		{
+			DirectConnect->LeaveNetworkGame();
+			return;
+		}
+	}
+
+	// 自定义 GameInstance 未创建项目子系统时仍提供安全本地回退，不让按钮成为无响应状态。
+	ClientTravel(TEXT("/Game/UI/MainMenu/Lvl_MainMenu"), TRAVEL_Absolute);
+}
+
+// 退出请求只结束当前本地进程，Dedicated Server 不创建该菜单也不会调用此入口。
+void AArenaPlayerController::HandlePauseMenuQuitGameRequested()
+{
+	UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
+}
+
 // 切换本地统计叠层并重置采样窗口，Host 的本地往返延迟按引擎结果显示为零毫秒。
 void AArenaPlayerController::TogglePerformanceStats()
 {
@@ -207,7 +380,8 @@ void AArenaPlayerController::RestoreGameplayInputAfterTravel()
 		|| bInventoryInputMode
 		|| bBossIntroInputMode
 		|| bBossOutroInputMode
-		|| bVictoryInputMode)
+		|| bVictoryInputMode
+		|| bPauseMenuInputMode)
 	{
 		return;
 	}
@@ -338,6 +512,33 @@ void AArenaPlayerController::CreateInventoryWidget()
 	InventoryWidget->OnTabReleased.AddUniqueDynamic(
 		this,
 		&AArenaPlayerController::HandleInventoryTabReleasedFromView);
+}
+
+// 创建最高层级 ESC 菜单；原生 Widget 可直接使用，WBP 子类只需替换布局与视觉。
+void AArenaPlayerController::CreatePauseMenuWidget()
+{
+	if (!IsLocalController() || PauseMenuWidget || !PauseMenuWidgetClass)
+	{
+		return;
+	}
+
+	PauseMenuWidget = CreateWidget<UArenaPauseMenuWidget>(this, PauseMenuWidgetClass);
+	if (!PauseMenuWidget)
+	{
+		return;
+	}
+
+	PauseMenuWidget->AddToViewport(100);
+	PauseMenuWidget->HidePauseMenu();
+	PauseMenuWidget->OnResumeRequested.AddUniqueDynamic(
+		this,
+		&AArenaPlayerController::HandlePauseMenuResumeRequested);
+	PauseMenuWidget->OnReturnToMainMenuRequested.AddUniqueDynamic(
+		this,
+		&AArenaPlayerController::HandlePauseMenuReturnToMainMenuRequested);
+	PauseMenuWidget->OnQuitGameRequested.AddUniqueDynamic(
+		this,
+		&AArenaPlayerController::HandlePauseMenuQuitGameRequested);
 }
 
 // 绑定当前 PlayerState 的升级复制委托，并立即用现有快照刷新界面。
@@ -557,7 +758,7 @@ void AArenaPlayerController::RefreshInventoryUI()
 	InventoryWidget->ShowInventoryPage(PageViewData);
 }
 
-// 根据复制阶段、候选和背包遮挡状态决定是否显示升级界面。
+// 根据复制阶段、候选以及背包或 ESC 菜单遮挡状态决定是否显示升级界面。
 void AArenaPlayerController::RefreshUpgradeSelectionUI()
 {
 	if (!IsLocalController())
@@ -575,6 +776,7 @@ void AArenaPlayerController::RefreshUpgradeSelectionUI()
 	const bool bShouldShow = UpgradeSelectionWidget && ArenaPlayerState && ArenaGameState
 		&& ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade
 		&& !bInventoryInputMode
+		&& !bPauseMenuInputMode
 		&& !ArenaPlayerState->HasSelectedUpgrade()
 		&& !ArenaPlayerState->GetUpgradeCandidates().IsEmpty();
 
@@ -717,6 +919,7 @@ bool AArenaPlayerController::TryOpenInventory()
 	const AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
 	if (bBossIntroInputMode
 		|| bBossOutroInputMode
+		|| bPauseMenuInputMode
 		|| !ArenaGameState
 		|| !ArenaGameState->CanViewInventory())
 	{
@@ -765,7 +968,7 @@ void AArenaPlayerController::SetInventoryInputMode(bool bEnabled)
 		RefreshLocalUIInputLocks();
 		if (AArenaPlayerCharacter* PlayerCharacter = Cast<AArenaPlayerCharacter>(GetPawn()))
 		{
-			PlayerCharacter->StopSprintingForInventory();
+			PlayerCharacter->StopSprintingForLocalMenu();
 		}
 		if (APawn* ControlledPawn = GetPawn())
 		{
@@ -814,7 +1017,7 @@ void AArenaPlayerController::SetInventoryInputMode(bool bEnabled)
 	SetThirdPersonInputMode(bThirdPersonInputMode, false);
 }
 
-// 把 Upgrade、Inventory、Boss 演出和 Victory 汇总为唯一输入锁所有者，模式交错时只做一次幂等切换。
+// 把 Upgrade、Inventory、ESC 菜单、Boss 演出和 Victory 汇总为唯一输入锁所有者，模式交错时只做一次幂等切换。
 void AArenaPlayerController::RefreshLocalUIInputLocks(bool bForceRelease)
 {
 	if (!IsLocalController())
@@ -833,11 +1036,13 @@ void AArenaPlayerController::RefreshLocalUIInputLocks(bool bForceRelease)
 		&& (bUpgradePhaseActive
 			|| bUpgradeInputMode
 			|| bInventoryInputMode
+			|| bPauseMenuInputMode
 			|| bBossIntroInputMode
 			|| bBossOutroInputMode
 			|| bVictoryInputMode);
 	const bool bShouldLockLookInput = !bForceRelease
 		&& (bInventoryInputMode
+			|| bPauseMenuInputMode
 			|| bBossIntroInputMode
 			|| bBossOutroInputMode
 			|| bVictoryInputMode);
@@ -1161,9 +1366,21 @@ void AArenaPlayerController::ServerSelectUpgrade_Implementation(FName UpgradeID)
 	}
 }
 
-// Controller 销毁前恢复背包与演出输入，销毁临时镜头并解除全部委托与 Timer。
+// Controller 销毁前恢复菜单、背包与演出输入，销毁临时镜头并解除全部委托与 Timer。
 void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (PauseMenuWidget)
+	{
+		PauseMenuWidget->OnResumeRequested.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandlePauseMenuResumeRequested);
+		PauseMenuWidget->OnReturnToMainMenuRequested.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandlePauseMenuReturnToMainMenuRequested);
+		PauseMenuWidget->OnQuitGameRequested.RemoveDynamic(
+			this,
+			&AArenaPlayerController::HandlePauseMenuQuitGameRequested);
+	}
 	if (UpgradeSelectionWidget)
 	{
 		UpgradeSelectionWidget->OnUpgradeChosen.RemoveDynamic(this, &AArenaPlayerController::HandleUpgradeChosen);
@@ -1220,6 +1437,7 @@ void AArenaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	ReleaseDynamicBossPresentationCamera(DynamicBossOutroCamera, 0.0f);
 	ClearBossOutroSkipHold();
 	SetVictoryInputMode(false);
+	SetPauseMenuInputMode(false);
 	SetInventoryInputMode(false);
 	SetUpgradeInputMode(false);
 	RefreshLocalUIInputLocks(true);
@@ -1241,6 +1459,15 @@ void AArenaPlayerController::SetThirdPersonInputMode(
 	}
 
 	bThirdPersonInputMode = bEnableThirdPerson;
+	if (bPauseMenuInputMode)
+	{
+		bShowMouseCursor = true;
+		if (PlayerHUDWidget)
+		{
+			PlayerHUDWidget->SetThirdPersonReticleVisible(false);
+		}
+		return;
+	}
 	if (bVictoryInputMode)
 	{
 		bShowMouseCursor = true;
@@ -2366,9 +2593,13 @@ void AArenaPlayerController::UnbindGameStateHUD()
 	BoundArenaGameState.Reset();
 }
 
-// 阶段变化时仅在禁止查看的演出阶段关闭背包，其余阶段原地刷新只读/操作权限。
+// 阶段变化时关闭最高优先级 ESC 菜单，并按新阶段刷新背包、升级、演出和 Victory 输入。
 void AArenaPlayerController::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
 {
+	if (bPauseMenuInputMode && OldPhase != NewPhase)
+	{
+		SetPauseMenuInputMode(false);
+	}
 	const AArenaGameState* ArenaGameState = BoundArenaGameState.Get();
 	if (bInventoryInputMode && (!ArenaGameState || !ArenaGameState->CanViewInventory()))
 	{

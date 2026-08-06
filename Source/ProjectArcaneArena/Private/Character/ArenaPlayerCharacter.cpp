@@ -243,11 +243,13 @@ bool AArenaPlayerCharacter::IsPlayerControlLockedByPhase() const
 		|| GamePhase == EArenaGamePhase::Victory;
 }
 
-// 本地背包状态只用于输入门控，不参与复制移动模式或服务器玩法阶段。
-bool AArenaPlayerCharacter::IsInventoryInputLocked() const
+// 本地背包与 ESC 菜单只用于输入门控，不参与复制移动模式或服务器玩法阶段。
+bool AArenaPlayerCharacter::IsLocalUIInputLocked() const
 {
 	const AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller);
-	return IsLocallyControlled() && ArenaPlayerController && ArenaPlayerController->IsInventoryOpen();
+	return IsLocallyControlled()
+		&& ArenaPlayerController
+		&& (ArenaPlayerController->IsInventoryOpen() || ArenaPlayerController->IsPauseMenuOpen());
 }
 
 // Dead、Stunned 或终局演出阶段任一存在时冻结移动；全部解除后才恢复 Walking。
@@ -419,8 +421,8 @@ void AArenaPlayerCharacter::SetSprinting(bool bNewSprinting)
 	RefreshMaxWalkSpeed();
 }
 
-// 打开背包前清除移动方向和奔跑倍率，并通过可靠 RPC 让服务器同步恢复基础 MoveSpeed。
-void AArenaPlayerCharacter::StopSprintingForInventory()
+// 打开本地交互菜单前清除移动方向和奔跑倍率，并通过可靠 RPC 让服务器恢复基础 MoveSpeed。
+void AArenaPlayerCharacter::StopSprintingForLocalMenu()
 {
 	LastMovementInputDirection = FVector::ZeroVector;
 	SetSprinting(false);
@@ -680,14 +682,14 @@ void AArenaPlayerCharacter::RebuildDefaultInputMappings()
 		*GetNameSafe(this), DefaultMappingContext->GetMappings().Num());
 }
 
-// 将本地技能输入转换为 GameplayTag，控制阶段或背包锁定时拒绝，其余资格由 ASC/GAS 决定。
+// 将本地技能输入转换为 GameplayTag，控制阶段或本地菜单锁定时拒绝，其余资格由 ASC/GAS 决定。
 void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
 	// Character 只负责把本地输入转成标签，是否能激活由 ASC/GAS 判断。
 	UArenaAbilitySystemComponent* ArenaASC = Cast<UArenaAbilitySystemComponent>(GetAbilitySystemComponent());
 	if (!ArenaASC
 		|| IsPlayerControlLockedByPhase()
-		|| IsInventoryInputLocked()
+		|| IsLocalUIInputLocked()
 		|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 		|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))
 	{
@@ -697,13 +699,13 @@ void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& Inp
 	ArenaASC->AbilityInputTagPressed(InputTag);
 }
 
-// 处理 WASD 移动，并在阶段或背包未锁定时缓存方向供 Dash 等技能读取。
+// 处理 WASD 移动，并在阶段或本地菜单未锁定时缓存方向供 Dash 等技能读取。
 void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 {
 	const FVector2D MovementVector = Value.Get<FVector2D>();
 	const UAbilitySystemComponent* ArenaASC = GetAbilitySystemComponent();
 
-	if (!Controller || IsPlayerControlLockedByPhase() || IsInventoryInputLocked() || MovementVector.IsNearlyZero()
+	if (!Controller || IsPlayerControlLockedByPhase() || IsLocalUIInputLocked() || MovementVector.IsNearlyZero()
 		|| (ArenaASC && (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 			|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))))
 	{
@@ -733,10 +735,10 @@ void AArenaPlayerCharacter::Input_MoveStopped(const FInputActionValue& Value)
 	LastMovementInputDirection = FVector::ZeroVector;
 }
 
-// 本地先验证阶段、背包和状态并更新速度，再由服务器应用相同的受限奔跑倍率。
+// 本地先验证阶段、菜单和状态并更新速度，再由服务器应用相同的受限奔跑倍率。
 void AArenaPlayerCharacter::Input_SprintStarted(const FInputActionValue& Value)
 {
-	if (IsPlayerControlLockedByPhase() || IsInventoryInputLocked())
+	if (IsPlayerControlLockedByPhase() || IsLocalUIInputLocked())
 	{
 		return;
 	}
@@ -825,7 +827,7 @@ void AArenaPlayerCharacter::Input_InventoryTabReleased()
 // G 始终交给 Controller 按背包权限矩阵判断，最终拾取资格由服务器 RPC 重新验证。
 void AArenaPlayerCharacter::Input_InteractInventoryPickup()
 {
-	if (!IsLocallyControlled() || IsInventoryInputLocked())
+	if (!IsLocallyControlled() || IsLocalUIInputLocked())
 	{
 		return;
 	}
@@ -875,10 +877,10 @@ void AArenaPlayerCharacter::Input_BossIntroSkipStopped()
 	}
 }
 
-// 控制阶段或背包锁定时保持原视角；其余时间切换并同步本地鼠标与准星模式。
+// 控制阶段或本地菜单锁定时保持原视角；其余时间切换并同步本地鼠标与准星模式。
 void AArenaPlayerCharacter::Input_ToggleView()
 {
-	if (!IsLocallyControlled() || !Controller || IsPlayerControlLockedByPhase() || IsInventoryInputLocked())
+	if (!IsLocallyControlled() || !Controller || IsPlayerControlLockedByPhase() || IsLocalUIInputLocked())
 	{
 		return;
 	}
@@ -899,10 +901,10 @@ void AArenaPlayerCharacter::Input_ToggleView()
 	UpdateCameraTransform();
 }
 
-// 第三人称且阶段和背包均未锁定时把鼠标增量转换为受限 ControlRotation。
+// 第三人称且阶段和本地菜单均未锁定时把鼠标增量转换为受限 ControlRotation。
 void AArenaPlayerCharacter::Input_Look(const FInputActionValue& Value)
 {
-	if (!bThirdPersonView || !Controller || IsPlayerControlLockedByPhase() || IsInventoryInputLocked())
+	if (!bThirdPersonView || !Controller || IsPlayerControlLockedByPhase() || IsLocalUIInputLocked())
 	{
 		return;
 	}

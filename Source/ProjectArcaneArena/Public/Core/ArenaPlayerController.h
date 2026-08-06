@@ -10,6 +10,7 @@
 
 class UArenaInventoryComponent;
 class UArenaInventoryWidget;
+class UArenaPauseMenuWidget;
 class UArenaPlayerHUDWidget;
 class UArenaUpgradeSelectionWidget;
 class UAbilitySystemComponent;
@@ -44,6 +45,9 @@ public:
 
 	// 返回本地背包是否正在占用输入，供 Character 阻止移动、观察和主动技能输入。
 	bool IsInventoryOpen() const { return bInventoryInputMode; }
+
+	// 返回本地 ESC 菜单是否正在占用输入；该状态不复制，也不会暂停多人服务器。
+	bool IsPauseMenuOpen() const { return bPauseMenuInputMode; }
 
 	// 本地 Space 输入只提交按住状态，服务器独立计时并验证 BossIntro 跳过资格。
 	void SetBossIntroSkipHeld(bool bHeld);
@@ -83,7 +87,7 @@ public:
 protected:
 	// 初始化本地输入模式，确保第一次鼠标点击不会被视口捕获吞掉。
 	virtual void BeginPlay() override;
-	// 在 Controller 输入层绑定 P，使两种视角共用同一个本地统计开关。
+	// 在 Controller 输入层绑定 P 和 Escape，使统计与 ESC 菜单不依赖当前 Pawn 或视角。
 	virtual void SetupInputComponent() override;
 	// 使用平台真实时间汇总本地帧率，并按低频间隔刷新 HUD 与网络 Ping。
 	virtual void PlayerTick(float DeltaTime) override;
@@ -110,6 +114,15 @@ protected:
 	void K2_OnBossOutroEnded(bool bWasInterrupted);
 
 private:
+	// Escape 在游戏输入模式下切换本地菜单；UIOnly 下由 Widget 把 Escape 转回同一入口。
+	void TogglePauseMenu();
+	// 创建无需蓝图即可使用的 ESC 菜单，并绑定继续、返回和退出意图。
+	void CreatePauseMenuWidget();
+	// 切换最高优先级 UIOnly 输入模式，并协调背包、升级、Victory 和双视角状态。
+	void SetPauseMenuInputMode(bool bEnabled);
+	// 关闭 ESC 菜单后按当前阶段恢复 Upgrade、Victory、Boss 演出或游戏视角输入。
+	void RestoreInputModeAfterPauseMenu();
+
 	// 切换左上角本地帧率和网络延迟显示，不复制该偏好或统计值。
 	void TogglePerformanceStats();
 	// 清空当前采样窗口，避免隐藏期间或关卡切换时间污染下一次 FPS 平均值。
@@ -226,6 +239,15 @@ private:
 	void HandleVictoryRestartReadyChanged(bool bIsReady);
 	UFUNCTION()
 	void HandleVictoryRestartRequested();
+	// 继续按钮和 UIOnly Escape 共用同一关闭入口。
+	UFUNCTION()
+	void HandlePauseMenuResumeRequested();
+	// 返回主菜单复用 DirectConnectSubsystem，使 Listen Host 与 Client 正确断开。
+	UFUNCTION()
+	void HandlePauseMenuReturnToMainMenuRequested();
+	// 退出按钮只结束当前本地进程，不发送 gameplay RPC。
+	UFUNCTION()
+	void HandlePauseMenuQuitGameRequested();
 
 	UFUNCTION()
 	void HandleUpgradeChosen(FName UpgradeID);
@@ -285,6 +307,12 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UArenaInventoryWidget> InventoryWidget;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Pause Menu", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UArenaPauseMenuWidget> PauseMenuWidgetClass;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UArenaPauseMenuWidget> PauseMenuWidget;
 
 	TWeakObjectPtr<AArenaGameState> BoundArenaGameState;
 	TWeakObjectPtr<AArenaPlayerState> BoundUpgradePlayerState;
@@ -399,6 +427,7 @@ private:
 	bool bPerformanceStatsVisible = true;
 	bool bUpgradeInputMode = false;
 	bool bInventoryInputMode = false;
+	bool bPauseMenuInputMode = false;
 	bool bInventoryTabPressActive = false;
 	bool bInventoryWasOpenOnTabPress = false;
 	bool bBossIntroInputMode = false;
