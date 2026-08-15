@@ -1,5 +1,6 @@
 #include "Core/ArenaGameMode.h"
 
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Character/ArenaPlayerCharacter.h"
 #include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerController.h"
@@ -7,16 +8,21 @@
 #include "Core/ArenaUpgradeDataAsset.h"
 #include "Core/ArenaWaveDataAsset.h"
 #include "Core/ArenaWaveManager.h"
+#include "EngineUtils.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayEffect_UpgradeRecovery.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayAbilitySpec.h"
 #include "GameplayEffect.h"
+#include "Item/ArenaPickupDropTableDataAsset.h"
+#include "GameFramework/PlayerStart.h"
+#include "Kismet/GameplayStatics.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogArenaUpgrades, Log, All);
+DEFINE_LOG_CATEGORY_STATIC(LogArenaNetworkFlow, Log, All);
 
-// 构造游戏模式，指定项目默认的 GameState、Controller、PlayerState 和 Pawn。
+// 构造正式游戏模式并保持非 Seamless Restart，确保 Victory 重开不会继承旧 GAS 或背包状态。
 AArenaGameMode::AArenaGameMode()
 {
 	GameStateClass = AArenaGameState::StaticClass();
@@ -24,9 +30,41 @@ AArenaGameMode::AArenaGameMode()
 	PlayerStateClass = AArenaPlayerState::StaticClass();
 	DefaultPawnClass = AArenaPlayerCharacter::StaticClass();
 	WaveManagerClass = AArenaWaveManager::StaticClass();
+	bUseSeamlessTravel = false;
 }
 
-// 服务器生成本局升级随机流、创建 WaveManager，并在配置 WaveData 后启动第一波。
+// Lobby 参数只在正式地图初始化时读取一次，后续新连接不能通过自己的 URL 改写比赛边界。
+void AArenaGameMode::InitGame(
+	const FString& MapName,
+	const FString& Options,
+	FString& ErrorMessage)
+{
+	Super::InitGame(MapName, Options, ErrorMessage);
+
+	bRejectLateJoins = UGameplayStatics::HasOption(Options, TEXT("ArenaMatchStarted"))
+		&& UGameplayStatics::ParseOption(Options, TEXT("ArenaMatchStarted")) == TEXT("1");
+	const FString ExpectedPlayersOption = UGameplayStatics::ParseOption(Options, TEXT("ExpectedPlayers"));
+	ExpectedInitialPlayerCount = FMath::Clamp(
+		ExpectedPlayersOption.IsNumeric() ? FCString::Atoi(*ExpectedPlayersOption) : 1,
+		1,
+		4);
+}
+
+// 新登录先通过引擎容量和基础校验，再拒绝已经开始的 Direct IP 比赛。
+void AArenaGameMode::PreLogin(
+	const FString& Options,
+	const FString& Address,
+	const FUniqueNetIdRepl& UniqueId,
+	FString& ErrorMessage)
+{
+	Super::PreLogin(Options, Address, UniqueId, ErrorMessage);
+	if (ErrorMessage.IsEmpty() && bRejectLateJoins)
+	{
+		ErrorMessage = TEXT("比赛已经开始，无法中途加入。");
+	}
+}
+
+// 服务器生成随机种子、同步测试背包规则、创建 WaveManager，并启动 Lobby 初始玩家等待闸门。
 void AArenaGameMode::BeginPlay()
 {
 	Super::BeginPlay();
@@ -36,6 +74,14 @@ void AArenaGameMode::BeginPlay()
 	}
 
 	InitializeUpgradeRandomStream();
+	if (AArenaGameState* MutableArenaGameState = GetGameState<AArenaGameState>())
+	{
+#if WITH_EDITORONLY_DATA
+		MutableArenaGameState->SetAllowInventoryOperationsWhileWaiting(
+			bAllowInventoryOperationsWhileWaiting);
+#endif
+		MutableArenaGameState->OnGamePhaseChanged.AddUniqueDynamic(this, &AArenaGameMode::HandleGamePhaseChanged);
+	}
 	if (!WaveManagerClass)
 	{
 		return;
@@ -49,10 +95,56 @@ void AArenaGameMode::BeginPlay()
 
 	WaveManager->SetUpgradeSystemEnabled(true);
 	WaveManager->OnUpgradePhaseStarted.AddUObject(this, &AArenaGameMode::HandleUpgradePhaseStarted);
-	WaveManager->Initialize(WaveData);
-	if (WaveData)
+	WaveManager->Initialize(WaveData, PickupDropTable, UpgradeRandomSeed);
+	ValidateMultiplayerPlayerStarts();
+	if (ExpectedInitialPlayerCount > 1)
 	{
-		GetWorldTimerManager().SetTimer(InitialWaveTimerHandle, this, &AArenaGameMode::StartNextWave, InitialWaveDelay, false);
+		GetWorldTimerManager().SetTimer(
+			InitialPlayerJoinTimeoutHandle,
+			this,
+			&AArenaGameMode::HandleInitialPlayerJoinTimeout,
+			FMath::Max(InitialPlayerJoinTimeout, 1.0f),
+			false);
+	}
+	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (WaveData && ArenaGameState && !ArenaGameState->PlayerArray.IsEmpty())
+	{
+		ScheduleInitialWaveStart();
+	}
+}
+
+// 关卡结束或服务器旅行前清理阶段委托与首波计时器，避免旧 GameMode 收到迟到回调。
+void AArenaGameMode::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(InitialWaveTimerHandle);
+	GetWorldTimerManager().ClearTimer(InitialPlayerJoinTimeoutHandle);
+	if (AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>())
+	{
+		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(this, &AArenaGameMode::HandleGamePhaseChanged);
+	}
+	if (WaveManager)
+	{
+		WaveManager->OnUpgradePhaseStarted.RemoveAll(this);
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
+// Super 完成 RestartPlayer/Possess 后 ASC 已初始化，此时授予测试升级并重新检查首波人数闸门。
+void AArenaGameMode::HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer)
+{
+	Super::HandleStartingNewPlayer_Implementation(NewPlayer);
+
+#if WITH_EDITOR
+	if (HasAuthority() && bEnableDebugStartingUpgrades)
+	{
+		ApplyDebugStartingUpgrades(NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr);
+	}
+#endif
+
+	if (HasAuthority())
+	{
+		ScheduleInitialWaveStart();
 	}
 }
 
@@ -83,24 +175,43 @@ void AArenaGameMode::InitializeUpgradeRandomStream()
 		UpgradeRandomSeedOverride > 0 ? TEXT(" (override)") : TEXT(""));
 }
 
-// 玩家在 Upgrade 阶段加入时补发独立候选，并在其无候选自动完成后重新检查波次推进。
+// 登录时按 Waiting、Upgrade 或 Victory 阶段分别重排首波、补发候选或刷新重开人数。
 void AArenaGameMode::PostLogin(APlayerController* NewPlayer)
 {
 	Super::PostLogin(NewPlayer);
 
 	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
-	if (HasAuthority() && ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade)
+	if (!HasAuthority() || !ArenaGameState)
+	{
+		return;
+	}
+
+	if (ArenaGameState->GetGamePhase() == EArenaGamePhase::Waiting)
+	{
+		ScheduleInitialWaveStart();
+	}
+	else if (ArenaGameState->GetGamePhase() == EArenaGamePhase::Upgrade)
 	{
 		PrepareUpgradeChoicesForPlayer(NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr);
 		TryAdvanceAfterUpgradeSelections();
 	}
+	else if (ArenaGameState->GetGamePhase() == EArenaGamePhase::Victory)
+	{
+		if (AArenaPlayerState* ArenaPlayerState = NewPlayer ? NewPlayer->GetPlayerState<AArenaPlayerState>() : nullptr)
+		{
+			ArenaPlayerState->SetVictoryRestartReady(false);
+		}
+		RefreshVictoryRestartCounts();
+	}
 }
 
-// 玩家离开后重新检查剩余参与者的选择状态，避免断线玩家永久阻塞下一波。
+// 玩家离开后重新检查升级选择和 Victory Ready，避免断线玩家永久阻塞下一波或重开。
 void AArenaGameMode::Logout(AController* Exiting)
 {
 	Super::Logout(Exiting);
 	TryAdvanceAfterUpgradeSelections();
+	RefreshVictoryRestartCounts();
+	TryRestartAfterVictoryReady();
 }
 
 // 提供给后续升级选择和当前手动测试的服务器波次推进入口。
@@ -109,6 +220,159 @@ void AArenaGameMode::StartNextWave()
 	if (HasAuthority() && WaveManager)
 	{
 		WaveManager->StartNextWave();
+	}
+}
+
+// 只在服务器转发有效 Controller 的 Intro 跳过请求，最终阶段和 Boss 状态由 WaveManager 重验。
+bool AArenaGameMode::RequestBossIntroSkip(AArenaPlayerController* RequestingController)
+{
+	return HasAuthority() && WaveManager && WaveManager->RequestBossIntroSkip(RequestingController);
+}
+
+// 只在服务器转发有效 Controller 的 Outro 跳过请求，最终阶段和死亡 Boss 由 WaveManager 重验。
+bool AArenaGameMode::RequestBossOutroSkip(AArenaPlayerController* RequestingController)
+{
+	return HasAuthority() && WaveManager && WaveManager->RequestBossOutroSkip(RequestingController);
+}
+
+// 服务器验证 Victory 参与者后更新个人 Ready，旅行开始后拒绝迟到的状态切换。
+void AArenaGameMode::SetVictoryRestartReady(AArenaPlayerController* RequestingController, bool bReady)
+{
+	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	AArenaPlayerState* ArenaPlayerState = RequestingController
+		? RequestingController->GetPlayerState<AArenaPlayerState>()
+		: nullptr;
+	if (!HasAuthority()
+		|| bVictoryRestartTravelStarted
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory
+		|| !ArenaPlayerState
+		|| !ArenaPlayerState->GetArenaAbilitySystemComponent()
+		|| !ArenaGameState->PlayerArray.Contains(ArenaPlayerState))
+	{
+		return;
+	}
+
+	ArenaPlayerState->SetVictoryRestartReady(bReady);
+	RefreshVictoryRestartCounts();
+	TryRestartAfterVictoryReady();
+}
+
+// 达到预期初始化人数后只安排一次首波；后续 PostLogin/HandleStarting 回调不会重置计时器。
+void AArenaGameMode::ScheduleInitialWaveStart()
+{
+	if (!HasAuthority() || !WaveManager || !WaveData || bInitialWaveStartScheduled)
+	{
+		return;
+	}
+	const int32 InitializedPlayerCount = CountInitializedInitialPlayers();
+	if (InitializedPlayerCount < ExpectedInitialPlayerCount)
+	{
+		UE_LOG(
+			LogArenaNetworkFlow,
+			Verbose,
+			TEXT("Waiting for initial players: %d/%d initialized."),
+			InitializedPlayerCount,
+			ExpectedInitialPlayerCount);
+		return;
+	}
+
+	bInitialWaveStartScheduled = true;
+	GetWorldTimerManager().ClearTimer(InitialPlayerJoinTimeoutHandle);
+	GetWorldTimerManager().SetTimer(
+		InitialWaveTimerHandle,
+		this,
+		&AArenaGameMode::StartNextWave,
+		FMath::Max(InitialWaveDelay, 0.1f),
+		false);
+	UE_LOG(
+		LogArenaNetworkFlow,
+		Log,
+		TEXT("Initial wave scheduled after %d/%d players initialized."),
+		InitializedPlayerCount,
+		ExpectedInitialPlayerCount);
+}
+
+// 超时后缩小预期人数快照并继续；零人时短暂重试，避免无人世界提前生成整波敌人。
+void AArenaGameMode::HandleInitialPlayerJoinTimeout()
+{
+	if (!HasAuthority() || bInitialWaveStartScheduled)
+	{
+		return;
+	}
+
+	const int32 InitializedPlayerCount = CountInitializedInitialPlayers();
+	if (InitializedPlayerCount <= 0)
+	{
+		UE_LOG(LogArenaNetworkFlow, Warning, TEXT("Initial player wait expired with no initialized players; retrying in one second."));
+		GetWorldTimerManager().SetTimer(
+			InitialPlayerJoinTimeoutHandle,
+			this,
+			&AArenaGameMode::HandleInitialPlayerJoinTimeout,
+			1.0f,
+			false);
+		return;
+	}
+
+	if (InitializedPlayerCount < ExpectedInitialPlayerCount)
+	{
+		UE_LOG(
+			LogArenaNetworkFlow,
+			Warning,
+			TEXT("Only %d/%d expected players initialized before timeout; continuing with arrived players."),
+			InitializedPlayerCount,
+			ExpectedInitialPlayerCount);
+		ExpectedInitialPlayerCount = InitializedPlayerCount;
+	}
+	ScheduleInitialWaveStart();
+}
+
+// 只有 Pawn 已存在且 ASC Avatar 指向该 Pawn 时才视为完成 Seamless Travel 的玩法初始化。
+int32 AArenaGameMode::CountInitializedInitialPlayers() const
+{
+	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (!ArenaGameState)
+	{
+		return 0;
+	}
+
+	int32 InitializedPlayerCount = 0;
+	for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+	{
+		const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
+		const APawn* PlayerPawn = ArenaPlayerState ? ArenaPlayerState->GetPawn() : nullptr;
+		const UArenaAbilitySystemComponent* PlayerASC = ArenaPlayerState
+			? ArenaPlayerState->GetArenaAbilitySystemComponent()
+			: nullptr;
+		if (PlayerPawn && PlayerASC && PlayerASC->GetAvatarActor() == PlayerPawn)
+		{
+			++InitializedPlayerCount;
+		}
+	}
+	return InitializedPlayerCount;
+}
+
+// Lobby 人数超过关卡安全出生点时记录错误，位置仍由关卡设计者手动放置和验证 NavMesh。
+void AArenaGameMode::ValidateMultiplayerPlayerStarts() const
+{
+	if (ExpectedInitialPlayerCount <= 1 || !GetWorld())
+	{
+		return;
+	}
+
+	int32 PlayerStartCount = 0;
+	for (TActorIterator<APlayerStart> It(GetWorld()); It; ++It)
+	{
+		++PlayerStartCount;
+	}
+	if (PlayerStartCount < ExpectedInitialPlayerCount)
+	{
+		UE_LOG(
+			LogArenaNetworkFlow,
+			Error,
+			TEXT("Gameplay map has %d PlayerStarts but Lobby expects %d players. Add non-overlapping PlayerStarts on NavMesh."),
+			PlayerStartCount,
+			ExpectedInitialPlayerCount);
 	}
 }
 
@@ -251,7 +515,7 @@ int32 AArenaGameMode::GetUpgradeRarityWeight(const UArenaUpgradeDataAsset* Upgra
 	}
 }
 
-// 使用 ASC 当前持有的构筑标签检查候选，火焰和闪电同时存在时共享同一个匹配池。
+// 使用 ASC 当前持有的构筑标签检查候选，让五条首版构筑分支都能参与同构筑保底。
 bool AArenaGameMode::IsUpgradeForOwnedBuild(
 	const AArenaPlayerState* ArenaPlayerState,
 	const UArenaUpgradeDataAsset* Upgrade) const
@@ -264,8 +528,14 @@ bool AArenaGameMode::IsUpgradeForOwnedBuild(
 
 	const bool bOwnsFireBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Fire);
 	const bool bOwnsLightningBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Lightning);
+	const bool bOwnsCritBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Crit);
+	const bool bOwnsShieldBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Shield);
+	const bool bOwnsDashBuild = ASC->HasMatchingGameplayTag(ArenaGameplayTags::Build_Dash);
 	return (bOwnsFireBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Fire))
-		|| (bOwnsLightningBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Lightning));
+		|| (bOwnsLightningBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Lightning))
+		|| (bOwnsCritBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Crit))
+		|| (bOwnsShieldBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Shield))
+		|| (bOwnsDashBuild && Upgrade->UpgradeTags.HasTagExact(ArenaGameplayTags::Build_Dash));
 }
 
 // 使用升级随机流执行 Fisher-Yates 洗牌，使相同种子和相同输入始终得到相同槽位顺序。
@@ -301,7 +571,7 @@ bool AArenaGameMode::IsUpgradeEligible(const AArenaPlayerState* ArenaPlayerState
 	return Upgrade->GrantedGameplayEffect || Upgrade->GrantedAbility || !Upgrade->UpgradeTags.IsEmpty();
 }
 
-// 在服务器应用升级授予、保存 Ability 来源数据并同步 Build Tags，后续层继续累计数值元数据。
+// 在服务器应用升级授予，向 GE 注入 NumericValue，并保存 Ability 来源数据与 Build Tags。
 bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UArenaUpgradeDataAsset* Upgrade) const
 {
 	UArenaAbilitySystemComponent* ASC = ArenaPlayerState ? ArenaPlayerState->GetArenaAbilitySystemComponent() : nullptr;
@@ -320,6 +590,10 @@ bool AArenaGameMode::ApplyUpgrade(AArenaPlayerState* ArenaPlayerState, const UAr
 		const FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(Upgrade->GrantedGameplayEffect, 1.0f, EffectContext);
 		if (SpecHandle.IsValid())
 		{
+			// 通用 NumericValue 由 DataAsset 注入；未读取该 SetByCaller 的旧升级 GE 不受影响。
+			SpecHandle.Data->SetSetByCallerMagnitude(
+				ArenaGameplayTags::SetByCaller_Upgrade_NumericValue,
+				Upgrade->NumericValue);
 			ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 			bAppliedAnything = true;
 		}
@@ -380,6 +654,65 @@ void AArenaGameMode::RestorePlayerResourcesAfterUpgrade(AArenaPlayerState* Arena
 	SpecHandle.Data->SetSetByCallerMagnitude(ArenaGameplayTags::SetByCaller_Recovery_Energy, EnergyRecovery);
 	ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
 }
+
+#if WITH_EDITOR
+// 编辑器测试奖励仍执行服务器资格验证与正式 GAS 授予，成功后记录层数并恢复资源。
+bool AArenaGameMode::TryGrantDebugUpgrade(
+	AArenaPlayerState* ArenaPlayerState,
+	UArenaUpgradeDataAsset* Upgrade) const
+{
+	if (!HasAuthority() || !ArenaPlayerState || !Upgrade)
+	{
+		return false;
+	}
+
+	if (!IsUpgradeEligible(ArenaPlayerState, Upgrade))
+	{
+		UE_LOG(LogArenaUpgrades, Warning,
+			TEXT("Debug upgrade %s is not eligible for %s; check required tags and stack limits."),
+			*Upgrade->UpgradeID.ToString(),
+			*GetNameSafe(ArenaPlayerState));
+		return false;
+	}
+
+	if (!ApplyUpgrade(ArenaPlayerState, Upgrade))
+	{
+		UE_LOG(LogArenaUpgrades, Warning, TEXT("Failed to apply debug upgrade %s to %s."),
+			*Upgrade->UpgradeID.ToString(),
+			*GetNameSafe(ArenaPlayerState));
+		return false;
+	}
+
+	ArenaPlayerState->CompleteUpgradeSelection(Upgrade);
+	RestorePlayerResourcesAfterUpgrade(ArenaPlayerState);
+	UE_LOG(LogArenaUpgrades, Log, TEXT("Granted debug upgrade %s to %s (stack %d)."),
+		*Upgrade->UpgradeID.ToString(),
+		*GetNameSafe(ArenaPlayerState),
+		ArenaPlayerState->GetUpgradeStackCount(Upgrade->UpgradeID));
+	return true;
+}
+
+// 测试起始升级严格按数组顺序校验并授予，使依赖 Build Tags 的后续升级获得与正式选择相同的状态。
+void AArenaGameMode::ApplyDebugStartingUpgrades(AArenaPlayerState* ArenaPlayerState) const
+{
+	if (!HasAuthority() || !ArenaPlayerState)
+	{
+		return;
+	}
+
+	for (UArenaUpgradeDataAsset* Upgrade : DebugStartingUpgrades)
+	{
+		if (!Upgrade)
+		{
+			UE_LOG(LogArenaUpgrades, Warning, TEXT("Skipped an empty DebugStartingUpgrades entry for %s."), *GetNameSafe(ArenaPlayerState));
+			continue;
+		}
+
+		TryGrantDebugUpgrade(ArenaPlayerState, Upgrade);
+	}
+
+}
+#endif
 
 // 重新验证候选 ID，成功后记录层数、恢复资源并检查是否可以推进波次。
 void AArenaGameMode::SubmitUpgradeSelection(AArenaPlayerController* RequestingController, FName UpgradeID)
@@ -454,18 +787,20 @@ void AArenaGameMode::TryAdvanceAfterUpgradeSelections()
 	}
 }
 
-// 检查 PlayerState ASC 的长期死亡状态，避免 Pawn 关联短暂为空时误判全员失败。
+// 记录当前新死亡玩家并检查长期死亡状态，避免 Pawn 关联短暂为空时误判全员失败。
 void AArenaGameMode::NotifyPlayerDeath()
 {
 	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
 	if (!HasAuthority() || !ArenaGameState
 		|| ArenaGameState->GetGamePhase() == EArenaGamePhase::Defeat
+		|| ArenaGameState->GetGamePhase() == EArenaGamePhase::BossOutro
 		|| ArenaGameState->GetGamePhase() == EArenaGamePhase::Victory)
 	{
 		return;
 	}
 
 	bool bFoundParticipatingPlayer = false;
+	bool bAllParticipatingPlayersDead = true;
 	for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
 	{
 		const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
@@ -476,13 +811,21 @@ void AArenaGameMode::NotifyPlayerDeath()
 		}
 
 		bFoundParticipatingPlayer = true;
-		if (!ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+		if (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
 		{
-			return;
+			if (UArenaBalanceTelemetryComponent* Telemetry =
+				ArenaGameState->GetBalanceTelemetryComponent())
+			{
+				Telemetry->RecordPlayerDeath(ArenaPlayerState);
+			}
+		}
+		else
+		{
+			bAllParticipatingPlayersDead = false;
 		}
 	}
 
-	if (bFoundParticipatingPlayer)
+	if (bFoundParticipatingPlayer && bAllParticipatingPlayersDead)
 	{
 		if (WaveManager)
 		{
@@ -490,4 +833,90 @@ void AArenaGameMode::NotifyPlayerDeath()
 		}
 		ArenaGameState->SetGamePhase(EArenaGamePhase::Defeat);
 	}
+}
+
+// 进入 Victory 时清空旧确认并建立当前参与人数，退出时移除所有终局 Ready 状态。
+void AArenaGameMode::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (!ArenaGameState)
+	{
+		return;
+	}
+
+	if (NewPhase == EArenaGamePhase::Victory)
+	{
+		bVictoryRestartTravelStarted = false;
+		for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+		{
+			if (AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState))
+			{
+				ArenaPlayerState->SetVictoryRestartReady(false);
+			}
+		}
+		RefreshVictoryRestartCounts();
+	}
+	else if (OldPhase == EArenaGamePhase::Victory)
+	{
+		for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+		{
+			if (AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState))
+			{
+				ArenaPlayerState->SetVictoryRestartReady(false);
+			}
+		}
+		ArenaGameState->SetVictoryRestartCounts(0, 0);
+	}
+}
+
+// 依据当前仍连接且拥有 ASC 的 PlayerState 重新汇总 Victory Ready 计数。
+void AArenaGameMode::RefreshVictoryRestartCounts()
+{
+	AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (!HasAuthority() || !ArenaGameState || ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory)
+	{
+		return;
+	}
+
+	int32 ReadyCount = 0;
+	int32 RequiredCount = 0;
+	for (APlayerState* PlayerState : ArenaGameState->PlayerArray)
+	{
+		const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(PlayerState);
+		if (!ArenaPlayerState || !ArenaPlayerState->GetArenaAbilitySystemComponent())
+		{
+			continue;
+		}
+
+		++RequiredCount;
+		ReadyCount += ArenaPlayerState->IsVictoryRestartReady() ? 1 : 0;
+	}
+	ArenaGameState->SetVictoryRestartCounts(ReadyCount, RequiredCount);
+}
+
+// 全员确认后使用服务器旅行重载当前关卡，并通过防重标记避免重复请求。
+void AArenaGameMode::TryRestartAfterVictoryReady()
+{
+	const AArenaGameState* ArenaGameState = GetGameState<AArenaGameState>();
+	if (!HasAuthority()
+		|| bVictoryRestartTravelStarted
+		|| !ArenaGameState
+		|| ArenaGameState->GetGamePhase() != EArenaGamePhase::Victory)
+	{
+		return;
+	}
+
+	const int32 RequiredCount = ArenaGameState->GetVictoryRestartRequiredCount();
+	if (RequiredCount <= 0 || ArenaGameState->GetVictoryRestartReadyCount() < RequiredCount)
+	{
+		return;
+	}
+
+	bVictoryRestartTravelStarted = true;
+	GetWorld()->ServerTravel(TEXT("?Restart"), false);
 }

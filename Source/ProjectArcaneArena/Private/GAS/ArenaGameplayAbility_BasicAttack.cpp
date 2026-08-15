@@ -20,8 +20,10 @@ UArenaGameplayAbility_BasicAttack::UArenaGameplayAbility_BasicAttack()
 	DamageTypeTag = ArenaGameplayTags::Damage_Physical;
 	TargetActorClass = AArenaTargetActor_MouseGround::StaticClass();
 
-	// Ability Tag 和阻断标签都交给 GAS CanActivate/Commit 路径统一判断。
-	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_BasicAttack));
+	// 主动技能分类由 ASC 的 Commit 钩子统一路由 OnAbilityCast，普攻不属于 EnergySkill。
+	FGameplayTagContainer AbilityAssetTags(ArenaGameplayTags::Ability_BasicAttack);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	SetAssetTags(AbilityAssetTags);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_BasicAttack);
@@ -77,7 +79,7 @@ void UArenaGameplayAbility_BasicAttack::ActivateAbility(
 	}
 }
 
-// TargetData 有效后先同步朝向和预测 Montage，再由服务器 Commit 并执行权威 Sweep。
+// TargetData 有效后提交预测成本，立即同步朝向、起手 Cue 和 Montage，再由服务器执行权威 Sweep。
 void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbilityTargetDataHandle& TargetData)
 {
 	ActiveTargetDataTask = nullptr;
@@ -117,6 +119,7 @@ void UArenaGameplayAbility_BasicAttack::OnTargetDataReady(const FGameplayAbility
 	}
 
 	AvatarActor->SetActorRotation(AimDirection.Rotation());
+	ExecuteAttackActivationCue(AvatarActor, ActorInfo->AbilitySystemComponent.Get());
 	PlayAttackMontage();
 	if (ActorInfo->IsNetAuthority() && !bServerAttackExecuted)
 	{
@@ -193,7 +196,26 @@ void UArenaGameplayAbility_BasicAttack::PlayAttackMontage()
 	}
 }
 
-// 仅在服务器沿最终瞄准方向扫描目标，并通过 GE/ExecCalc 应用物理伤害。
+// 在客户端预测和服务器确认使用同一 PredictionKey 执行起手 Cue，拥有者立即听到且服务器确认不会重复播放。
+void UArenaGameplayAbility_BasicAttack::ExecuteAttackActivationCue(
+	AActor* AvatarActor,
+	UAbilitySystemComponent* SourceASC) const
+{
+	if (!AvatarActor || !SourceASC)
+	{
+		return;
+	}
+
+	FGameplayCueParameters ActivationCueParameters;
+	ActivationCueParameters.Instigator = AvatarActor;
+	ActivationCueParameters.EffectCauser = AvatarActor;
+	ActivationCueParameters.Location = AvatarActor->GetActorLocation();
+	SourceASC->ExecuteGameplayCue(
+		ArenaGameplayTags::GameplayCue_Ability_BasicAttack_Activate,
+		ActivationCueParameters);
+}
+
+// 仅在服务器沿最终瞄准方向扫描目标，并把选中命中点写入 GE 上下文供伤害和 Cue 共用。
 void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 	AActor* AvatarActor,
 	UAbilitySystemComponent* SourceASC,
@@ -203,12 +225,6 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 	{
 		return;
 	}
-
-	FGameplayCueParameters ActivationCueParameters;
-	ActivationCueParameters.Instigator = AvatarActor;
-	ActivationCueParameters.EffectCauser = AvatarActor;
-	ActivationCueParameters.Location = AvatarActor->GetActorLocation();
-	SourceASC->ExecuteGameplayCue(ArenaGameplayTags::GameplayCue_Ability_BasicAttack_Activate, ActivationCueParameters);
 
 	UWorld* World = AvatarActor->GetWorld();
 	if (!World)
@@ -234,6 +250,7 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 
 	AActor* BestTarget = nullptr;
 	UAbilitySystemComponent* BestTargetASC = nullptr;
+	FHitResult BestTargetHitResult;
 	float BestDistanceSquared = TNumericLimits<float>::Max();
 
 	for (const FHitResult& HitResult : HitResults)
@@ -268,6 +285,7 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 			BestDistanceSquared = DistanceSquared;
 			BestTarget = HitActor;
 			BestTargetASC = TargetASC;
+			BestTargetHitResult = HitResult;
 		}
 	}
 
@@ -278,6 +296,8 @@ void UArenaGameplayAbility_BasicAttack::ExecuteServerAttack(
 		// 伤害数值以 SetByCaller 写入 GE Spec，实际计算由 ExecCalc_Damage 完成。
 		FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
 		EffectContext.AddSourceObject(this);
+		// 保留权威 Sweep 的真实命中点，供伤害 GameplayCue 在目标表面准确生成。
+		EffectContext.AddHitResult(BestTargetHitResult, true);
 		FGameplayEffectSpecHandle DamageSpecHandle = SourceASC->MakeOutgoingSpec(DamageEffectClass, GetAbilityLevel(), EffectContext);
 
 		if (DamageSpecHandle.IsValid())

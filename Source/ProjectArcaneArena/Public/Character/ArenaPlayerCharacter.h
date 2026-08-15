@@ -2,15 +2,19 @@
 
 #include "CoreMinimal.h"
 #include "Character/ArenaCharacterBase.h"
+#include "Core/ArenaGameState.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
 #include "InputActionValue.h"
 #include "ArenaPlayerCharacter.generated.h"
 
 class AArenaPlayerState;
+class AArenaGameState;
 class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
+class UInputModifierNegate;
+class UInputModifierSwizzleAxis;
 class USpringArmComponent;
 class UAbilitySystemComponent;
 class UArenaAbilitySystemComponent;
@@ -34,7 +38,14 @@ public:
 	// Returns current dash input direction, or zero when standing still.
 	FVector GetLastMovementInputDirection() const { return LastMovementInputDirection; }
 
+	// 本地交互菜单打开前在本地和服务器停止奔跑，避免 UI 期间保留加速状态。
+	void StopSprintingForLocalMenu();
+
 protected:
+	// 绑定复制 GameState 阶段，使 Intro、Outro 与 Victory 在服务器和所属客户端共用同一移动门控。
+	virtual void BeginPlay() override;
+	// 客户端在关卡旅行、首次接管或重生后重新安装 Enhanced Input 映射，避免持久 LocalPlayer 丢失角色级 Context。
+	virtual void PawnClientRestart() override;
 	// 仅在视角过渡期间更新相机插值，第三人称稳定后由 Look 输入直接刷新。
 	virtual void Tick(float DeltaSeconds) override;
 	// 服务端 Possess 后初始化 AvatarActor，并授予默认属性和启动技能。
@@ -69,10 +80,22 @@ private:
 	void BindAbilitySystemDelegates(UArenaAbilitySystemComponent* ArenaASC);
 	// 移除当前绑定的 GAS 委托，防止重复初始化和旧角色悬挂回调。
 	void UnbindAbilitySystemDelegates();
-	// 根据 Dead/Stunned 优先级统一刷新移动组件状态。
+	// 绑定复制 GameState 阶段委托，支持 Boss 演出和 Victory 统一冻结与恢复玩家移动。
+	void BindGameStateDelegates();
+	// 角色销毁或世界切换时解除阶段委托，避免旧 GameState 回调当前 Avatar。
+	void UnbindGameStateDelegates();
+	// 判断当前复制阶段是否锁定玩家控制，供移动、视角、奔跑和技能输入共用。
+	bool IsPlayerControlLockedByPhase() const;
+	// 检查背包或 ESC 菜单是否正在占用本地玩法输入，不参与网络状态。
+	bool IsLocalUIInputLocked() const;
+	// 根据 Dead、Stunned 与终局演出阶段的优先级统一刷新移动组件状态。
 	void RefreshMovementState();
-	// Dead Tag 增加时执行一次死亡流程，移除时重置死亡门闩并触发复活表现。
+	// 阶段切换时清理移动意图，并在控制锁定阶段结束后按 GAS 状态恢复移动。
+	UFUNCTION()
+	void HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase);
+	// Dead Tag 增加时关闭本地背包并执行死亡流程，移除时重置门闩和复活表现。
 	void HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// Stunned Tag 增加时关闭本地背包并取消技能，移除后按其他状态恢复移动。
 	void HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleMoveSpeedChanged(const FOnAttributeChangeData& Data);
 	// 使用当前 GAS MoveSpeed 和奔跑倍率统一刷新 CharacterMovement。
@@ -81,6 +104,8 @@ private:
 	void SetSprinting(bool bNewSprinting);
 	// 将默认输入映射加入本地玩家的 Enhanced Input 子系统。
 	void AddDefaultMappingContext() const;
+	// 在对象序列化完成后重建原生键位，避免 Blueprint 或 Cook 覆盖构造期 Mapping 数组。
+	void RebuildDefaultInputMappings();
 	// 创建模板阶段使用的 C++ 默认输入资产，后续可迁移到项目资产。
 	void CreateDefaultInputMappings();
 	// 把本地输入转换成 GAS InputTag，由 ASC 决定是否激活 Ability。
@@ -104,6 +129,16 @@ private:
 	void Input_Shield();
 	// LightningStorm 输入入口，只发送 Ability.LightningStorm 标签，具体范围伤害由 GAS 处理。
 	void Input_Ultimate();
+	// Tab 按下时启动轻点切换或长按临时查看，玩法内容仍由 PlayerState InventoryComponent 持有。
+	void Input_InventoryTabPressed();
+	// Tab 松开时完成轻点切换或长按临时关闭，作为 Widget 焦点路径之外的 Enhanced Input 兜底。
+	void Input_InventoryTabReleased();
+	// G 请求 Controller 按当前背包阶段权限选择最近可见 Pickup。
+	void Input_InteractInventoryPickup();
+	// Boss Intro 或 Outro 中按下 Space 时通知本地 Controller 开始服务器验证的长按计时。
+	void Input_BossIntroSkipStarted();
+	// 松开 Space 或输入被取消时结束本地与服务器的 Intro/Outro 长按状态。
+	void Input_BossIntroSkipStopped();
 	// 切换顶视角和第三人称，并同步本地鼠标/准星输入模式。
 	void Input_ToggleView();
 	// 第三人称模式下使用鼠标增量旋转控制器和相机。
@@ -152,6 +187,21 @@ private:
 	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputAction> LookAction;
 
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> BossIntroSkipAction;
+
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> InventoryToggleAction;
+
+	UPROPERTY(VisibleDefaultsOnly, BlueprintReadOnly, Category = "Input", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UInputAction> InventoryInteractAction;
+
+	UPROPERTY(VisibleDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputModifierSwizzleAxis> MoveSwizzleModifier;
+
+	UPROPERTY(VisibleDefaultsOnly, Category = "Input")
+	TObjectPtr<UInputModifierNegate> MoveNegateModifier;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	int32 InputMappingPriority = 0;
 
@@ -199,6 +249,7 @@ private:
 	float CameraBlendAlpha = 0.0f;
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
+	TWeakObjectPtr<AArenaGameState> BoundArenaGameState;
 	FDelegateHandle DeadTagDelegateHandle;
 	FDelegateHandle StunnedTagDelegateHandle;
 	FDelegateHandle MoveSpeedDelegateHandle;

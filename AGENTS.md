@@ -167,6 +167,40 @@ Rules:
 
 ---
 
+## Boss Development Plan Rule
+
+项目根目录的 `BOSS_DEVELOPMENT_PLAN.md` 是 Boss 功能的中文阶段开发规范。
+
+规则：
+
+* 规划或实现 Boss 功能前必须阅读 `BOSS_DEVELOPMENT_PLAN.md`，确认当前阶段、职责边界和完成标准。
+* 默认按照文档定义的阶段顺序开发，当前阶段达到完成标准后再进入下一阶段。
+* 用户明确要求调整范围或跨阶段开发时可以变更顺序，但必须在同一变更中同步更新文档边界。
+* 阶段顺序、职责归属、核心接口、验收标准或实际实现进度发生变化时，必须同步更新 `BOSS_DEVELOPMENT_PLAN.md`。
+* 每次实现、移除或实质修改 Boss 功能时，都要同步更新对应阶段的“当前实现进度”，明确区分已完成实现、尚未完成内容和待验证内容。
+* 只有已经存在于代码或已保存项目资产中的内容可以记录为已完成，不得把方案、未成功执行的生成步骤或待验证推测描述为已实现。
+* `IMPLEMENTED_FEATURES.md` 继续作为全项目实现状态的规范记录；`BOSS_DEVELOPMENT_PLAN.md` 维护 Boss 阶段范围内的进度摘要；尚未完成的测试继续记录到 `PENDING_VERIFICATION.md`。
+* Boss 阶段状态统一使用 `Planned`、`Partial`、`Implemented`、`Verified`，不使用勾选框维护完成状态。
+* Boss 规划文档及其新增维护说明使用简体中文，类名、函数名、资产名和 GameplayTag 保留英文原文。
+
+---
+
+## Inventory Development Plan Rule
+
+项目根目录的 `INVENTORY_DEVELOPMENT_PLAN.md` 是阶段五 C 背包系统的中文开发规范。
+
+规则：
+
+* 规划或实现背包、可入包 Pickup、物品使用、物品丢弃、分页或物品筛选前，必须阅读 `INVENTORY_DEVELOPMENT_PLAN.md`。
+* 背包系统默认采用文档定义的轻量 MVC、PlayerState Model、服务器权威和 OwnerOnly FastArray 复制边界。
+* 阶段顺序、数据结构、网络职责、分页/筛选规则、公开接口或验收标准发生变化时，必须同步更新 `INVENTORY_DEVELOPMENT_PLAN.md`。
+* 每次实现、移除或实质修改背包功能时，要同步更新该文档的“当前实现进度”，并在 `IMPLEMENTED_FEATURES.md` 记录真实存在的功能。
+* 尚未完成的背包测试在进入实现阶段后记录到 `PENDING_VERIFICATION.md`；纯规划内容不得提前写成已实现。
+* 背包阶段状态统一使用 `Planned`、`Partial`、`Implemented`、`Verified`。
+* 背包规划文档使用简体中文，类名、函数名、资产名和 GameplayTag 保留英文原文。
+
+---
+
 ## Recommended Class Architecture
 
 Use this architecture unless there is a strong reason to change it.
@@ -780,6 +814,11 @@ Build.bat ProjectArcaneArenaEditor Win64 Development -Project="E:\UE_DEMO\Projec
 
 9. If UBT reports Live Coding is active, do not try unrelated workaround flags. Ask the user to use the editor Compile/Live Coding flow or to close the editor.
 10. If PCH virtual memory errors appear, stop and report the page-file issue. Do not attempt source-engine-wide rebuilds to force progress.
+11. On this computer, when project-file regeneration is actually required after C++ changes, finish writing the code first and then execute the following fixed command yourself instead of asking the user to run it:
+
+```text
+"E:\Unreal engine\UnrealEngine\GenerateProjectFiles.bat" -project="E:\UE_DEMO\ProjectArcaneArena\ProjectArcaneArena.uproject" -game -engine -2022
+```
 
 ---
 
@@ -889,7 +928,18 @@ Follow this order:
 5. Add at least one legendary rule-changing upgrade.
 6. Verify that each build path has a visible combat identity.
 
+### Phase 5C: Runtime Inventory
+
+背包的 MVC 边界、分页规则、服务器交互和验收顺序以 `INVENTORY_DEVELOPMENT_PLAN.md` 为准。
+
+1. Add ItemDataAsset and owner-only FastArray inventory model on PlayerState.
+2. Add server-authoritative interact pickup, stacking, use, and partial drop.
+3. Add twenty-slot pagination, multi-tag filtering, and inventory UI.
+4. Add dual-view input restoration and two-player replication verification.
+
 ### Phase 6: Boss and Polish
+
+Boss 的详细阶段顺序、系统边界和验收门槛以 `BOSS_DEVELOPMENT_PLAN.md` 为准。
 
 1. Add boss enemy.
 2. Add boss abilities.

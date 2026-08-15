@@ -25,7 +25,11 @@ UArenaGameplayAbility_Fireball::UArenaGameplayAbility_Fireball()
 	ProjectileClass = AArenaFireballProjectile::StaticClass();
 	TargetActorClass = AArenaTargetActor_MouseGround::StaticClass();
 
-	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Fireball));
+	// 火球属于消耗 Energy 的玩家主动技能，供统一施放事件和触发升级筛选。
+	FGameplayTagContainer AbilityAssetTags(ArenaGameplayTags::Ability_Fireball);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_EnergySkill);
+	SetAssetTags(AbilityAssetTags);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Fireball);

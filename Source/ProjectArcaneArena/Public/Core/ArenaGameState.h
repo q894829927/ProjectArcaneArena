@@ -4,6 +4,9 @@
 #include "GameFramework/GameStateBase.h"
 #include "ArenaGameState.generated.h"
 
+class AArenaBossCharacter;
+class UArenaBalanceTelemetryComponent;
+
 UENUM(BlueprintType)
 enum class EArenaGamePhase : uint8
 {
@@ -11,11 +14,80 @@ enum class EArenaGamePhase : uint8
 	Combat,
 	Upgrade,
 	Victory,
-	Defeat
+	Defeat,
+	BossIntro,
+	BossOutro
+};
+
+USTRUCT(BlueprintType)
+struct PROJECTARCANEARENA_API FArenaBossIntroTiming
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Boss Intro")
+	float EndServerTimeSeconds = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Boss Intro")
+	float BlendOutDuration = 0.0f;
+
+	// 使用近似比较判断复制时序是否发生有效变化，避免浮点微差重复广播。
+	bool operator==(const FArenaBossIntroTiming& Other) const
+	{
+		return FMath::IsNearlyEqual(EndServerTimeSeconds, Other.EndServerTimeSeconds)
+			&& FMath::IsNearlyEqual(BlendOutDuration, Other.BlendOutDuration);
+	}
+
+	// 复用相等比较提供服务器 Setter 的幂等更新判断。
+	bool operator!=(const FArenaBossIntroTiming& Other) const
+	{
+		return !(*this == Other);
+	}
+};
+
+USTRUCT(BlueprintType)
+struct PROJECTARCANEARENA_API FArenaBossOutroTiming
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Boss Outro")
+	float EndServerTimeSeconds = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Boss Outro")
+	float BlendOutDuration = 0.0f;
+
+	UPROPERTY(BlueprintReadOnly, Category = "Arena|Boss Outro")
+	FVector BossDeathLocation = FVector::ZeroVector;
+
+	// 使用近似比较判断复制时序是否发生有效变化，避免浮点微差重复广播。
+	bool operator==(const FArenaBossOutroTiming& Other) const
+	{
+		return FMath::IsNearlyEqual(EndServerTimeSeconds, Other.EndServerTimeSeconds)
+			&& FMath::IsNearlyEqual(BlendOutDuration, Other.BlendOutDuration)
+			&& BossDeathLocation.Equals(Other.BossDeathLocation);
+	}
+
+	// 复用相等比较提供服务器 Setter 的幂等更新判断。
+	bool operator!=(const FArenaBossOutroTiming& Other) const
+	{
+		return !(*this == Other);
+	}
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaGamePhaseChangedSignature, EArenaGamePhase, OldPhase, EArenaGamePhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaIntegerStateChangedSignature, int32, OldValue, int32, NewValue);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FArenaActiveBossChangedSignature, AArenaBossCharacter*, OldBoss, AArenaBossCharacter*, NewBoss);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FArenaBossIntroTimingChangedSignature,
+	FArenaBossIntroTiming,
+	OldTiming,
+	FArenaBossIntroTiming,
+	NewTiming);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(
+	FArenaBossOutroTimingChangedSignature,
+	FArenaBossOutroTiming,
+	OldTiming,
+	FArenaBossOutroTiming,
+	NewTiming);
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaGameState : public AGameStateBase
@@ -29,6 +101,31 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	EArenaGamePhase GetGamePhase() const { return GamePhase; }
 
+	// 返回仅服务器使用的非复制平衡统计组件；客户端实例存在但保持无操作。
+	UFUNCTION(BlueprintPure, Category = "Arena|Balance")
+	UArenaBalanceTelemetryComponent* GetBalanceTelemetryComponent() const
+	{
+		return BalanceTelemetryComponent;
+	}
+
+	// 返回指定阶段是否允许打开只读或可操作的背包界面。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	static bool IsInventoryViewAllowedForPhase(EArenaGamePhase Phase);
+
+	// 返回指定阶段是否允许拾取、使用和丢弃；Waiting 仅由测试规则显式放开。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	static bool AreInventoryOperationsAllowedForPhase(
+		EArenaGamePhase Phase,
+		bool bAllowWaitingOperations);
+
+	// 使用当前复制阶段判断本地是否可以查看背包。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	bool CanViewInventory() const;
+
+	// 使用当前复制阶段与测试规则判断是否允许修改背包或世界 Pickup。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	bool CanPerformInventoryOperations() const;
+
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	int32 GetCurrentWaveIndex() const { return CurrentWaveIndex; }
 
@@ -39,6 +136,32 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
 	int32 GetUpgradeRandomSeed() const { return UpgradeRandomSeed; }
 
+	// 返回服务器复制的当前 Boss，空值表示当前没有 Boss 战。
+	UFUNCTION(BlueprintPure, Category = "Arena|Game State")
+	AArenaBossCharacter* GetActiveBoss() const { return ActiveBoss; }
+
+	// 返回服务器复制的 Boss Intro 结束时间与镜头回切时长。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss Intro")
+	FArenaBossIntroTiming GetBossIntroTiming() const { return BossIntroTiming; }
+
+	// 使用 GameState 同步服务器时钟计算本地剩余演出时间。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss Intro")
+	float GetBossIntroRemainingTime() const;
+
+	// 返回服务器复制的 Boss Outro 结束时间、镜头回切时长和死亡位置。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss Outro")
+	FArenaBossOutroTiming GetBossOutroTiming() const { return BossOutroTiming; }
+
+	// 使用 GameState 同步服务器时钟计算本地 Outro 剩余时间。
+	UFUNCTION(BlueprintPure, Category = "Arena|Boss Outro")
+	float GetBossOutroRemainingTime() const;
+
+	UFUNCTION(BlueprintPure, Category = "Arena|Victory")
+	int32 GetVictoryRestartReadyCount() const { return VictoryRestartReadyCount; }
+
+	UFUNCTION(BlueprintPure, Category = "Arena|Victory")
+	int32 GetVictoryRestartRequiredCount() const { return VictoryRestartRequiredCount; }
+
 	// 仅由服务器规则层更新阶段，并通过复制委托驱动客户端表现。
 	void SetGamePhase(EArenaGamePhase NewPhase);
 	// 仅由服务器波次管理器写入当前波次，索引从 1 开始，0 表示尚未开始。
@@ -47,6 +170,16 @@ public:
 	void SetRemainingEnemyCount(int32 NewRemainingEnemyCount);
 	// 仅由服务器写入本局升级随机种子，客户端不使用该值生成候选。
 	void SetUpgradeRandomSeed(int32 NewUpgradeRandomSeed);
+	// 仅由服务器波次管理器设置当前 Boss，HUD 通过复制委托观察生命周期。
+	void SetActiveBoss(AArenaBossCharacter* NewActiveBoss);
+	// 仅由服务器写入 Boss Intro 时序，客户端相机与 HUD 共享同一服务器截止时间。
+	void SetBossIntroTiming(const FArenaBossIntroTiming& NewTiming);
+	// 仅由服务器写入 Boss Outro 时序，客户端镜头和 HUD 共用同一服务器截止时间。
+	void SetBossOutroTiming(const FArenaBossOutroTiming& NewTiming);
+	// 仅由服务器汇总 Victory 重开确认人数，客户端只负责展示。
+	void SetVictoryRestartCounts(int32 NewReadyCount, int32 NewRequiredCount);
+	// 仅由服务器 GameMode 配置 Waiting 阶段的测试操作权限，正式对局默认保持只读。
+	void SetAllowInventoryOperationsWhileWaiting(bool bAllow);
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaGamePhaseChangedSignature OnGamePhaseChanged;
@@ -60,7 +193,25 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
 	FArenaIntegerStateChangedSignature OnUpgradeRandomSeedChanged;
 
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Game State")
+	FArenaActiveBossChangedSignature OnActiveBossChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Boss Intro")
+	FArenaBossIntroTimingChangedSignature OnBossIntroTimingChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Boss Outro")
+	FArenaBossOutroTimingChangedSignature OnBossOutroTimingChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Victory")
+	FArenaIntegerStateChangedSignature OnVictoryRestartReadyCountChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Victory")
+	FArenaIntegerStateChangedSignature OnVictoryRestartRequiredCountChanged;
+
 protected:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Balance")
+	TObjectPtr<UArenaBalanceTelemetryComponent> BalanceTelemetryComponent;
+
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GamePhase, Category = "Arena|Game State")
 	EArenaGamePhase GamePhase = EArenaGamePhase::Waiting;
 
@@ -73,6 +224,24 @@ protected:
 	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_UpgradeRandomSeed, Category = "Arena|Game State")
 	int32 UpgradeRandomSeed = 0;
 
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_ActiveBoss, Category = "Arena|Game State")
+	TObjectPtr<AArenaBossCharacter> ActiveBoss;
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_BossIntroTiming, Category = "Arena|Boss Intro")
+	FArenaBossIntroTiming BossIntroTiming;
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_BossOutroTiming, Category = "Arena|Boss Outro")
+	FArenaBossOutroTiming BossOutroTiming;
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_VictoryRestartReadyCount, Category = "Arena|Victory")
+	int32 VictoryRestartReadyCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_VictoryRestartRequiredCount, Category = "Arena|Victory")
+	int32 VictoryRestartRequiredCount = 0;
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category = "Arena|Inventory")
+	bool bAllowInventoryOperationsWhileWaiting = false;
+
 	UFUNCTION()
 	void OnRep_GamePhase(EArenaGamePhase OldPhase);
 
@@ -84,4 +253,19 @@ protected:
 
 	UFUNCTION()
 	void OnRep_UpgradeRandomSeed(int32 OldUpgradeRandomSeed);
+
+	UFUNCTION()
+	void OnRep_ActiveBoss(AArenaBossCharacter* OldActiveBoss);
+
+	UFUNCTION()
+	void OnRep_BossIntroTiming(FArenaBossIntroTiming OldTiming);
+
+	UFUNCTION()
+	void OnRep_BossOutroTiming(FArenaBossOutroTiming OldTiming);
+
+	UFUNCTION()
+	void OnRep_VictoryRestartReadyCount(int32 OldReadyCount);
+
+	UFUNCTION()
+	void OnRep_VictoryRestartRequiredCount(int32 OldRequiredCount);
 };

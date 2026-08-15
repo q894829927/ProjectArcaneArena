@@ -2,16 +2,20 @@
 
 #include "AI/ArenaEnemyAIController.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/ArenaHitReactionComponent.h"
+#include "Components/ArenaEnemyAffixComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
 #include "GAS/ArenaGameplayTags.h"
+#include "GAS/ArenaGameplayAbility_EnemyAttackBase.h"
 #include "GAS/ArenaGameplayAbility_EnemyMeleeAttack.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffect.h"
 #include "UI/ArenaDamageNumberActor.h"
 #include "UI/ArenaEnemyHealthBarWidget.h"
+#include "UI/ArenaEnemyAffixBadgeWidget.h"
 
 // 构造敌人角色，创建敌人专属 ASC、AttributeSet 和头顶血条组件。
 AArenaEnemyCharacter::AArenaEnemyCharacter()
@@ -33,6 +37,17 @@ AArenaEnemyCharacter::AArenaEnemyCharacter()
 	HealthBarWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	HealthBarWidgetComponent->SetGenerateOverlapEvents(false);
 
+	EnemyAffixComponent = CreateDefaultSubobject<UArenaEnemyAffixComponent>(TEXT("EnemyAffixComponent"));
+	EliteAffixBadgeWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("EliteAffixBadgeWidget"));
+	EliteAffixBadgeWidgetComponent->SetupAttachment(RootComponent);
+	EliteAffixBadgeWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	EliteAffixBadgeWidgetComponent->SetWidgetClass(UArenaEnemyAffixBadgeWidget::StaticClass());
+	EliteAffixBadgeWidgetComponent->SetDrawSize(FVector2D(200.0f, 28.0f));
+	EliteAffixBadgeWidgetComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 145.0f));
+	EliteAffixBadgeWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	EliteAffixBadgeWidgetComponent->SetGenerateOverlapEvents(false);
+	EliteAffixBadgeWidgetComponent->SetVisibility(false);
+
 	GetCharacterMovement()->MaxWalkSpeed = 350.0f;
 	AIControllerClass = AArenaEnemyAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
@@ -50,6 +65,65 @@ void AArenaEnemyCharacter::SetCombatTarget(AActor* NewCombatTarget)
 	if (HasAuthority())
 	{
 		CombatTarget = NewCombatTarget;
+	}
+}
+
+// 使用 StartupAbilities 中第一个 EnemyAttackBase 子类作为主攻击，激活资格继续交给 GAS 判断。
+bool AArenaEnemyCharacter::TryActivatePrimaryAttack()
+{
+	if (!HasAuthority() || !AbilitySystemComponent || IsDeadOrStunned())
+	{
+		return false;
+	}
+
+	const TSubclassOf<UGameplayAbility> PrimaryAttackClass = FindPrimaryAttackAbilityClass();
+	return PrimaryAttackClass
+		&& AbilitySystemComponent->TryActivateAbilityByClass(PrimaryAttackClass);
+}
+
+// 从主攻击 CDO 读取决策距离，避免 AI 与具体近战或远程 Ability 的数值分叉。
+float AArenaEnemyCharacter::GetPrimaryAttackRange() const
+{
+	const TSubclassOf<UGameplayAbility> PrimaryAttackClass = FindPrimaryAttackAbilityClass();
+	const UArenaGameplayAbility_EnemyAttackBase* PrimaryAttackCDO = PrimaryAttackClass
+		? Cast<UArenaGameplayAbility_EnemyAttackBase>(PrimaryAttackClass.GetDefaultObject())
+		: nullptr;
+	return PrimaryAttackCDO ? FMath::Max(PrimaryAttackCDO->GetAttackRange(), 0.0f) : 0.0f;
+}
+
+// 通过主攻击 CDO 执行与 Ability 激活相同的视线或弹道检查，供 AI 决定是否停步。
+bool AArenaEnemyCharacter::HasPrimaryAttackPath(AActor* TargetActor)
+{
+	const TSubclassOf<UGameplayAbility> PrimaryAttackClass = FindPrimaryAttackAbilityClass();
+	const UArenaGameplayAbility_EnemyAttackBase* PrimaryAttackCDO = PrimaryAttackClass
+		? Cast<UArenaGameplayAbility_EnemyAttackBase>(PrimaryAttackClass.GetDefaultObject())
+		: nullptr;
+	return PrimaryAttackCDO && PrimaryAttackCDO->HasAttackPathForAI(this, TargetActor);
+}
+
+// 取消所有正在运行的 EnemyAttackBase Spec，确保多技能 Boss 在死亡、眩晕或目标失效时完整收尾。
+void AArenaEnemyCharacter::CancelPrimaryAttack()
+{
+	if (!HasAuthority() || !AbilitySystemComponent)
+	{
+		return;
+	}
+
+	TArray<FGameplayAbilitySpecHandle> ActiveAttackHandles;
+	for (const FGameplayAbilitySpec& AbilitySpec : AbilitySystemComponent->GetActivatableAbilities())
+	{
+		const UGameplayAbility* AbilityCDO = AbilitySpec.Ability.Get();
+		if (AbilitySpec.IsActive()
+			&& AbilityCDO
+			&& AbilityCDO->GetClass()->IsChildOf(UArenaGameplayAbility_EnemyAttackBase::StaticClass()))
+		{
+			ActiveAttackHandles.Add(AbilitySpec.Handle);
+		}
+	}
+
+	for (const FGameplayAbilitySpecHandle& AttackHandle : ActiveAttackHandles)
+	{
+		AbilitySystemComponent->CancelAbilityHandle(AttackHandle);
 	}
 }
 
@@ -80,6 +154,20 @@ float AArenaEnemyCharacter::GetMeleeAttackRange() const
 	return 170.0f;
 }
 
+// 按数组顺序选择首个通用敌人攻击类，使蓝图只需替换 StartupAbility 即可切换战斗类型。
+TSubclassOf<UGameplayAbility> AArenaEnemyCharacter::FindPrimaryAttackAbilityClass() const
+{
+	for (const TSubclassOf<UGameplayAbility>& AbilityClass : StartupAbilities)
+	{
+		if (AbilityClass && AbilityClass->IsChildOf(UArenaGameplayAbility_EnemyAttackBase::StaticClass()))
+		{
+			return AbilityClass;
+		}
+	}
+
+	return nullptr;
+}
+
 bool AArenaEnemyCharacter::IsDeadOrStunned() const
 {
 	return !AbilitySystemComponent
@@ -94,10 +182,20 @@ bool AArenaEnemyCharacter::IsAttacking() const
 		&& AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Attacking);
 }
 
-// BeginPlay 阶段初始化敌人 GAS、绑定反馈委托，并由服务端应用默认属性。
+// BeginPlay 固定相机碰撞后，按默认属性、精英强化、词缀行为、启动技能的顺序完成服务端 GAS 初始化。
 void AArenaEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// 第三人称 SpringArm 只应被世界障碍物压缩，敌人 Capsule 与 Mesh 不参与 Camera 探针碰撞。
+	if (UCapsuleComponent* EnemyCapsule = GetCapsuleComponent())
+	{
+		EnemyCapsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
+	if (USkeletalMeshComponent* EnemyMesh = GetMesh())
+	{
+		EnemyMesh->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
 
 	// 初始化顺序先建 ActorInfo，再绑定委托，最后由服务端应用默认属性。
 	InitializeAbilityActorInfo();
@@ -106,10 +204,17 @@ void AArenaEnemyCharacter::BeginPlay()
 	if (HasAuthority())
 	{
 		ApplyDefaultAttributes();
-		GrantStartupAbilities();
+		const bool bHasEliteConfiguration = EnemyAffixComponent && EnemyAffixComponent->IsElite();
+		bEliteInitializationSucceeded = !bHasEliteConfiguration
+			|| (bAppliedDefaultAttributes && EnemyAffixComponent->InitializeAfterDefaultAttributes());
+		if (bEliteInitializationSucceeded)
+		{
+			GrantStartupAbilities();
+		}
 	}
 
 	RefreshHealthBar();
+	RefreshEliteAffixPresentation();
 }
 
 // 服务器授予敌人配置的 GameplayAbility，客户端通过 ASC 复制获得必要状态。
@@ -290,22 +395,15 @@ void AArenaEnemyCharacter::RefreshMovementState()
 	}
 }
 
-// 响应 Health 变化，刷新血条并触发本地受击表现。
+// Health 变化只刷新血条和数值通知，完整受击表现统一由权威 DamageFeedback 批次驱动。
 void AArenaEnemyCharacter::HandleHealthChanged(const FOnAttributeChangeData& Data)
 {
 	const float MaxHealth = AttributeSet ? AttributeSet->GetMaxHealth() : 0.0f;
 	SetHealthBarValues(Data.NewValue, MaxHealth);
 	K2_OnHealthChanged(Data.OldValue, Data.NewValue, MaxHealth);
-
-	const float DamageAmount = FMath::Max(Data.OldValue - Data.NewValue, 0.0f);
-	if (DamageAmount > 0.0f)
-	{
-		SpawnDamageNumber(DamageAmount);
-		K2_OnDamaged(DamageAmount, Data.NewValue, MaxHealth);
-	}
 }
 
-// 执行一次性死亡流程：停移动、关碰撞、取消技能、广播死亡事件。
+// 执行一次性死亡流程：先停战斗和播放死亡表现，再允许 Volatile 延迟最终波次广播。
 void AArenaEnemyCharacter::HandleDeath()
 {
 	if (bDeathHandled)
@@ -341,15 +439,40 @@ void AArenaEnemyCharacter::HandleDeath()
 		AbilitySystemComponent->CancelAllAbilities();
 	}
 
+	if (HasAuthority())
+	{
+		// 尸体保留死亡表现，但立刻销毁无主 AIController 并从 Crowd Manager 注销导航代理。
+		DetachFromControllerPendingDestroy();
+	}
+
 	if (HealthBarWidgetComponent)
 	{
 		HealthBarWidgetComponent->SetHiddenInGame(true);
 		HealthBarWidgetComponent->SetVisibility(false);
 	}
+	if (EliteAffixBadgeWidgetComponent)
+	{
+		EliteAffixBadgeWidgetComponent->SetHiddenInGame(true);
+		EliteAffixBadgeWidgetComponent->SetVisibility(false);
+	}
 
-	// 广播给后续 WaveManager/GameMode 使用，蓝图事件只负责表现层。
-	OnEnemyDeath.Broadcast(this);
 	K2_OnDeathStarted();
+	if (EnemyAffixComponent && EnemyAffixComponent->BeginOwnerDeath())
+	{
+		return;
+	}
+	FinalizeDeferredEnemyDeath();
+}
+
+// 最终死亡广播与尸体寿命只执行一次，易爆延迟和普通死亡共用本入口。
+void AArenaEnemyCharacter::FinalizeDeferredEnemyDeath()
+{
+	if (bDeathFinalized)
+	{
+		return;
+	}
+	bDeathFinalized = true;
+	OnEnemyDeath.Broadcast(this);
 
 	if (HasAuthority() && DeathLifeSpan > 0.0f)
 	{
@@ -357,9 +480,58 @@ void AArenaEnemyCharacter::HandleDeath()
 	}
 }
 
+// Defeat 优先于易爆结算；取消 Timer/Cue 后仍走唯一死亡广播，由 WaveManager 的停止标记抑制奖励。
+void AArenaEnemyCharacter::CancelDeferredDeathForDefeat()
+{
+	if (!HasAuthority() || !bDeathHandled || bDeathFinalized)
+	{
+		return;
+	}
+	if (EnemyAffixComponent)
+	{
+		EnemyAffixComponent->CancelAffixRuntime();
+	}
+	FinalizeDeferredEnemyDeath();
+}
+
+// 从复制词缀数据更新屏幕空间 Badge；死亡或普通敌人始终隐藏。
+void AArenaEnemyCharacter::RefreshEliteAffixPresentation()
+{
+	if (!EliteAffixBadgeWidgetComponent)
+	{
+		return;
+	}
+	const UArenaEnemyAffixDataAsset* AffixData = EnemyAffixComponent
+		? EnemyAffixComponent->GetActiveAffixData()
+		: nullptr;
+	const bool bShouldShow = AffixData && !bDeathHandled;
+	EliteAffixBadgeWidgetComponent->SetHiddenInGame(!bShouldShow);
+	EliteAffixBadgeWidgetComponent->SetVisibility(bShouldShow);
+	if (!bShouldShow)
+	{
+		return;
+	}
+	EliteAffixBadgeWidgetComponent->InitWidget();
+	if (UArenaEnemyAffixBadgeWidget* Badge = Cast<UArenaEnemyAffixBadgeWidget>(
+		EliteAffixBadgeWidgetComponent->GetUserWidgetObject()))
+	{
+		Badge->SetAffixPresentation(AffixData->DisplayName, AffixData->AccentColor);
+	}
+}
+
 // 使用当前 AttributeSet 数值刷新敌人血条初始显示。
 void AArenaEnemyCharacter::RefreshHealthBar()
 {
+	if (!bShowWorldHealthBar)
+	{
+		if (HealthBarWidgetComponent)
+		{
+			HealthBarWidgetComponent->SetHiddenInGame(true);
+			HealthBarWidgetComponent->SetVisibility(false);
+		}
+		return;
+	}
+
 	if (!AttributeSet)
 	{
 		return;
@@ -371,7 +543,7 @@ void AArenaEnemyCharacter::RefreshHealthBar()
 // 将 Health/MaxHealth 写入头顶血条 Widget。
 void AArenaEnemyCharacter::SetHealthBarValues(float Health, float MaxHealth)
 {
-	if (!HealthBarWidgetComponent)
+	if (!bShowWorldHealthBar || !HealthBarWidgetComponent)
 	{
 		return;
 	}
@@ -388,34 +560,26 @@ void AArenaEnemyCharacter::SetHealthBarValues(float Health, float MaxHealth)
 	HealthBarWidget->SetHealthValues(Health, MaxHealth);
 }
 
-// 生成本地伤害数字表现，不参与复制或权威伤害结算。
-void AArenaEnemyCharacter::SpawnDamageNumber(float DamageAmount)
+// 旧 Cue 兼容入口委托给公共组件，避免角色类继续维护第二套 SpawnActor 逻辑。
+void AArenaEnemyCharacter::SpawnDamageNumber(float DamageAmount, bool bCriticalHit)
 {
-	if (DamageAmount <= 0.0f || !DamageNumberActorClass || GetNetMode() == NM_DedicatedServer)
+	if (HitReactionComponent)
 	{
-		return;
+		HitReactionComponent->SpawnDamageNumber(
+			DamageAmount,
+			bCriticalHit,
+			EArenaDamageFeedbackType::HealthOnly);
 	}
+}
 
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
+// 暴露现有敌人数字 Blueprint Class，公共组件优先复用而不要求立即迁移资产字段。
+TSubclassOf<AArenaDamageNumberActor> AArenaEnemyCharacter::GetDamageNumberActorClassForFeedback() const
+{
+	return DamageNumberActorClass;
+}
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.Instigator = GetInstigator();
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-	// 伤害数字是本地表现 Actor，不复制也不参与任何伤害结算。
-	AArenaDamageNumberActor* DamageNumberActor = World->SpawnActor<AArenaDamageNumberActor>(
-		DamageNumberActorClass,
-		GetActorLocation() + DamageNumberSpawnOffset,
-		FRotator::ZeroRotator,
-		SpawnParameters);
-
-	if (DamageNumberActor)
-	{
-		DamageNumberActor->SetDamageAmount(DamageAmount);
-	}
+// 保留敌人原有头顶数字高度，普通玩家仍可使用组件默认值。
+FVector AArenaEnemyCharacter::GetDamageNumberSpawnOffsetForFeedback(const FVector& ComponentDefault) const
+{
+	return DamageNumberSpawnOffset;
 }

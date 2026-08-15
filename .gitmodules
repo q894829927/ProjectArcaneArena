@@ -1,0 +1,3 @@
+[submodule ".agents/skills/ue56-gameplayabilities"]
+	path = .agents/skills/ue56-gameplayabilities
+	url = https://github.com/q894829927/ue56-gameplayabilities.git

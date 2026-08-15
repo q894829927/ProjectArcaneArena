@@ -11,6 +11,8 @@ class AArenaDamageNumberActor;
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
 class UArenaEnemyHealthBarWidget;
+class UArenaEnemyAffixBadgeWidget;
+class UArenaEnemyAffixComponent;
 class UGameplayEffect;
 class UGameplayAbility;
 class UAbilitySystemComponent;
@@ -28,10 +30,26 @@ public:
 
 	// 敌人 ASC 直接挂在敌人身上，便于 AI 和伤害系统访问。
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
+	// 返回项目 ASC 具体类型，供 Boss HUD 等只读观察层注册委托。
+	UArenaAbilitySystemComponent* GetArenaAbilitySystemComponent() const { return AbilitySystemComponent; }
+	// 返回敌人 AttributeSet，调用方只应读取或注册 GAS 属性委托。
+	UArenaAttributeSet* GetArenaAttributeSet() const { return AttributeSet; }
+	// 返回组合式词缀组件，WaveManager 只在 deferred spawn 完成前写入配置。
+	UArenaEnemyAffixComponent* GetEnemyAffixComponent() const { return EnemyAffixComponent; }
+	// 精英初始化失败时让 WaveManager 将本次生成视为配置错误而非普通敌人。
+	bool DidEliteInitializationSucceed() const { return bEliteInitializationSucceeded; }
 
 	// 服务器 AI 写入当前战斗目标，Ability 激活后仍会重新校验该目标。
 	void SetCombatTarget(AActor* NewCombatTarget);
 	AActor* GetCombatTarget() const { return CombatTarget.Get(); }
+	// 激活 StartupAbilities 中第一个 EnemyAttackBase 子类，供近战与远程 AI 共用。
+	bool TryActivatePrimaryAttack();
+	// 返回主攻击 CDO 的距离，AI 将它与主攻击路径共同用于追击和停步决策。
+	float GetPrimaryAttackRange() const;
+	// 使用主攻击自身的视线或弹道规则判断当前目标是否可攻击。
+	bool HasPrimaryAttackPath(AActor* TargetActor);
+	// 取消所有正在运行的 EnemyAttackBase 实例，供多技能 Boss 和普通敌人共享异常清理。
+	void CancelPrimaryAttack();
 	// 由 AIController 通过 AbilityTag 请求激活近战技能。
 	bool TryActivateMeleeAttack();
 	// AI 使用 Ability CDO 的攻击距离决定追击接受半径，最终命中仍由 Ability 校验。
@@ -39,6 +57,17 @@ public:
 	bool IsDeadOrStunned() const;
 	// AI 查询当前攻击窗口，攻击期间只停止寻路，不清空已锁定目标。
 	bool IsAttacking() const;
+	// 由伤害数字 GameplayCue 在本地生成表现，不参与复制或伤害结算。
+	void SpawnDamageNumber(float DamageAmount, bool bCriticalHit);
+	// 向公共受击组件提供现有敌人蓝图配置，避免资产迁移后数字丢失。
+	virtual TSubclassOf<AArenaDamageNumberActor> GetDamageNumberActorClassForFeedback() const override;
+	virtual FVector GetDamageNumberSpawnOffsetForFeedback(const FVector& ComponentDefault) const override;
+	// 延迟易爆词缀结算后继续唯一的 WaveManager 死亡广播与尸体寿命流程。
+	void FinalizeDeferredEnemyDeath();
+	// Defeat 取消尚未爆炸的门槛，再广播唯一死亡清理；WaveManager 会在该阶段跳过掉落。
+	void CancelDeferredDeathForDefeat();
+	// 根据复制词缀 DataAsset 刷新本地 Badge，不参与服务器玩法判断。
+	void RefreshEliteAffixPresentation();
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Enemy")
 	FArenaEnemyDeathSignature OnEnemyDeath;
@@ -64,6 +93,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Feedback")
 	FVector DamageNumberSpawnOffset = FVector(0.0f, 0.0f, 130.0f);
 
+	// 控制敌人头顶血条是否显示，Boss 可关闭后改由玩家 HUD 统一展示。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Feedback")
+	bool bShowWorldHealthBar = true;
+
 	// 蓝图死亡表现入口，后续可接死亡动画、Niagara 和音效。
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Enemy")
 	void K2_OnDeathStarted();
@@ -72,7 +105,7 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Enemy")
 	void K2_OnHealthChanged(float OldHealth, float NewHealth, float MaxHealth);
 
-	// 受击表现入口，后续可接闪白、音效或伤害数字。
+	// 旧蓝图兼容入口；统一 DamageFeedback 生效后不再由 Health Delegate 自动调用。
 	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|Enemy")
 	void K2_OnDamaged(float DamageAmount, float NewHealth, float MaxHealth);
 
@@ -83,6 +116,8 @@ private:
 	void ApplyDefaultAttributes();
 	// 服务器授予敌人启动技能，敌人生命周期内只执行一次。
 	void GrantStartupAbilities();
+	// 按 StartupAbilities 固定顺序查找第一个通用敌人攻击类，保持数据配置确定性。
+	TSubclassOf<UGameplayAbility> FindPrimaryAttackAbilityClass() const;
 	// 绑定死亡标签和 Health 属性变化，用事件驱动死亡与反馈。
 	void BindAbilitySystemDelegates();
 	// 解绑死亡标签和 Health 属性变化委托。
@@ -92,7 +127,7 @@ private:
 	void HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleMoveSpeedChanged(const FOnAttributeChangeData& Data);
 	void RefreshMovementState();
-	// Health 变化只负责 UI 和受击表现，不直接触发死亡。
+	// Health 变化只负责血条和数值通知；死亡与完整受击表现分别由标签和反馈批次驱动。
 	void HandleHealthChanged(const FOnAttributeChangeData& Data);
 	// 执行一次性死亡处理，并为后续 WaveManager 通知留出广播点。
 	void HandleDeath();
@@ -100,9 +135,6 @@ private:
 	void RefreshHealthBar();
 	// 将 GAS 属性值同步到血条 Widget。
 	void SetHealthBarValues(float Health, float MaxHealth);
-	// 本地生成伤害数字 Actor，不参与复制和伤害结算。
-	void SpawnDamageNumber(float DamageAmount);
-
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAbilitySystemComponent> AbilitySystemComponent;
 
@@ -111,6 +143,12 @@ private:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Elite", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UArenaEnemyAffixComponent> EnemyAffixComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Elite", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UWidgetComponent> EliteAffixBadgeWidgetComponent;
 
 	FDelegateHandle DeadTagDelegateHandle;
 	FDelegateHandle StunnedTagDelegateHandle;
@@ -121,4 +159,6 @@ private:
 	bool bAppliedDefaultAttributes = false;
 	bool bGrantedStartupAbilities = false;
 	bool bDeathHandled = false;
+	bool bDeathFinalized = false;
+	bool bEliteInitializationSucceeded = true;
 };

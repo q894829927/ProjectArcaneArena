@@ -41,6 +41,21 @@ LOOPING_CUE_CONFIGS = [
         "scale": (1.0, 1.0, 1.0),
         "cast_shadow": False,
     },
+    {
+        "asset_name": "GCN_DashLightningTrail_Active",
+        "destination_path": "/Game/GAS/GameplayCues/DurationCue",
+        "template_path": "/Game/GAS/GameplayCues/DurationCue/GCN_LightningStorm_Active",
+        "cue_tag": "GameplayCue.Ability.Dash.Trail",
+        "niagara_path": "/Game/SlashTrail_SoftTofu/Niagara/Lightning/NS_SlashTrail_Lightning_Loop",
+        "socket_name": "None",
+        "attach_policy": "DO_NOT_ATTACH",
+        "attachment_rule": "KEEP_WORLD",
+        "override_rotation": False,
+        "rotation": (0.0, 0.0, 0.0),
+        "override_scale": True,
+        "scale": (2.0, 2.0, 2.0),
+        "cast_shadow": False,
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (

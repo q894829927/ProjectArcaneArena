@@ -25,6 +25,31 @@ EFFECT_BLUEPRINT_CONFIGS = [
         "destination_path": "/Game/GAS/GameplayEffect/Status",
         "parent_class_name": "ArenaGameplayEffect_OverloadLockout",
     },
+    {
+        "asset_name": "GE_Trigger_EnergyOnKill",
+        "destination_path": "/Game/GAS/GameplayEffect/Trigger",
+        "parent_class_name": "ArenaGameplayEffect_EnergyRestore",
+    },
+    {
+        "asset_name": "GE_Upgrade_CritChance",
+        "destination_path": "/Game/GAS/GameplayEffect/Upgrade",
+        "parent_class_name": "ArenaGameplayEffect_CritChanceUpgrade",
+    },
+    {
+        "asset_name": "GE_Trigger_EnergyOnCrit",
+        "destination_path": "/Game/GAS/GameplayEffect/Trigger",
+        "parent_class_name": "ArenaGameplayEffect_EnergyRestore",
+    },
+    {
+        "asset_name": "GE_Trigger_EnergyOnAbilityCast",
+        "destination_path": "/Game/GAS/GameplayEffect/Trigger",
+        "parent_class_name": "ArenaGameplayEffect_EnergyRestore",
+    },
+    {
+        "asset_name": "GE_Shield_Grant",
+        "destination_path": "/Game/GAS/GameplayEffect",
+        "parent_class_name": "ArenaGameplayEffect_ShieldGrant",
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (

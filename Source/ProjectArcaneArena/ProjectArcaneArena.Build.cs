@@ -16,11 +16,17 @@ public class ProjectArcaneArena : ModuleRules
 			"GameplayAbilities",
 			"GameplayTags",
 			"GameplayTasks",
+			"NetCore",
 			"AIModule",
 			"UMG",
+			"SlateCore",
 			"MassEntity"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] {});
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Niagara",
+			"NavigationSystem"
+		});
 	}
 }

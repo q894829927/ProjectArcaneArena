@@ -8,6 +8,7 @@
 
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
+class UArenaInventoryComponent;
 class UArenaUpgradeDataAsset;
 class UAbilitySystemComponent;
 
@@ -27,6 +28,7 @@ struct FArenaOwnedUpgrade
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FArenaUpgradeStateChangedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FArenaVictoryRestartReadyChangedSignature, bool, bIsReady);
 
 UCLASS()
 class PROJECTARCANEARENA_API AArenaPlayerState : public APlayerState, public IAbilitySystemInterface
@@ -45,6 +47,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Arena|GAS")
 	UArenaAttributeSet* GetArenaAttributeSet() const;
+
+	// 返回随 PlayerState 生命周期存在的服务器权威背包 Model。
+	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
+	UArenaInventoryComponent* GetInventoryComponent() const;
 
 	// 防止重复授予启动技能，后续重生流程会复用该状态。
 	bool HasGrantedStartupAbilities() const { return bGrantedStartupAbilities; }
@@ -65,7 +71,7 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
 	int32 GetUpgradeStackCount(FName UpgradeID) const;
 
-	// 按 Ability、伤害类型和升级标签汇总数据资产数值，供服务器技能读取专属构筑加成。
+	// 按可选 Ability/伤害类型与必填升级标签汇总数值，无效路由标签表示跳过对应筛选。
 	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
 	float GetOwnedUpgradeNumericTotal(
 		FGameplayTag TargetAbilityTag,
@@ -76,6 +82,13 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Upgrade")
 	bool HasSelectedUpgrade() const { return bHasSelectedUpgrade; }
 
+	// 返回该玩家是否已确认 Victory 重开。
+	UFUNCTION(BlueprintPure, Category = "Arena|Victory")
+	bool IsVictoryRestartReady() const { return bVictoryRestartReady; }
+
+	// 仅由服务器规则层更新该玩家的 Victory 重开确认状态。
+	void SetVictoryRestartReady(bool bNewReady);
+
 	// 以下写接口仅供服务器 GameMode 管理每轮候选、选择状态和永久堆叠。
 	void BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsset*>& InCandidates);
 	void CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade);
@@ -84,6 +97,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Upgrade")
 	FArenaUpgradeStateChangedSignature OnUpgradeStateChanged;
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|Victory")
+	FArenaVictoryRestartReadyChangedSignature OnVictoryRestartReadyChanged;
 
 private:
 	UFUNCTION()
@@ -95,11 +111,17 @@ private:
 	UFUNCTION()
 	void OnRep_HasSelectedUpgrade();
 
+	UFUNCTION()
+	void OnRep_VictoryRestartReady();
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAbilitySystemComponent> AbilitySystemComponent;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "GAS", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaAttributeSet> AttributeSet;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Inventory", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UArenaInventoryComponent> InventoryComponent;
 
 	bool bGrantedStartupAbilities = false;
 	bool bAppliedDefaultAttributes = false;
@@ -112,4 +134,7 @@ private:
 
 	UPROPERTY(ReplicatedUsing = OnRep_HasSelectedUpgrade)
 	bool bHasSelectedUpgrade = true;
+
+	UPROPERTY(ReplicatedUsing = OnRep_VictoryRestartReady)
+	bool bVictoryRestartReady = false;
 };

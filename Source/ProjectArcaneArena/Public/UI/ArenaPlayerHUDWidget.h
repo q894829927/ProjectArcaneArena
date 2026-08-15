@@ -5,13 +5,19 @@
 #include "Core/ArenaGameState.h"
 #include "GameplayEffectTypes.h"
 #include "GameplayTagContainer.h"
+#include "GAS/ArenaDamageFeedbackTypes.h"
 #include "TimerManager.h"
 #include "ArenaPlayerHUDWidget.generated.h"
 
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
+class AArenaBossCharacter;
 class UProgressBar;
 class UTextBlock;
+class UWidget;
+class UButton;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FArenaVictoryRestartRequestedSignature);
 
 UCLASS()
 class PROJECTARCANEARENA_API UArenaPlayerHUDWidget : public UUserWidget
@@ -19,6 +25,14 @@ class PROJECTARCANEARENA_API UArenaPlayerHUDWidget : public UUserWidget
 	GENERATED_BODY()
 
 public:
+	// 切换本地性能统计文本的可见性；该信息只属于拥有者客户端的表现层。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetPerformanceStatsVisible(bool bVisible);
+
+	// 使用 Controller 汇总的真实帧率和 PlayerState Ping 刷新左上角统计文本。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void UpdatePerformanceStats(float FramesPerSecond, float PingMilliseconds);
+
 	// 仅切换第三人称中心准星的表现可见性，不参与目标或伤害判定。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetThirdPersonReticleVisible(bool bVisible);
@@ -39,6 +53,36 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void BindToAbilitySystem(UArenaAbilitySystemComponent* InAbilitySystemComponent, UArenaAttributeSet* InAttributeSet);
 
+	// 绑定 GameState 复制的 Boss ASC；传入空值时解绑并隐藏 Boss HUD。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void BindToBoss(AArenaBossCharacter* InBoss);
+
+	// 刷新 Boss 名称与生命显示，所有数值只来自 Boss GAS 属性。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetBossHealthValues(const FText& InBossName, float InHealth, float InMaxHealth);
+
+	// 刷新本地 Boss Intro 名称、服务器倒计时与 Space 长按进度，不拥有演出时序。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetBossIntroPresentation(
+		bool bVisible,
+		const FText& InBossName,
+		float RemainingTime,
+		float SkipProgress);
+
+	// 刷新本地 Boss Outro 标题、服务器剩余时间和 Space 长按进度。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetBossOutroPresentation(bool bVisible, float RemainingTime, float SkipProgress);
+
+	// 刷新 Victory 面板和全员重开确认计数，按钮只提交本地意图。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void SetVictoryPresentation(bool bVisible, bool bLocalReady, int32 ReadyCount, int32 RequiredCount);
+
+	// 返回重开按钮供 Controller 或蓝图检查，不再要求该按钮持有键盘焦点。
+	UButton* GetVictoryRestartButton() const { return VictoryRestartButton; }
+
+	UPROPERTY(BlueprintAssignable, Category = "Arena|UI|Victory")
+	FArenaVictoryRestartRequestedSignature OnVictoryRestartRequested;
+
 	// 刷新生命显示，数值来自 GAS Attribute delegate。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetHealthValues(float InHealth, float InMaxHealth);
@@ -50,6 +94,14 @@ public:
 	// 刷新能源显示，数值来自 GAS Attribute delegate。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
 	void SetEnergyValues(float InEnergy, float InMaxEnergy);
+
+	// 刷新复用的本地受击提示，不创建新的方向 Widget 或持有玩法状态。
+	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
+	void ShowDamageFeedback(
+		float DirectionAngleDegrees,
+		bool bHasDirection,
+		float Intensity,
+		EArenaDamageFeedbackType FeedbackType);
 
 	// 根据冷却标签有无刷新普攻状态，兼容没有倒计时数据的蓝图调用。
 	UFUNCTION(BlueprintCallable, Category = "Arena|UI")
@@ -77,7 +129,7 @@ public:
 protected:
 	// 蓝图未提供准星控件时创建一个轻量居中占位，保证第三人称可直接使用。
 	virtual void NativeConstruct() override;
-	// Widget 销毁时解绑 GAS 委托，避免回调悬挂到已销毁 UI。
+	// Widget 销毁时隐藏演出/终局面板并解绑 GAS 委托，避免回调悬挂到已销毁 UI。
 	virtual void NativeDestruct() override;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
@@ -120,6 +172,9 @@ protected:
 	TObjectPtr<UTextBlock> AimReticleText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> PerformanceStatsText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> PhaseText;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
@@ -133,6 +188,83 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UTextBlock> DefeatText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UWidget> BossPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> BossNameText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> BossPhaseText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UProgressBar> BossHealthProgressBar;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
+	TObjectPtr<UTextBlock> BossHealthText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UWidget> BossIntroPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UTextBlock> BossIntroText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UTextBlock> BossIntroCountdownText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UTextBlock> BossIntroSkipText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Intro")
+	TObjectPtr<UProgressBar> BossIntroSkipProgressBar;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Outro")
+	TObjectPtr<UWidget> BossOutroPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Outro")
+	TObjectPtr<UTextBlock> BossDefeatedText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Outro")
+	TObjectPtr<UTextBlock> BossOutroSkipText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Boss Outro")
+	TObjectPtr<UProgressBar> BossOutroSkipProgressBar;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UWidget> VictoryPanel;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UTextBlock> VictoryText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UButton> VictoryRestartButton;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UTextBlock> VictoryRestartButtonText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Victory")
+	TObjectPtr<UTextBlock> VictoryRestartStatusText;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Damage Feedback")
+	TObjectPtr<UWidget> DamageDirectionIndicator;
+
+	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI|Damage Feedback")
+	TObjectPtr<UTextBlock> ShieldBreakText;
+
+	// 蓝图可在同一个常驻 HUD 上播放更完整动画，不能据此修改 Shield 或 Health。
+	UFUNCTION(BlueprintImplementableEvent, Category = "Arena|UI|Damage Feedback", meta = (DisplayName = "On Damage Feedback"))
+	void K2_OnDamageFeedback(
+		float DirectionAngleDegrees,
+		bool bHasDirection,
+		float Intensity,
+		EArenaDamageFeedbackType FeedbackType);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|UI|Damage Feedback", meta = (ClampMin = "0.0"))
+	float DamageDirectionDuration = 0.45f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|UI|Damage Feedback", meta = (ClampMin = "0.0"))
+	float ShieldBreakMessageDuration = 0.7f;
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidgetOptional), Category = "Arena|UI")
 	TObjectPtr<UProgressBar> BasicAttackCooldownProgressBar;
@@ -231,8 +363,16 @@ protected:
 	float LightningStormCooldownPercent = 0.0f;
 
 private:
+	// 隐藏复用的方向提示和破盾文本，连续受伤只刷新同一个 Timer。
+	void ClearDamageFeedbackPresentation();
 	// 解绑当前 GAS 数据源，支持 PlayerState 重绑或 Widget 销毁。
 	void UnbindFromAbilitySystem();
+	// 解绑当前 Boss 属性、死亡和阶段标签委托，避免换 Boss 或切图后残留回调。
+	void UnbindFromBoss();
+	// 同步设置 Boss 面板及可选独立控件可见性。
+	void SetBossPanelVisible(bool bVisible);
+	// 从 Boss ASC 阶段标签刷新独立文本或旧 HUD 的名称合并回退。
+	void RefreshBossPhasePresentation();
 
 	// 初次绑定后立即用当前 AttributeSet 值刷新 UI，避免等下一次属性变化。
 	void RefreshAttributeValues();
@@ -301,9 +441,25 @@ private:
 	void HandleDashCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleShieldCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
 	void HandleLightningStormCooldownChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// Boss Health 变化只刷新本地 HUD，不参与死亡判断。
+	void HandleBossHealthChanged(const FOnAttributeChangeData& Data);
+	// Boss MaxHealth 变化时使用最新 Health 重算比例。
+	void HandleBossMaxHealthChanged(const FOnAttributeChangeData& Data);
+	// 死亡标签把 Boss Health 刷为零并保留 Outro 面板，ActiveBoss 清空后再正式解绑。
+	void HandleBossDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// 任一 Boss 阶段标签变化时重新解析最终阶段并刷新本地表现。
+	void HandleBossPhaseTagChanged(const FGameplayTag CallbackTag, int32 NewCount);
+	// 统一配置 Victory 面板层级和重开按钮的直接鼠标点击行为，避免依赖键盘焦点。
+	void ConfigureVictoryRestartInteraction();
+	// 重开按钮点击后只广播本地 UI 意图，由 Controller 发送服务器 RPC。
+	UFUNCTION()
+	void HandleVictoryRestartButtonClicked();
 
 	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundAbilitySystemComponent;
 	TWeakObjectPtr<UArenaAttributeSet> BoundAttributeSet;
+	TWeakObjectPtr<AArenaBossCharacter> BoundBoss;
+	TWeakObjectPtr<UArenaAbilitySystemComponent> BoundBossAbilitySystemComponent;
+	TWeakObjectPtr<UArenaAttributeSet> BoundBossAttributeSet;
 
 	FDelegateHandle HealthChangedDelegateHandle;
 	FDelegateHandle MaxHealthChangedDelegateHandle;
@@ -315,10 +471,18 @@ private:
 	FDelegateHandle DashCooldownTagDelegateHandle;
 	FDelegateHandle ShieldCooldownTagDelegateHandle;
 	FDelegateHandle LightningStormCooldownTagDelegateHandle;
+	FDelegateHandle BossHealthChangedDelegateHandle;
+	FDelegateHandle BossMaxHealthChangedDelegateHandle;
+	FDelegateHandle BossDeadTagDelegateHandle;
+	FDelegateHandle BossPhaseOneTagDelegateHandle;
+	FDelegateHandle BossPhaseTwoTagDelegateHandle;
+	FDelegateHandle BossPhaseThreeTagDelegateHandle;
 
 	FTimerHandle BasicAttackCooldownTimerHandle;
 	FTimerHandle FireballCooldownTimerHandle;
 	FTimerHandle DashCooldownTimerHandle;
 	FTimerHandle ShieldCooldownTimerHandle;
 	FTimerHandle LightningStormCooldownTimerHandle;
+	FTimerHandle DamageFeedbackTimerHandle;
+	bool bUsesRuntimeDamageDirectionIndicator = false;
 };

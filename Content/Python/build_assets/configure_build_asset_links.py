@@ -30,17 +30,72 @@ ABILITY_BINDINGS = [
         "property_name": "overload_lockout_effect_class",
         "effect_blueprint_path": "/Game/GAS/GameplayEffect/Status/GE_Status_OverloadLockout",
     },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnKill",
+        "property_name": "energy_restore_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnKill",
+    },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnCrit",
+        "property_name": "energy_restore_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnCrit",
+    },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_EnergyOnAbilityCast",
+        "property_name": "energy_restore_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/Trigger/GE_Trigger_EnergyOnAbilityCast",
+    },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_Shield",
+        "property_name": "shield_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/GE_Shield_Grant",
+    },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_ShieldBreakBlast",
+        "property_name": "damage_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/GE_Damage",
+    },
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_DashLightningTrail",
+        "property_name": "damage_effect_class",
+        "effect_blueprint_path": "/Game/GAS/GameplayEffect/GE_Damage",
+    },
+]
+
+ABILITY_CLASS_BINDINGS = [
+    {
+        "ability_path": "/Game/GAS/GameplayAbility/GA_DashLightningTrail",
+        "property_name": "trail_area_class",
+        "class_blueprint_path": "/Game/GAS/Area/BP_ArenaDashTrailArea",
+        "parent_class_name": "ArenaDashTrailArea",
+    },
 ]
 
 GAME_MODE_PATH = "/Game/GameMode/BP_ArenaGameMode"
 PROTOTYPE_WAVE_DATA_PATH = "/Game/Blueprints/DataAsset/DA_Waves_Prototype"
 PROTOTYPE_ENEMY_PATH = "/Game/Characters/ArenaEnemy/BP_ArenaEnemyCharacter"
+PROTOTYPE_RANGED_ENEMY_PATH = "/Game/Characters/ArenaEnemy/BP_ArenaRangedEnemy"
+DAMAGE_NUMBER_ACTOR_PATH = "/Game/UI/BP_ArenaDamageNumberActor"
+DAMAGE_FEEDBACK_CHARACTER_PATHS = (
+    "/Game/Characters/ArenaPlayer/BP_ArenaPlayerCharacter",
+    "/Game/Characters/ArenaEnemy/BP_ArenaEnemyCharacter",
+    "/Game/Characters/ArenaEnemy/BP_ArenaRangedEnemy",
+    "/Game/Boss/Character/BP_ArenaBossCharacter",
+)
 UPGRADE_POOL_ASSET_PATHS = [
     "/Game/Data/Upgrade/DA_Upgrade_FireballDamage",
     "/Game/Data/Upgrade/DA_Upgrade_FireballBurning",
     "/Game/Data/Upgrade/DA_Upgrade_LightningStormDamage",
     "/Game/Data/Upgrade/DA_Upgrade_LightningStormShocked",
     "/Game/Data/Upgrade/DA_Upgrade_Overload",
+    "/Game/Data/Upgrade/DA_Upgrade_EnergyOnKill",
+    "/Game/Data/Upgrade/DA_Upgrade_CritChance",
+    "/Game/Data/Upgrade/DA_Upgrade_EnergyOnCrit",
+    "/Game/Data/Upgrade/DA_Upgrade_EnergyOnAbilityCast",
+    "/Game/Data/Upgrade/DA_Upgrade_ShieldAmount",
+    "/Game/Data/Upgrade/DA_Upgrade_ShieldBreakBlast",
+    "/Game/Data/Upgrade/DA_Upgrade_DashCooldown",
+    "/Game/Data/Upgrade/DA_Upgrade_DashLightningTrail",
 ]
 
 
@@ -86,8 +141,42 @@ def _validate_ability_binding(binding, index, generated_asset_paths):
         )
 
 
+def _validate_ability_class_binding(binding, index, generated_asset_paths):
+    """验证 Ability 的通用 Class 属性和目标 Blueprint 父类。"""
+    required_keys = (
+        "ability_path",
+        "property_name",
+        "class_blueprint_path",
+        "parent_class_name",
+    )
+    missing_keys = [key for key in required_keys if key not in binding]
+    if missing_keys:
+        raise RuntimeError(
+            f"ABILITY_CLASS_BINDINGS[{index}] is missing keys: "
+            f"{', '.join(missing_keys)}"
+        )
+
+    if _require_or_allow_generated(binding["ability_path"], generated_asset_paths):
+        _, ability_class = tools.require_blueprint(
+            binding["ability_path"],
+            unreal.GameplayAbility,
+        )
+        ability_defaults = unreal.get_default_object(ability_class)
+        try:
+            ability_defaults.get_editor_property(binding["property_name"])
+        except Exception as error:
+            raise RuntimeError(
+                f"Ability {binding['ability_path']} does not expose "
+                f"'{binding['property_name']}': {error}"
+            )
+
+    parent_class = tools.require_unreal_type(binding["parent_class_name"])
+    if _require_or_allow_generated(binding["class_blueprint_path"], generated_asset_paths):
+        tools.require_blueprint(binding["class_blueprint_path"], parent_class)
+
+
 def validate_configs(generated_asset_paths=None):
-    """验证 Ability 连接、GameMode 属性和升级池引用。"""
+    """验证 Ability、升级池以及近战/远程原型波次所需引用。"""
     generated_asset_paths = set(generated_asset_paths or ())
     seen_binding_properties = set()
     for index, binding in enumerate(ABILITY_BINDINGS):
@@ -96,6 +185,13 @@ def validate_configs(generated_asset_paths=None):
             raise RuntimeError(f"Duplicate Ability binding: {binding_key}")
         seen_binding_properties.add(binding_key)
         _validate_ability_binding(binding, index, generated_asset_paths)
+
+    for index, binding in enumerate(ABILITY_CLASS_BINDINGS):
+        binding_key = (binding.get("ability_path"), binding.get("property_name"))
+        if binding_key in seen_binding_properties:
+            raise RuntimeError(f"Duplicate Ability binding: {binding_key}")
+        seen_binding_properties.add(binding_key)
+        _validate_ability_class_binding(binding, index, generated_asset_paths)
 
     upgrade_data_class = tools.require_unreal_type("ArenaUpgradeDataAsset")
     seen_upgrade_paths = set()
@@ -115,7 +211,7 @@ def validate_configs(generated_asset_paths=None):
             f"GameMode {GAME_MODE_PATH} does not expose 'upgrade_pool': {error}"
         )
 
-    # 第四波只依赖现有原型资产，预检其反射类型和可写 Waves 字段。
+    # 混合波依赖近战原型与可选远程原型；远程尚未生成时不阻断其他构筑资产连接。
     wave_data_class = tools.require_unreal_type("ArenaWaveDataAsset")
     tools.require_unreal_type("ArenaWaveConfig")
     tools.require_unreal_type("ArenaWaveEnemyEntry")
@@ -124,12 +220,43 @@ def validate_configs(generated_asset_paths=None):
         PROTOTYPE_ENEMY_PATH,
         tools.require_unreal_type("ArenaEnemyCharacter"),
     )
+    if unreal.EditorAssetLibrary.does_asset_exist(PROTOTYPE_RANGED_ENEMY_PATH):
+        tools.require_blueprint(
+            PROTOTYPE_RANGED_ENEMY_PATH,
+            tools.require_unreal_type("ArenaEnemyCharacter"),
+        )
+    else:
+        unreal.log_warning(
+            "Ranged enemy asset is not generated yet; build asset setup will "
+            "leave the current wave enemy arrays unchanged."
+        )
     try:
         wave_data.get_editor_property("waves")
     except Exception as error:
         raise RuntimeError(
             f"Wave data {PROTOTYPE_WAVE_DATA_PATH} does not expose 'waves': {error}"
         )
+
+    damage_number_parent = tools.require_unreal_type("ArenaDamageNumberActor")
+    tools.require_blueprint(DAMAGE_NUMBER_ACTOR_PATH, damage_number_parent)
+    character_parent = tools.require_unreal_type("ArenaCharacterBase")
+    for character_path in DAMAGE_FEEDBACK_CHARACTER_PATHS:
+        if not unreal.EditorAssetLibrary.does_asset_exist(character_path):
+            unreal.log_warning(
+                f"Skipped DamageFeedback character validation because {character_path} is missing."
+            )
+            continue
+        _, character_class = tools.require_blueprint(character_path, character_parent)
+        character_defaults = unreal.get_default_object(character_class)
+        try:
+            hit_reaction_component = character_defaults.get_editor_property(
+                "hit_reaction_component"
+            )
+            hit_reaction_component.get_editor_property("damage_number_actor_class")
+        except Exception as error:
+            raise RuntimeError(
+                f"Character {character_path} does not expose DamageFeedback component settings: {error}"
+            )
 
 
 def _configure_ability_binding(binding):
@@ -148,6 +275,28 @@ def _configure_ability_binding(binding):
     tools.save_asset(binding["ability_path"])
     unreal.log(
         f"Configured Ability binding: {binding['ability_path']}."
+        f"{binding['property_name']}"
+    )
+    return ability_blueprint
+
+
+def _configure_ability_class_binding(binding):
+    """把生成的 Actor Blueprint Class 写入 Ability 的 Class 属性。"""
+    ability_blueprint, ability_class = tools.require_blueprint(
+        binding["ability_path"],
+        unreal.GameplayAbility,
+    )
+    parent_class = tools.require_unreal_type(binding["parent_class_name"])
+    _, target_class = tools.require_blueprint(
+        binding["class_blueprint_path"],
+        parent_class,
+    )
+    ability_defaults = unreal.get_default_object(ability_class)
+    ability_defaults.modify()
+    ability_defaults.set_editor_property(binding["property_name"], target_class)
+    tools.save_asset(binding["ability_path"])
+    unreal.log(
+        f"Configured Ability class binding: {binding['ability_path']}."
         f"{binding['property_name']}"
     )
     return ability_blueprint
@@ -178,50 +327,125 @@ def _configure_upgrade_pool():
     unreal.log(f"Configured GameMode UpgradePool: {GAME_MODE_PATH}")
 
 
-def _configure_prototype_wave_four():
-    """幂等写入第四波九名近战敌人，为正常流程提供第三次升级机会。"""
+def _enemy_class_key(enemy_class):
+    """生成稳定的敌人 Class 键，便于重建前回填精英字段。"""
+    return enemy_class.get_path_name().lower() if enemy_class is not None else ""
+
+
+def _capture_elite_fields(entries):
+    """按 EnemyClass 保留已有的 EliteCount 与 EliteAffixPool。"""
+    preserved = {}
+    for entry in entries:
+        enemy_class = entry.get_editor_property("enemy_class")
+        preserved[_enemy_class_key(enemy_class)] = (
+            int(entry.get_editor_property("elite_count")),
+            list(entry.get_editor_property("elite_affix_pool")),
+        )
+    return preserved
+
+
+def _make_wave_enemy_entry(enemy_class, count, elite_fields=None):
+    """构造敌人配置，并在脚本重跑时保留精英名额与词缀池。"""
+    enemy_entry = tools.require_unreal_type("ArenaWaveEnemyEntry")()
+    enemy_entry.set_editor_property("enemy_class", enemy_class)
+    enemy_entry.set_editor_property("count", count)
+    if elite_fields is not None:
+        enemy_entry.set_editor_property("elite_count", elite_fields[0])
+        enemy_entry.set_editor_property("elite_affix_pool", elite_fields[1])
+    return enemy_entry
+
+
+def _configure_prototype_enemy_mixes():
+    """只替换前四波 Enemies，避免后续构筑脚本把混合波覆盖回纯近战。"""
+    if not unreal.EditorAssetLibrary.does_asset_exist(PROTOTYPE_RANGED_ENEMY_PATH):
+        unreal.log_warning(
+            f"Skipped mixed wave configuration because {PROTOTYPE_RANGED_ENEMY_PATH} is missing."
+        )
+        return
+
     wave_data = tools.require_asset(
         PROTOTYPE_WAVE_DATA_PATH,
         tools.require_unreal_type("ArenaWaveDataAsset"),
     )
-    _, enemy_class = tools.require_blueprint(
+    _, melee_enemy_class = tools.require_blueprint(
         PROTOTYPE_ENEMY_PATH,
         tools.require_unreal_type("ArenaEnemyCharacter"),
     )
+    _, ranged_enemy_class = tools.require_blueprint(
+        PROTOTYPE_RANGED_ENEMY_PATH,
+        tools.require_unreal_type("ArenaEnemyCharacter"),
+    )
 
-    enemy_entry = tools.require_unreal_type("ArenaWaveEnemyEntry")()
-    enemy_entry.set_editor_property("enemy_class", enemy_class)
-    enemy_entry.set_editor_property("count", 9)
-
-    wave_four = tools.require_unreal_type("ArenaWaveConfig")()
-    wave_four.set_editor_property("enemies", [enemy_entry])
-    wave_four.set_editor_property("spawn_interval", 0.5)
-    wave_four.set_editor_property("boss_wave", False)
-    wave_four.set_editor_property("reward_count", 3)
+    wave_mixes = (
+        ((melee_enemy_class, 3),),
+        ((melee_enemy_class, 3), (ranged_enemy_class, 2)),
+        ((melee_enemy_class, 4), (ranged_enemy_class, 3)),
+        ((melee_enemy_class, 5), (ranged_enemy_class, 4)),
+    )
 
     waves = list(wave_data.get_editor_property("waves"))
     if len(waves) < 3:
         raise RuntimeError(
             f"{PROTOTYPE_WAVE_DATA_PATH} must keep its first three prototype waves."
         )
-    if len(waves) == 3:
-        waves.append(wave_four)
-    else:
-        waves[3] = wave_four
+    while len(waves) < len(wave_mixes):
+        waves.append(tools.require_unreal_type("ArenaWaveConfig")())
+
+    for wave_index, wave_mix in enumerate(wave_mixes):
+        preserved_elite_fields = _capture_elite_fields(
+            list(waves[wave_index].get_editor_property("enemies"))
+        )
+        entries = [
+            _make_wave_enemy_entry(
+                enemy_class,
+                count,
+                preserved_elite_fields.get(_enemy_class_key(enemy_class)),
+            )
+            for enemy_class, count in wave_mix
+        ]
+        waves[wave_index].set_editor_property("enemies", entries)
 
     wave_data.modify()
     wave_data.set_editor_property("waves", waves)
     tools.save_asset(PROTOTYPE_WAVE_DATA_PATH)
-    unreal.log(f"Configured prototype Wave 4: {PROTOTYPE_WAVE_DATA_PATH}")
+    unreal.log(f"Configured prototype melee/ranged wave mixes: {PROTOTYPE_WAVE_DATA_PATH}")
+
+
+def _configure_damage_feedback_characters():
+    """把现有伤害数字 Blueprint Class 写入各角色公共受击组件。"""
+    damage_number_parent = tools.require_unreal_type("ArenaDamageNumberActor")
+    _, damage_number_class = tools.require_blueprint(
+        DAMAGE_NUMBER_ACTOR_PATH,
+        damage_number_parent,
+    )
+    character_parent = tools.require_unreal_type("ArenaCharacterBase")
+    for character_path in DAMAGE_FEEDBACK_CHARACTER_PATHS:
+        if not unreal.EditorAssetLibrary.does_asset_exist(character_path):
+            continue
+        _, character_class = tools.require_blueprint(character_path, character_parent)
+        character_defaults = unreal.get_default_object(character_class)
+        hit_reaction_component = character_defaults.get_editor_property(
+            "hit_reaction_component"
+        )
+        hit_reaction_component.modify()
+        hit_reaction_component.set_editor_property(
+            "damage_number_actor_class",
+            damage_number_class,
+        )
+        tools.save_asset(character_path)
+        unreal.log(f"Configured DamageFeedback component: {character_path}")
 
 
 def run():
-    """验证后连接 Ability/UpgradePool，并幂等补齐原型第四波。"""
+    """验证后连接 Ability/UpgradePool、角色反馈与前四波混合敌人配置。"""
     validate_configs()
     for binding in ABILITY_BINDINGS:
         _configure_ability_binding(binding)
+    for binding in ABILITY_CLASS_BINDINGS:
+        _configure_ability_class_binding(binding)
     _configure_upgrade_pool()
-    _configure_prototype_wave_four()
+    _configure_prototype_enemy_mixes()
+    _configure_damage_feedback_characters()
 
 
 def main():

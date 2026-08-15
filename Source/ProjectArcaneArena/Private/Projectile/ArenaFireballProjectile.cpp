@@ -100,7 +100,7 @@ void AArenaFireballProjectile::OnProjectileOverlap(
 	if (!TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 		&& !TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Invincible))
 	{
-		ApplyBurningToTarget(TargetASC, SweepResult);
+		ApplyBurningToTarget(TargetASC);
 	}
 	FinishProjectile();
 }
@@ -175,8 +175,8 @@ void AArenaFireballProjectile::ApplyDamageToTarget(UAbilitySystemComponent* Targ
 	SourceASC->ApplyGameplayEffectSpecToTarget(*DamageSpec, TargetASC);
 }
 
-// 构造并应用周期 Burning Spec；数值与解锁状态都来自发射时的服务器构筑快照。
-void AArenaFireballProjectile::ApplyBurningToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult)
+// 构造周期 Burning Spec，并刻意不保留首次 HitResult，使后续伤害 Cue 使用目标实时位置。
+void AArenaFireballProjectile::ApplyBurningToTarget(UAbilitySystemComponent* TargetASC)
 {
 	UAbilitySystemComponent* SourceASC = SourceAbilitySystemComponent.Get();
 	if (!bBurningUnlocked || BurningDamagePerStack <= 0.0f || !BurningEffectClass || !SourceASC || !TargetASC)
@@ -187,7 +187,6 @@ void AArenaFireballProjectile::ApplyBurningToTarget(UAbilitySystemComponent* Tar
 	FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
 	EffectContext.AddSourceObject(this);
 	EffectContext.AddInstigator(SourceActor.Get(), this);
-	EffectContext.AddHitResult(HitResult);
 
 	FGameplayEffectSpecHandle BurningSpecHandle = SourceASC->MakeOutgoingSpec(BurningEffectClass, 1.0f, EffectContext);
 	if (!BurningSpecHandle.IsValid())
