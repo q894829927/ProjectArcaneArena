@@ -748,6 +748,38 @@ py "../../../../../UE_DEMO/ProjectArcaneArena/Content/Python/setup_build_assets.
 - 目标死亡后 AI 取消前摇并重新选择最近的存活玩家。
 - 多名敌人共享同一目标时不会长期互相顶死；近战攻击路径不会被同阵营敌人遮挡，停滞者能在 NavMesh 内侧移脱困。前排死亡后其 AIController/Crowd Agent 立即注销，后排可以继续补位。
 
+## 精英敌人与词缀
+
+> 当前状态：组合式 C++ 运行链路、三种词缀、确定性波次分配、精英必掉、原生 Badge、资产生成脚本与旧脚本字段保留已实现，Editor 已能加载新增反射类型与波次字段。首次资产脚本预检确认旧 W6-W8 为 `13/16/17` 纯近战且未执行任何写入；现已加入获批的保总数混合波迁移，等待重新执行生成与验证，因此本节保持 `Partial`。
+
+### 编译、资产与数据校验
+
+1. 关闭 Live Coding 后执行获批的窄 `ProjectArcaneArenaEditor Win64 Development` 编译并重启编辑器。
+2. 通过 **Tools > Execute Python Script** 连续执行两次 `Content/Python/elite_enemy/setup_elite_enemy.py`。
+3. 确认生成三个 `DA_EnemyAffix_*`、`GE_Elite_BaseAttributes`、`GE_Elite_Frenzy` 与七个 Elite GameplayCue，第二次执行不产生 `_1/_2`、重复池条目或额外波次。
+4. 对三个 Affix DataAsset 和 `DA_Waves_Prototype` 执行 Content Validation；分别临时测试空 ID/文本、非法 Tag、透明或非有限颜色、缺失 GE/Cue、无效半径/间隔/阈值、重复 Affix ID/Tag、空池、`EliteCount > Count`、无有效 DropTable Entry 以及 Boss 精英字段，测试后恢复正式配置。
+5. 确认旧纯近战 W6-W8 首次迁移为 `8M+5R / 10M+6R / 10M+7R`，各波总数仍为 `13/16/17`；第二次执行不再次拆分。再运行 `ranged_enemy/setup_ranged_enemy.py` 与 `build_assets/configure_build_asset_links.py`，确认 W3/W4 的精英字段按 EnemyClass 保留，后期混合波、SpawnInterval、RewardCount 与 Boss 波不变。
+
+### 单人完整流程与行为边界
+
+1. 固定 Match Seed 完整跑通 W1-W9：W1-W2 无精英；W3 近战易爆；W4 远程护阵；W5 近战狂暴；W6-W7 近战/远程各一名全词缀池；W8 近战两名、远程一名全词缀池；最终 Boss 无精英。
+2. 重启同 Seed 再跑一局并记录每条 Entry 的精英位置、词缀和精英奖励；三者序列应一致，普通 Pickup 与 Upgrade 随机序列不因词缀抽取消费而变化。
+3. 对每只精英核对 `2x MaxHealth` 且 Health 补满、`1.2x AttackPower`、`Defense +5`、`Enemy.Elite`、唯一 `Enemy.Affix.*`、本地化 Badge 颜色和持续 Aura；普通敌人、Boss 与 Boss Summon 无这些状态。
+4. 护阵：确认不保护自己、不保护 Boss/Summon/其他 WaveManager 敌人、不超过 `30 Shield`；两个 Warden 不无限叠加；Stun 时跳过，解除后下一周期恢复；Warden 死亡后已发 Shield 保留至消耗。
+5. 易爆：确认 Health 归零后 AI/碰撞/技能立即停止，`RemainingEnemyCount` 在 `0.8s` 内不减少；爆炸只结算一次，325 内有 Visibility 视线的存活玩家受伤，墙后/范围外/死亡玩家不受伤，Shield-first 和 Dash Invincible 正常。
+6. 分别让易爆精英 Direct Destroy、世界退出和 Defeat 期间处于预警，确认 Timer/Cue 清理且不爆炸、不掉落；最后一只易爆精英完成爆炸后才进入 Upgrade/Victory。
+7. 让最后玩家与最后一只易爆精英同归于尽，最终阶段必须保持 Defeat，不能再切换到 Upgrade/Victory，也不能在 Defeat 后生成精英奖励。
+8. 狂暴：在 `40% MaxHealth` 上下穿越阈值，确认只首次向下穿越触发；AttackPower/MoveSpeed 与 Active Tag/Cue 不重复，治疗回阈值以上不取消，Stun 期间数值保留但无法行动，死亡后持续表现移除。
+9. 每只精英死亡必须从现有 DropTable 权重中生成一个 Pickup，跳过普通概率掉落且不双掉；普通近战/远程仍按原概率，Boss/Summon 与遥测 CSV Schema 保持原行为。
+
+### 多人、视角与 Cook
+
+1. 分别用 2/3/4-player Listen Server 跑含精英波次，核对 EliteCount 使用 `1.0/1.25/1.5` 后 `RoundToInt` 并 Clamp 到展开总数；Host 不重复执行 Shield、爆炸或奖励。
+2. Host、Client 与 Late Join 观察同一只精英的 DataAsset、Elite/Affix/Frenzy Active Tags、属性、Badge、Aura、Telegraph/Pulse/Explode Cue 和 `RemainingEnemyCount`，结果应一致。
+3. 顶视角与第三人称分别检查 Badge、Aura 和 325 范围预警的可读性；切换视角不得产生额外 Cue、伤害、Shield 或奖励。
+4. 打包 Development Build，确认 `/Game/Data/EnemyAffix`、Elite GE 与 `/Game/GAS/GameplayCues/Elite` 全部 Cook，完整跑过至少一个护阵、易爆和狂暴精英。
+5. 回归普通近战、远程、Boss、Boss Summon、掉落、死亡委托、Upgrade/Victory、Detour Crowd 和波次遥测总计，确认没有行为或计数回归。
+
 ## 四波正式流程
 
 ### 测试方法

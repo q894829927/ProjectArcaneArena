@@ -11,6 +11,8 @@ class AArenaDamageNumberActor;
 class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
 class UArenaEnemyHealthBarWidget;
+class UArenaEnemyAffixBadgeWidget;
+class UArenaEnemyAffixComponent;
 class UGameplayEffect;
 class UGameplayAbility;
 class UAbilitySystemComponent;
@@ -32,6 +34,10 @@ public:
 	UArenaAbilitySystemComponent* GetArenaAbilitySystemComponent() const { return AbilitySystemComponent; }
 	// 返回敌人 AttributeSet，调用方只应读取或注册 GAS 属性委托。
 	UArenaAttributeSet* GetArenaAttributeSet() const { return AttributeSet; }
+	// 返回组合式词缀组件，WaveManager 只在 deferred spawn 完成前写入配置。
+	UArenaEnemyAffixComponent* GetEnemyAffixComponent() const { return EnemyAffixComponent; }
+	// 精英初始化失败时让 WaveManager 将本次生成视为配置错误而非普通敌人。
+	bool DidEliteInitializationSucceed() const { return bEliteInitializationSucceeded; }
 
 	// 服务器 AI 写入当前战斗目标，Ability 激活后仍会重新校验该目标。
 	void SetCombatTarget(AActor* NewCombatTarget);
@@ -56,6 +62,12 @@ public:
 	// 向公共受击组件提供现有敌人蓝图配置，避免资产迁移后数字丢失。
 	virtual TSubclassOf<AArenaDamageNumberActor> GetDamageNumberActorClassForFeedback() const override;
 	virtual FVector GetDamageNumberSpawnOffsetForFeedback(const FVector& ComponentDefault) const override;
+	// 延迟易爆词缀结算后继续唯一的 WaveManager 死亡广播与尸体寿命流程。
+	void FinalizeDeferredEnemyDeath();
+	// Defeat 取消尚未爆炸的门槛，再广播唯一死亡清理；WaveManager 会在该阶段跳过掉落。
+	void CancelDeferredDeathForDefeat();
+	// 根据复制词缀 DataAsset 刷新本地 Badge，不参与服务器玩法判断。
+	void RefreshEliteAffixPresentation();
 
 	UPROPERTY(BlueprintAssignable, Category = "Arena|Enemy")
 	FArenaEnemyDeathSignature OnEnemyDeath;
@@ -132,6 +144,12 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "UI", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UWidgetComponent> HealthBarWidgetComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Elite", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UArenaEnemyAffixComponent> EnemyAffixComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Elite", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UWidgetComponent> EliteAffixBadgeWidgetComponent;
+
 	FDelegateHandle DeadTagDelegateHandle;
 	FDelegateHandle StunnedTagDelegateHandle;
 	FDelegateHandle HealthChangedDelegateHandle;
@@ -141,4 +159,6 @@ private:
 	bool bAppliedDefaultAttributes = false;
 	bool bGrantedStartupAbilities = false;
 	bool bDeathHandled = false;
+	bool bDeathFinalized = false;
+	bool bEliteInitializationSucceeded = true;
 };

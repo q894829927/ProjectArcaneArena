@@ -3,6 +3,7 @@
 #include "AI/ArenaEnemyAIController.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/ArenaHitReactionComponent.h"
+#include "Components/ArenaEnemyAffixComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/WidgetComponent.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
@@ -14,6 +15,7 @@
 #include "GameplayEffect.h"
 #include "UI/ArenaDamageNumberActor.h"
 #include "UI/ArenaEnemyHealthBarWidget.h"
+#include "UI/ArenaEnemyAffixBadgeWidget.h"
 
 // 构造敌人角色，创建敌人专属 ASC、AttributeSet 和头顶血条组件。
 AArenaEnemyCharacter::AArenaEnemyCharacter()
@@ -34,6 +36,17 @@ AArenaEnemyCharacter::AArenaEnemyCharacter()
 	HealthBarWidgetComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 120.0f));
 	HealthBarWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	HealthBarWidgetComponent->SetGenerateOverlapEvents(false);
+
+	EnemyAffixComponent = CreateDefaultSubobject<UArenaEnemyAffixComponent>(TEXT("EnemyAffixComponent"));
+	EliteAffixBadgeWidgetComponent = CreateDefaultSubobject<UWidgetComponent>(TEXT("EliteAffixBadgeWidget"));
+	EliteAffixBadgeWidgetComponent->SetupAttachment(RootComponent);
+	EliteAffixBadgeWidgetComponent->SetWidgetSpace(EWidgetSpace::Screen);
+	EliteAffixBadgeWidgetComponent->SetWidgetClass(UArenaEnemyAffixBadgeWidget::StaticClass());
+	EliteAffixBadgeWidgetComponent->SetDrawSize(FVector2D(200.0f, 28.0f));
+	EliteAffixBadgeWidgetComponent->SetRelativeLocation(FVector(0.0f, 0.0f, 145.0f));
+	EliteAffixBadgeWidgetComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	EliteAffixBadgeWidgetComponent->SetGenerateOverlapEvents(false);
+	EliteAffixBadgeWidgetComponent->SetVisibility(false);
 
 	GetCharacterMovement()->MaxWalkSpeed = 350.0f;
 	AIControllerClass = AArenaEnemyAIController::StaticClass();
@@ -169,7 +182,7 @@ bool AArenaEnemyCharacter::IsAttacking() const
 		&& AbilitySystemComponent->HasMatchingGameplayTag(ArenaGameplayTags::State_Attacking);
 }
 
-// BeginPlay 阶段固定敌人相机通道响应，再初始化 GAS、反馈委托和服务端默认属性。
+// BeginPlay 固定相机碰撞后，按默认属性、精英强化、词缀行为、启动技能的顺序完成服务端 GAS 初始化。
 void AArenaEnemyCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -191,10 +204,17 @@ void AArenaEnemyCharacter::BeginPlay()
 	if (HasAuthority())
 	{
 		ApplyDefaultAttributes();
-		GrantStartupAbilities();
+		const bool bHasEliteConfiguration = EnemyAffixComponent && EnemyAffixComponent->IsElite();
+		bEliteInitializationSucceeded = !bHasEliteConfiguration
+			|| (bAppliedDefaultAttributes && EnemyAffixComponent->InitializeAfterDefaultAttributes());
+		if (bEliteInitializationSucceeded)
+		{
+			GrantStartupAbilities();
+		}
 	}
 
 	RefreshHealthBar();
+	RefreshEliteAffixPresentation();
 }
 
 // 服务器授予敌人配置的 GameplayAbility，客户端通过 ASC 复制获得必要状态。
@@ -383,7 +403,7 @@ void AArenaEnemyCharacter::HandleHealthChanged(const FOnAttributeChangeData& Dat
 	K2_OnHealthChanged(Data.OldValue, Data.NewValue, MaxHealth);
 }
 
-// 执行一次性死亡流程：停移动、关碰撞、解除 Crowd AI、取消技能并广播死亡事件。
+// 执行一次性死亡流程：先停战斗和播放死亡表现，再允许 Volatile 延迟最终波次广播。
 void AArenaEnemyCharacter::HandleDeath()
 {
 	if (bDeathHandled)
@@ -430,14 +450,72 @@ void AArenaEnemyCharacter::HandleDeath()
 		HealthBarWidgetComponent->SetHiddenInGame(true);
 		HealthBarWidgetComponent->SetVisibility(false);
 	}
+	if (EliteAffixBadgeWidgetComponent)
+	{
+		EliteAffixBadgeWidgetComponent->SetHiddenInGame(true);
+		EliteAffixBadgeWidgetComponent->SetVisibility(false);
+	}
 
-	// 广播给后续 WaveManager/GameMode 使用，蓝图事件只负责表现层。
-	OnEnemyDeath.Broadcast(this);
 	K2_OnDeathStarted();
+	if (EnemyAffixComponent && EnemyAffixComponent->BeginOwnerDeath())
+	{
+		return;
+	}
+	FinalizeDeferredEnemyDeath();
+}
+
+// 最终死亡广播与尸体寿命只执行一次，易爆延迟和普通死亡共用本入口。
+void AArenaEnemyCharacter::FinalizeDeferredEnemyDeath()
+{
+	if (bDeathFinalized)
+	{
+		return;
+	}
+	bDeathFinalized = true;
+	OnEnemyDeath.Broadcast(this);
 
 	if (HasAuthority() && DeathLifeSpan > 0.0f)
 	{
 		SetLifeSpan(DeathLifeSpan);
+	}
+}
+
+// Defeat 优先于易爆结算；取消 Timer/Cue 后仍走唯一死亡广播，由 WaveManager 的停止标记抑制奖励。
+void AArenaEnemyCharacter::CancelDeferredDeathForDefeat()
+{
+	if (!HasAuthority() || !bDeathHandled || bDeathFinalized)
+	{
+		return;
+	}
+	if (EnemyAffixComponent)
+	{
+		EnemyAffixComponent->CancelAffixRuntime();
+	}
+	FinalizeDeferredEnemyDeath();
+}
+
+// 从复制词缀数据更新屏幕空间 Badge；死亡或普通敌人始终隐藏。
+void AArenaEnemyCharacter::RefreshEliteAffixPresentation()
+{
+	if (!EliteAffixBadgeWidgetComponent)
+	{
+		return;
+	}
+	const UArenaEnemyAffixDataAsset* AffixData = EnemyAffixComponent
+		? EnemyAffixComponent->GetActiveAffixData()
+		: nullptr;
+	const bool bShouldShow = AffixData && !bDeathHandled;
+	EliteAffixBadgeWidgetComponent->SetHiddenInGame(!bShouldShow);
+	EliteAffixBadgeWidgetComponent->SetVisibility(bShouldShow);
+	if (!bShouldShow)
+	{
+		return;
+	}
+	EliteAffixBadgeWidgetComponent->InitWidget();
+	if (UArenaEnemyAffixBadgeWidget* Badge = Cast<UArenaEnemyAffixBadgeWidget>(
+		EliteAffixBadgeWidgetComponent->GetUserWidgetObject()))
+	{
+		Badge->SetAffixPresentation(AffixData->DisplayName, AffixData->AccentColor);
 	}
 }
 

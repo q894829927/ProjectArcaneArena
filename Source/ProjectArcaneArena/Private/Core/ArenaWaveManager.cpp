@@ -3,9 +3,11 @@
 #include "AbilitySystemComponent.h"
 #include "Character/ArenaBossCharacter.h"
 #include "Character/ArenaEnemyCharacter.h"
+#include "Components/ArenaEnemyAffixComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Core/ArenaGameState.h"
+#include "Core/ArenaEnemyAffixDataAsset.h"
 #include "Core/ArenaPlayerController.h"
 #include "Core/ArenaPlayerState.h"
 #include "Core/ArenaWaveDataAsset.h"
@@ -27,7 +29,7 @@ AArenaWaveManager::AArenaWaveManager()
 	bReplicates = false;
 }
 
-// 注入波次和掉落数据，使用派生种子隔离升级与掉落随机序列。
+// 注入波次和掉落数据，使用不同盐值隔离升级、普通掉落、词缀与精英奖励随机序列。
 void AArenaWaveManager::Initialize(
 	UArenaWaveDataAsset* InWaveData,
 	UArenaPickupDropTableDataAsset* InPickupDropTable,
@@ -47,6 +49,13 @@ void AArenaWaveManager::Initialize(
 		PickupSeed = 1;
 	}
 	PickupRandomStream.Initialize(PickupSeed);
+	constexpr int32 EliteAffixSeedSalt = 0x454C4954;
+	constexpr int32 EliteRewardSeedSalt = 0x52455744;
+	int32 EliteAffixSeed = InMatchRandomSeed ^ EliteAffixSeedSalt;
+	int32 EliteRewardSeed = InMatchRandomSeed ^ EliteRewardSeedSalt;
+	EliteAffixRandomStream.Initialize(EliteAffixSeed == 0 ? 1 : EliteAffixSeed);
+	EliteRewardRandomStream.Initialize(EliteRewardSeed == 0 ? 1 : EliteRewardSeed);
+	bStoppingForDefeat = false;
 	CollectSpawnPoints();
 	if (!WaveData)
 	{
@@ -122,16 +131,16 @@ void AArenaWaveManager::StartNextWave()
 		Telemetry->BeginWave(
 			CurrentWaveArrayIndex + 1,
 			bCurrentWaveIsBossWave,
-			PendingEnemyClasses.Num());
+			PendingEnemySpawns.Num());
 	}
 	if (!bCurrentWaveIsBossWave)
 	{
 		ArenaGameState->SetGamePhase(EArenaGamePhase::Combat);
 	}
-	UE_LOG(LogArenaWaves, Log, TEXT("Starting wave %d with %d pending enemies."), CurrentWaveArrayIndex + 1, PendingEnemyClasses.Num());
+	UE_LOG(LogArenaWaves, Log, TEXT("Starting wave %d with %d pending enemies."), CurrentWaveArrayIndex + 1, PendingEnemySpawns.Num());
 
 	SpawnNextEnemy();
-	if (NextPendingSpawnIndex < PendingEnemyClasses.Num())
+	if (NextPendingSpawnIndex < PendingEnemySpawns.Num())
 	{
 		GetWorldTimerManager().SetTimer(
 			SpawnTimerHandle,
@@ -142,15 +151,29 @@ void AArenaWaveManager::StartNextWave()
 	}
 }
 
-// Defeat 时停止所有生成和原型升级计时器，防止终局后继续推进战斗。
+// Defeat 时停止生成和升级计时器，并取消易爆延迟死亡，防止终局后爆炸、掉落或推进波次。
 void AArenaWaveManager::StopForDefeat()
 {
+	bStoppingForDefeat = true;
 	GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 	GetWorldTimerManager().ClearTimer(AutoStartNextWaveTimerHandle);
 	ClearBossIntroTimer();
 	ClearBossOutroTimer();
-	PendingEnemyClasses.Reset();
+	PendingEnemySpawns.Reset();
 	NextPendingSpawnIndex = 0;
+	TArray<AArenaEnemyCharacter*> AliveEnemySnapshot;
+	AliveEnemySnapshot.Reserve(AliveEnemies.Num());
+	for (AArenaEnemyCharacter* Enemy : AliveEnemies)
+	{
+		AliveEnemySnapshot.Add(Enemy);
+	}
+	for (AArenaEnemyCharacter* Enemy : AliveEnemySnapshot)
+	{
+		if (Enemy)
+		{
+			Enemy->CancelDeferredDeathForDefeat();
+		}
+	}
 	if (AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr)
 	{
 		ArenaGameState->SetActiveBoss(nullptr);
@@ -207,7 +230,7 @@ void AArenaWaveManager::CollectSpawnPoints()
 	}
 }
 
-// Boss 波要求唯一条目、唯一数量且 Class 继承 ArenaBossCharacter，避免错误资产进入 Boss 生命周期。
+// 在开波前验证普通词缀池和 Boss 唯一约束，配置错误不会静默生成普通敌人。
 bool AArenaWaveManager::ValidateWaveConfiguration(int32 WaveArrayIndex) const
 {
 	if (!WaveData || !WaveData->Waves.IsValidIndex(WaveArrayIndex))
@@ -218,6 +241,71 @@ bool AArenaWaveManager::ValidateWaveConfiguration(int32 WaveArrayIndex) const
 	const FArenaWaveConfig& WaveConfig = WaveData->Waves[WaveArrayIndex];
 	if (!WaveConfig.bBossWave)
 	{
+		for (const FArenaWaveEnemyEntry& Entry : WaveConfig.Enemies)
+		{
+			if (!Entry.EnemyClass || Entry.Count <= 0)
+			{
+				continue;
+			}
+			if (Entry.EliteCount < 0 || Entry.EliteCount > Entry.Count)
+			{
+				UE_LOG(LogArenaWaves, Error, TEXT("Wave %d entry %s has EliteCount %d outside [0, Count=%d]."),
+					WaveArrayIndex + 1, *GetNameSafe(Entry.EnemyClass.Get()), Entry.EliteCount, Entry.Count);
+				return false;
+			}
+			if (Entry.EliteCount == 0)
+			{
+				if (!Entry.EliteAffixPool.IsEmpty())
+				{
+					UE_LOG(LogArenaWaves, Error, TEXT("Wave %d entry %s has an AffixPool but EliteCount is zero."),
+						WaveArrayIndex + 1, *GetNameSafe(Entry.EnemyClass.Get()));
+					return false;
+				}
+				continue;
+			}
+			if (!WaveData->EliteBaselineEffectClass || Entry.EliteAffixPool.IsEmpty())
+			{
+				UE_LOG(LogArenaWaves, Error, TEXT("Wave %d elite entry %s requires EliteBaselineEffectClass and a non-empty AffixPool."),
+					WaveArrayIndex + 1, *GetNameSafe(Entry.EnemyClass.Get()));
+				return false;
+			}
+			if (!FMath::IsFinite(WaveData->EliteBaseline.MaxHealthMultiplier)
+				|| WaveData->EliteBaseline.MaxHealthMultiplier < 1.0f
+				|| !FMath::IsFinite(WaveData->EliteBaseline.AttackPowerMultiplier)
+				|| WaveData->EliteBaseline.AttackPowerMultiplier < 1.0f
+				|| !FMath::IsFinite(WaveData->EliteBaseline.DefenseBonus)
+				|| WaveData->EliteBaseline.DefenseBonus < 0.0f)
+			{
+				UE_LOG(LogArenaWaves, Error, TEXT("Wave %d uses an invalid global elite baseline."), WaveArrayIndex + 1);
+				return false;
+			}
+			const bool bHasValidEliteReward = PickupDropTable && PickupDropTable->Entries.ContainsByPredicate(
+				[](const FArenaPickupDropEntry& DropEntry)
+				{
+					return DropEntry.PickupClass && DropEntry.Weight > 0.0f;
+				});
+			if (!bHasValidEliteReward)
+			{
+				UE_LOG(LogArenaWaves, Error, TEXT("Wave %d contains elites but no valid guaranteed Pickup reward entry."), WaveArrayIndex + 1);
+				return false;
+			}
+
+			TSet<FName> SeenAffixIDs;
+			TSet<FGameplayTag> SeenAffixTags;
+			for (const UArenaEnemyAffixDataAsset* Affix : Entry.EliteAffixPool)
+			{
+				FText Error;
+				if (!Affix || !Affix->IsRuntimeDefinitionValid(&Error)
+					|| SeenAffixIDs.Contains(Affix->AffixID) || SeenAffixTags.Contains(Affix->AffixTag))
+				{
+					UE_LOG(LogArenaWaves, Error, TEXT("Wave %d entry %s has invalid or duplicate affix %s: %s"),
+						WaveArrayIndex + 1, *GetNameSafe(Entry.EnemyClass.Get()), *GetNameSafe(Affix), *Error.ToString());
+					return false;
+				}
+				SeenAffixIDs.Add(Affix->AffixID);
+				SeenAffixTags.Add(Affix->AffixTag);
+			}
+		}
 		return true;
 	}
 
@@ -230,7 +318,9 @@ bool AArenaWaveManager::ValidateWaveConfiguration(int32 WaveArrayIndex) const
 	const FArenaWaveEnemyEntry& BossEntry = WaveConfig.Enemies[0];
 	const bool bValidBossEntry = BossEntry.EnemyClass
 		&& BossEntry.EnemyClass->IsChildOf(AArenaBossCharacter::StaticClass())
-		&& BossEntry.Count == 1;
+		&& BossEntry.Count == 1
+		&& BossEntry.EliteCount == 0
+		&& BossEntry.EliteAffixPool.IsEmpty();
 	if (!bValidBossEntry)
 	{
 		UE_LOG(LogArenaWaves, Error, TEXT("Boss wave %d must spawn exactly one ArenaBossCharacter subclass."), WaveArrayIndex + 1);
@@ -238,10 +328,10 @@ bool AArenaWaveManager::ValidateWaveConfiguration(int32 WaveArrayIndex) const
 	return bValidBossEntry;
 }
 
-// 按波次开始时的一至四人快照展开普通敌人数；Boss 波保持配置的唯一 Boss。
+// 展开敌人数和精英名额；每条 Entry 随机位置，词缀池耗尽前不重复。
 bool AArenaWaveManager::BuildPendingSpawnList(int32 WaveArrayIndex)
 {
-	PendingEnemyClasses.Reset();
+	PendingEnemySpawns.Reset();
 	if (!WaveData || !WaveData->Waves.IsValidIndex(WaveArrayIndex))
 	{
 		return false;
@@ -261,9 +351,55 @@ bool AArenaWaveManager::BuildPendingSpawnList(int32 WaveArrayIndex)
 		const int32 ExpandedCount = WaveConfig.bBossWave
 			? Entry.Count
 			: FMath::Max(Entry.Count, FMath::RoundToInt(static_cast<float>(Entry.Count) * EnemyCountMultiplier));
+		const int32 ExpandedEliteCount = WaveConfig.bBossWave
+			? 0
+			: FMath::Clamp(
+				FMath::RoundToInt(static_cast<float>(Entry.EliteCount) * EnemyCountMultiplier),
+				0,
+				ExpandedCount);
+
+		TArray<int32> SpawnIndices;
+		SpawnIndices.Reserve(ExpandedCount);
+		for (int32 Index = 0; Index < ExpandedCount; ++Index)
+		{
+			SpawnIndices.Add(Index);
+		}
+		for (int32 Index = SpawnIndices.Num() - 1; Index > 0; --Index)
+		{
+			SpawnIndices.Swap(Index, EliteAffixRandomStream.RandRange(0, Index));
+		}
+		TSet<int32> EliteIndices;
+		for (int32 Index = 0; Index < ExpandedEliteCount; ++Index)
+		{
+			EliteIndices.Add(SpawnIndices[Index]);
+		}
+
+		TArray<UArenaEnemyAffixDataAsset*> AffixDeck;
+		for (UArenaEnemyAffixDataAsset* Affix : Entry.EliteAffixPool)
+		{
+			if (Affix)
+			{
+				AffixDeck.Add(Affix);
+			}
+		}
+		int32 EliteOrdinal = 0;
 		for (int32 CountIndex = 0; CountIndex < ExpandedCount; ++CountIndex)
 		{
-			PendingEnemyClasses.Add(Entry.EnemyClass);
+			FArenaPendingEnemySpawn& PendingSpawn = PendingEnemySpawns.AddDefaulted_GetRef();
+			PendingSpawn.EnemyClass = Entry.EnemyClass;
+			if (!EliteIndices.Contains(CountIndex) || AffixDeck.IsEmpty())
+			{
+				continue;
+			}
+			if (EliteOrdinal % AffixDeck.Num() == 0)
+			{
+				for (int32 Index = AffixDeck.Num() - 1; Index > 0; --Index)
+				{
+					AffixDeck.Swap(Index, EliteAffixRandomStream.RandRange(0, Index));
+				}
+			}
+			PendingSpawn.AffixData = AffixDeck[EliteOrdinal % AffixDeck.Num()];
+			++EliteOrdinal;
 		}
 	}
 	UE_LOG(
@@ -273,14 +409,14 @@ bool AArenaWaveManager::BuildPendingSpawnList(int32 WaveArrayIndex)
 		WaveArrayIndex + 1,
 		ParticipatingPlayerCount,
 		EnemyCountMultiplier,
-		PendingEnemyClasses.Num());
-	return !PendingEnemyClasses.IsEmpty();
+		PendingEnemySpawns.Num());
+	return !PendingEnemySpawns.IsEmpty();
 }
 
 // 每次计时器只生成一个敌人；成功生成后统计一次，Boss 再完成人数缩放和 Intro。
 void AArenaWaveManager::SpawnNextEnemy()
 {
-	if (!PendingEnemyClasses.IsValidIndex(NextPendingSpawnIndex) || SpawnPoints.IsEmpty())
+	if (!PendingEnemySpawns.IsValidIndex(NextPendingSpawnIndex) || SpawnPoints.IsEmpty())
 	{
 		GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 		CheckWaveCompletion();
@@ -289,15 +425,41 @@ void AArenaWaveManager::SpawnNextEnemy()
 
 	ATargetPoint* SpawnPoint = SpawnPoints[NextSpawnPointIndex % SpawnPoints.Num()];
 	++NextSpawnPointIndex;
-	const TSubclassOf<AArenaEnemyCharacter> EnemyClass = PendingEnemyClasses[NextPendingSpawnIndex++];
+	const FArenaPendingEnemySpawn PendingSpawn = PendingEnemySpawns[NextPendingSpawnIndex++];
+	const TSubclassOf<AArenaEnemyCharacter> EnemyClass = PendingSpawn.EnemyClass;
 
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.Owner = this;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-	AArenaEnemyCharacter* Enemy = GetWorld()->SpawnActor<AArenaEnemyCharacter>(
+	AArenaEnemyCharacter* Enemy = GetWorld()->SpawnActorDeferred<AArenaEnemyCharacter>(
 		EnemyClass,
 		SpawnPoint->GetActorTransform(),
-		SpawnParameters);
+		this,
+		nullptr,
+		ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+	if (Enemy && PendingSpawn.AffixData)
+	{
+		if (UArenaEnemyAffixComponent* AffixComponent = Enemy->GetEnemyAffixComponent())
+		{
+			AffixComponent->ConfigureBeforeSpawn(
+				PendingSpawn.AffixData,
+				WaveData->EliteBaseline,
+				WaveData->EliteBaselineEffectClass);
+		}
+		else
+		{
+			UE_LOG(LogArenaWaves, Error, TEXT("Elite class %s has no EnemyAffixComponent."), *GetNameSafe(EnemyClass.Get()));
+			Enemy->Destroy();
+			Enemy = nullptr;
+		}
+	}
+	if (Enemy)
+	{
+		Enemy->FinishSpawning(SpawnPoint->GetActorTransform());
+		if (!Enemy->DidEliteInitializationSucceed())
+		{
+			UE_LOG(LogArenaWaves, Error, TEXT("Elite initialization failed for %s in wave %d."), *GetNameSafe(Enemy), CurrentWaveArrayIndex + 1);
+			Enemy->Destroy();
+			Enemy = nullptr;
+		}
+	}
 	if (Enemy)
 	{
 		bool bShouldBeginBossIntro = false;
@@ -343,7 +505,7 @@ void AArenaWaveManager::SpawnNextEnemy()
 		UE_LOG(LogArenaWaves, Error, TEXT("Failed to spawn enemy %s in wave %d."), *GetNameSafe(EnemyClass.Get()), CurrentWaveArrayIndex + 1);
 	}
 
-	if (NextPendingSpawnIndex >= PendingEnemyClasses.Num())
+	if (NextPendingSpawnIndex >= PendingEnemySpawns.Num())
 	{
 		GetWorldTimerManager().ClearTimer(SpawnTimerHandle);
 		CheckWaveCompletion();
@@ -667,6 +829,12 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 			Telemetry->RecordEnemyKilled(Cast<AArenaBossCharacter>(Enemy) != nullptr);
 		}
 	}
+	if (bStoppingForDefeat)
+	{
+		// 易爆取消仍记录一次真实击杀并清理 Alive 集合，但 Defeat 不生成奖励、Outro 或推进波次。
+		UpdateReplicatedEnemyCount();
+		return;
+	}
 	if (AArenaBossCharacter* DeadBoss = Cast<AArenaBossCharacter>(Enemy))
 	{
 		ClearBossIntroTimer();
@@ -674,7 +842,7 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 		const bool bIsFinalWave = WaveData && CurrentWaveArrayIndex >= WaveData->Waves.Num() - 1;
 		if (bCurrentWaveIsBossWave && bIsFinalWave && AliveEnemies.IsEmpty())
 		{
-			PendingEnemyClasses.Reset();
+			PendingEnemySpawns.Reset();
 			BeginBossOutro(DeadBoss);
 			return;
 		}
@@ -682,7 +850,9 @@ void AArenaWaveManager::HandleEnemyDeath(AArenaEnemyCharacter* Enemy)
 	else
 	{
 		// Boss Foundation 明确跳过普通恢复掉落，普通敌人保持既有全局掉落表。
-		TrySpawnPickupDrop(Enemy);
+		const bool bGuaranteedEliteDrop = Enemy->GetEnemyAffixComponent()
+			&& Enemy->GetEnemyAffixComponent()->IsElite();
+		TrySpawnPickupDrop(Enemy, bGuaranteedEliteDrop);
 	}
 	UpdateReplicatedEnemyCount();
 	CheckWaveCompletion();
@@ -712,7 +882,7 @@ void AArenaWaveManager::HandleEnemyDestroyed(AActor* DestroyedActor)
 			const bool bIsFinalWave = WaveData && CurrentWaveArrayIndex >= WaveData->Waves.Num() - 1;
 			if (bCurrentWaveIsBossWave && bIsFinalWave && AliveEnemies.IsEmpty())
 			{
-				PendingEnemyClasses.Reset();
+				PendingEnemySpawns.Reset();
 				if (UArenaBalanceTelemetryComponent* Telemetry =
 					ArenaGameState->GetBalanceTelemetryComponent())
 				{
@@ -728,7 +898,7 @@ void AArenaWaveManager::HandleEnemyDestroyed(AActor* DestroyedActor)
 }
 
 // 每名受管理敌人只经过本入口一次；成功完成生成后统计一次世界 Pickup。
-void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy)
+void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy, bool bGuaranteedEliteDrop)
 {
 	if (!HasAuthority() || !Enemy || !PickupDropTable || !GetWorld())
 	{
@@ -736,12 +906,13 @@ void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy)
 	}
 
 	const float DropChance = FMath::Clamp(PickupDropTable->DropChance, 0.0f, 1.0f);
-	if (DropChance <= 0.0f || PickupRandomStream.FRand() >= DropChance)
+	if (!bGuaranteedEliteDrop && (DropChance <= 0.0f || PickupRandomStream.FRand() >= DropChance))
 	{
 		return;
 	}
 
-	const TSubclassOf<AArenaPickupActor> PickupClass = DrawWeightedPickupClass();
+	FRandomStream& RewardRandomStream = bGuaranteedEliteDrop ? EliteRewardRandomStream : PickupRandomStream;
+	const TSubclassOf<AArenaPickupActor> PickupClass = DrawWeightedPickupClass(RewardRandomStream);
 	if (!PickupClass)
 	{
 		UE_LOG(LogArenaWaves, Warning, TEXT("Pickup drop roll succeeded, but the drop table has no valid positive-weight entry."));
@@ -789,7 +960,7 @@ void AArenaWaveManager::TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy)
 }
 
 // 只统计有效 Class 和正权重，确保错误条目不会影响其他可用掉落。
-TSubclassOf<AArenaPickupActor> AArenaWaveManager::DrawWeightedPickupClass()
+TSubclassOf<AArenaPickupActor> AArenaWaveManager::DrawWeightedPickupClass(FRandomStream& RandomStream) const
 {
 	if (!PickupDropTable)
 	{
@@ -809,7 +980,7 @@ TSubclassOf<AArenaPickupActor> AArenaWaveManager::DrawWeightedPickupClass()
 		return nullptr;
 	}
 
-	const double Draw = static_cast<double>(PickupRandomStream.FRand()) * TotalWeight;
+	const double Draw = static_cast<double>(RandomStream.FRand()) * TotalWeight;
 	double CumulativeWeight = 0.0;
 	TSubclassOf<AArenaPickupActor> LastValidClass;
 	for (const FArenaPickupDropEntry& Entry : PickupDropTable->Entries)
@@ -833,7 +1004,8 @@ TSubclassOf<AArenaPickupActor> AArenaWaveManager::DrawWeightedPickupClass()
 // 全部敌人清空后先固化波次统计，再进入 Victory 或 Upgrade；Boss Outro 走独立路径。
 void AArenaWaveManager::CheckWaveCompletion()
 {
-	if (NextPendingSpawnIndex < PendingEnemyClasses.Num() || !AliveEnemies.IsEmpty() || bSpawnFailureInCurrentWave)
+	if (bStoppingForDefeat || NextPendingSpawnIndex < PendingEnemySpawns.Num()
+		|| !AliveEnemies.IsEmpty() || bSpawnFailureInCurrentWave)
 	{
 		return;
 	}
@@ -848,13 +1020,18 @@ void AArenaWaveManager::CheckWaveCompletion()
 	{
 		return;
 	}
+	if (ArenaGameState->GetGamePhase() != EArenaGamePhase::Combat)
+	{
+		// Defeat 和其他非战斗阶段优先，禁止延迟死亡回调覆盖终局状态。
+		return;
+	}
 
 	if (UArenaBalanceTelemetryComponent* Telemetry =
 		ArenaGameState->GetBalanceTelemetryComponent())
 	{
 		Telemetry->EndWave();
 	}
-	PendingEnemyClasses.Reset();
+	PendingEnemySpawns.Reset();
 	if (CurrentWaveArrayIndex >= WaveData->Waves.Num() - 1)
 	{
 		ArenaGameState->SetGamePhase(EArenaGamePhase::Victory);

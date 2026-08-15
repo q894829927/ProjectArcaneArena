@@ -17,6 +17,11 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Summoned, "Enemy.Summoned", "Enemy was spawned and is owned by a Boss summon ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Summoned_Trigger_OnKill, "Enemy.Summoned.Trigger.OnKill", "Summoned enemy grants authoritative OnKill events.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Summoned_Trigger_OnCrit, "Enemy.Summoned.Trigger.OnCrit", "Summoned enemy grants authoritative OnCrit events.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Elite, "Enemy.Elite", "Enemy is an elite wave combatant with one affix.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Affix_Volatile, "Enemy.Affix.Volatile", "Elite explodes after a readable death warning.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Affix_ArcaneWarden, "Enemy.Affix.ArcaneWarden", "Elite periodically shields nearby allied wave enemies.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Affix_Frenzy, "Enemy.Affix.Frenzy", "Elite gains a permanent low-health frenzy once per life.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Enemy_Affix_Frenzy_Active, "Enemy.Affix.Frenzy.Active", "Frenzy elite has crossed its health threshold.");
 
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_BasicAttack, "Ability.BasicAttack", "Basic attack ability.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(Ability_Fireball, "Ability.Fireball", "Fireball ability.");
@@ -79,6 +84,13 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Phase_Transition, "GameplayCue.Boss.Phase.Transition", "One-shot presentation for a Boss phase transition.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Enraged_Active, "GameplayCue.Boss.Enraged.Active", "Looping presentation for the final Boss enrage phase.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Boss_Death, "GameplayCue.Boss.Death", "One-shot presentation for the authoritative Boss death.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Enemy_Affix_Volatile_Active, "GameplayCue.Enemy.Affix.Volatile.Active", "Looping presentation for a living Volatile elite.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Enemy_Affix_Volatile_Telegraph, "GameplayCue.Enemy.Affix.Volatile.Telegraph", "Delayed death explosion warning at the elite corpse.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Enemy_Affix_Volatile_Explode, "GameplayCue.Enemy.Affix.Volatile.Explode", "Confirmed Volatile death explosion.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Enemy_Affix_ArcaneWarden_Active, "GameplayCue.Enemy.Affix.ArcaneWarden.Active", "Looping presentation for an Arcane Warden elite.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Enemy_Affix_ArcaneWarden_Pulse, "GameplayCue.Enemy.Affix.ArcaneWarden.Pulse", "Confirmed Arcane Warden shield pulse.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Enemy_Affix_Frenzy_Active, "GameplayCue.Enemy.Affix.Frenzy.Active", "Looping presentation for an active Frenzy elite.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Enemy_Affix_Frenzy_Trigger, "GameplayCue.Enemy.Affix.Frenzy.Trigger", "Burst presentation when a Frenzy elite crosses its health threshold.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Physical, "GameplayCue.Hit.Physical", "Confirmed physical damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Fire, "GameplayCue.Hit.Fire", "Confirmed fire damage hit presentation.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(GameplayCue_Hit_Lightning, "GameplayCue.Hit.Lightning", "Confirmed lightning damage hit presentation.");
@@ -147,4 +159,8 @@ namespace ArenaGameplayTags
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Upgrade_NumericValue, "SetByCaller.Upgrade.NumericValue", "Runtime numeric value supplied by an upgrade DataAsset.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Shield_Amount, "SetByCaller.Shield.Amount", "Runtime Shield grant magnitude.");
 	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Boss_MaxHealthDelta, "SetByCaller.Boss.MaxHealthDelta", "Runtime additive MaxHealth delta captured when a Boss spawns.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Elite_MaxHealthDelta, "SetByCaller.Elite.MaxHealthDelta", "Runtime additive MaxHealth granted to an elite.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Elite_HealthDelta, "SetByCaller.Elite.HealthDelta", "Runtime Health refill paired with elite MaxHealth scaling.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Elite_AttackPowerDelta, "SetByCaller.Elite.AttackPowerDelta", "Runtime additive AttackPower granted to an elite.");
+	UE_DEFINE_GAMEPLAY_TAG_COMMENT(SetByCaller_Elite_DefenseBonus, "SetByCaller.Elite.DefenseBonus", "Runtime additive Defense granted to an elite.");
 }

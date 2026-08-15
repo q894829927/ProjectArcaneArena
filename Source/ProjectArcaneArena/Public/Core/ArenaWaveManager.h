@@ -12,6 +12,13 @@ class AArenaPickupActor;
 class ATargetPoint;
 class UArenaPickupDropTableDataAsset;
 class UArenaWaveDataAsset;
+class UArenaEnemyAffixDataAsset;
+
+struct FArenaPendingEnemySpawn
+{
+	TSubclassOf<AArenaEnemyCharacter> EnemyClass;
+	TObjectPtr<UArenaEnemyAffixDataAsset> AffixData;
+};
 
 DECLARE_MULTICAST_DELEGATE(FArenaUpgradePhaseStartedSignature);
 
@@ -23,7 +30,7 @@ class PROJECTARCANEARENA_API AArenaWaveManager : public AActor
 public:
 	AArenaWaveManager();
 
-	// GameMode 注入波次、全局掉落表和本局种子，并初始化独立的服务器掉落随机流。
+	// GameMode 注入波次、全局掉落表和本局种子，并初始化普通掉落、词缀和精英奖励独立随机流。
 	void Initialize(
 		UArenaWaveDataAsset* InWaveData,
 		UArenaPickupDropTableDataAsset* InPickupDropTable,
@@ -33,7 +40,7 @@ public:
 	UFUNCTION(BlueprintCallable, CallInEditor, Category = "Arena|Wave")
 	void StartNextWave();
 
-	// 失败阶段停止尚未执行的生成计时器，避免终局后继续增加敌人。
+	// Defeat 停止生成并取消尚未结算的易爆门槛，避免终局后继续生成、爆炸或掉落。
 	void StopForDefeat();
 
 	// 正式升级系统接管后关闭原型自动跳过，并由 GameMode 监听升级阶段入口。
@@ -52,7 +59,7 @@ protected:
 
 private:
 	void CollectSpawnPoints();
-	// 验证普通波基础数据及 Boss 波唯一 Boss 约束，错误配置不会进入 Combat。
+	// 验证普通波精英数据、保底奖励及 Boss 波唯一 Boss 约束，错误配置不会进入 Combat。
 	bool ValidateWaveConfiguration(int32 WaveArrayIndex) const;
 	bool BuildPendingSpawnList(int32 WaveArrayIndex);
 	void SpawnNextEnemy();
@@ -72,10 +79,10 @@ private:
 	int32 GetBossScalingPlayerCount() const;
 	// 把一至四人快照映射为普通波敌人数倍率，Boss 条目始终保持唯一。
 	float GetEnemyCountMultiplier(int32 ParticipatingPlayerCount) const;
-	// 为当前死亡敌人执行一次服务器掉落抽取，失败不会影响波次推进。
-	void TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy);
-	// 按掉落表有效正权重抽取一个 Pickup Class。
-	TSubclassOf<AArenaPickupActor> DrawWeightedPickupClass();
+	// 普通敌人按概率、精英敌人保底执行一次服务器掉落，两个随机流互不扰动。
+	void TrySpawnPickupDrop(const AArenaEnemyCharacter* Enemy, bool bGuaranteedEliteDrop);
+	// 使用指定随机流按掉落表有效正权重抽取一个 Pickup Class。
+	TSubclassOf<AArenaPickupActor> DrawWeightedPickupClass(FRandomStream& RandomStream) const;
 	void CheckWaveCompletion();
 	void UpdateReplicatedEnemyCount();
 
@@ -126,7 +133,7 @@ private:
 	UPROPERTY(Transient)
 	TSet<TObjectPtr<AArenaEnemyCharacter>> AliveEnemies;
 
-	TArray<TSubclassOf<AArenaEnemyCharacter>> PendingEnemyClasses;
+	TArray<FArenaPendingEnemySpawn> PendingEnemySpawns;
 	FTimerHandle SpawnTimerHandle;
 	FTimerHandle AutoStartNextWaveTimerHandle;
 	FTimerHandle BossIntroTimerHandle;
@@ -135,7 +142,10 @@ private:
 	int32 NextPendingSpawnIndex = 0;
 	int32 NextSpawnPointIndex = 0;
 	FRandomStream PickupRandomStream;
+	FRandomStream EliteAffixRandomStream;
+	FRandomStream EliteRewardRandomStream;
 	bool bSpawnFailureInCurrentWave = false;
+	bool bStoppingForDefeat = false;
 	bool bUpgradeSystemEnabled = false;
 	bool bCurrentWaveIsBossWave = false;
 };

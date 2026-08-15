@@ -327,11 +327,31 @@ def _configure_upgrade_pool():
     unreal.log(f"Configured GameMode UpgradePool: {GAME_MODE_PATH}")
 
 
-def _make_wave_enemy_entry(enemy_class, count):
-    """构造一条确定顺序的敌人类型与数量配置。"""
+def _enemy_class_key(enemy_class):
+    """生成稳定的敌人 Class 键，便于重建前回填精英字段。"""
+    return enemy_class.get_path_name().lower() if enemy_class is not None else ""
+
+
+def _capture_elite_fields(entries):
+    """按 EnemyClass 保留已有的 EliteCount 与 EliteAffixPool。"""
+    preserved = {}
+    for entry in entries:
+        enemy_class = entry.get_editor_property("enemy_class")
+        preserved[_enemy_class_key(enemy_class)] = (
+            int(entry.get_editor_property("elite_count")),
+            list(entry.get_editor_property("elite_affix_pool")),
+        )
+    return preserved
+
+
+def _make_wave_enemy_entry(enemy_class, count, elite_fields=None):
+    """构造敌人配置，并在脚本重跑时保留精英名额与词缀池。"""
     enemy_entry = tools.require_unreal_type("ArenaWaveEnemyEntry")()
     enemy_entry.set_editor_property("enemy_class", enemy_class)
     enemy_entry.set_editor_property("count", count)
+    if elite_fields is not None:
+        enemy_entry.set_editor_property("elite_count", elite_fields[0])
+        enemy_entry.set_editor_property("elite_affix_pool", elite_fields[1])
     return enemy_entry
 
 
@@ -372,8 +392,15 @@ def _configure_prototype_enemy_mixes():
         waves.append(tools.require_unreal_type("ArenaWaveConfig")())
 
     for wave_index, wave_mix in enumerate(wave_mixes):
+        preserved_elite_fields = _capture_elite_fields(
+            list(waves[wave_index].get_editor_property("enemies"))
+        )
         entries = [
-            _make_wave_enemy_entry(enemy_class, count)
+            _make_wave_enemy_entry(
+                enemy_class,
+                count,
+                preserved_elite_fields.get(_enemy_class_key(enemy_class)),
+            )
             for enemy_class, count in wave_mix
         ]
         waves[wave_index].set_editor_property("enemies", entries)
