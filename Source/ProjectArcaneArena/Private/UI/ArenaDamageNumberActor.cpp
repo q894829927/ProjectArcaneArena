@@ -21,33 +21,79 @@ AArenaDamageNumberActor::AArenaDamageNumberActor()
 	InitialLifeSpan = LifeSpan;
 }
 
-// 开始播放时设置生命周期，并把当前伤害数值写入 Widget。
+// 开始播放时缓存固定起点、设置生命周期，并把当前伤害数值写入 Widget。
 void AArenaDamageNumberActor::BeginPlay()
 {
 	Super::BeginPlay();
 
+	PresentationStartLocation = GetActorLocation();
+	ElapsedPresentationTime = 0.0f;
+	if (WidgetComponent)
+	{
+		WidgetComponent->SetTintColorAndOpacity(FLinearColor::White);
+	}
 	SetLifeSpan(LifeSpan);
-	SetDamageAmount(DamageAmount);
+	SetDamagePresentation(DamageAmount, bCriticalHit);
 }
 
-// 每帧驱动伤害数字上浮表现，后续可替换为动画。
+// 每帧按归一化生命周期驱动 Ease-Out 上浮和末段渐隐，不受后续目标移动影响。
 void AArenaDamageNumberActor::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	// 临时反馈采用简单上浮，后续可替换为 UMG 动画或 GameplayCue。
-	AddActorWorldOffset(FVector::UpVector * FloatSpeed * DeltaSeconds, false);
+	ElapsedPresentationTime += FMath::Max(DeltaSeconds, 0.0f);
+	const float SafeLifeSpan = FMath::Max(LifeSpan, KINDA_SMALL_NUMBER);
+	const float NormalizedTime = FMath::Clamp(ElapsedPresentationTime / SafeLifeSpan, 0.0f, 1.0f);
+	const float EaseOutAlpha = 1.0f - FMath::Pow(1.0f - NormalizedTime, 3.0f);
+	const float RiseDistance = FloatSpeed * SafeLifeSpan;
+	SetActorLocation(PresentationStartLocation + FVector::UpVector * RiseDistance * EaseOutAlpha);
+
+	if (WidgetComponent)
+	{
+		const float SafeFadeStart = FMath::Clamp(FadeStartNormalized, 0.0f, 0.95f);
+		const float FadeAlpha = NormalizedTime <= SafeFadeStart
+			? 1.0f
+			: 1.0f - (NormalizedTime - SafeFadeStart) / FMath::Max(1.0f - SafeFadeStart, KINDA_SMALL_NUMBER);
+		WidgetComponent->SetTintColorAndOpacity(FLinearColor(1.0f, 1.0f, 1.0f, FMath::Clamp(FadeAlpha, 0.0f, 1.0f)));
+	}
 }
 
-// 设置伤害数字数值，并同步到内部 Widget。
+// 保留原有蓝图接口，未指定样式时按普通伤害显示。
 void AArenaDamageNumberActor::SetDamageAmount(float InDamageAmount)
 {
+	SetDamagePresentation(InDamageAmount, false);
+}
+
+// 设置伤害数字与暴击样式，并为暴击扩展绘制区域以避免大字号被裁切。
+void AArenaDamageNumberActor::SetDamagePresentation(float InDamageAmount, bool bInCriticalHit)
+{
+	SetDamageFeedbackPresentation(InDamageAmount, bInCriticalHit, EArenaDamageFeedbackType::HealthOnly);
+}
+
+// 设置总实际损失、暴击与资源分类，并适当扩大破盾数字绘制区域。
+void AArenaDamageNumberActor::SetDamageFeedbackPresentation(
+	float InDamageAmount,
+	bool bInCriticalHit,
+	EArenaDamageFeedbackType InFeedbackType)
+{
 	DamageAmount = FMath::Max(InDamageAmount, 0.0f);
+	bCriticalHit = bInCriticalHit;
+	FeedbackType = InFeedbackType;
 
 	if (!WidgetComponent)
 	{
 		return;
 	}
+
+	if (CachedBaseDrawSize.IsNearlyZero())
+	{
+		CachedBaseDrawSize = WidgetComponent->GetDrawSize();
+	}
+	const bool bEmphasized = bCriticalHit
+		|| FeedbackType == EArenaDamageFeedbackType::ShieldBreak
+		|| FeedbackType == EArenaDamageFeedbackType::ShieldBreakWithHealthDamage;
+	const FVector2D PresentationDrawSize = bEmphasized ? CachedBaseDrawSize * 1.35 : CachedBaseDrawSize;
+	WidgetComponent->SetDrawSize(PresentationDrawSize);
 
 	WidgetComponent->InitWidget();
 
@@ -56,6 +102,6 @@ void AArenaDamageNumberActor::SetDamageAmount(float InDamageAmount)
 		WidgetComponent->GetUserWidgetObject());
 	if (DamageNumberWidget)
 	{
-		DamageNumberWidget->SetDamageAmount(DamageAmount);
+		DamageNumberWidget->SetDamageFeedbackPresentation(DamageAmount, bCriticalHit, FeedbackType);
 	}
 }

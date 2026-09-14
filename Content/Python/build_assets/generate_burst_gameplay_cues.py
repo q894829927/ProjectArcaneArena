@@ -12,18 +12,108 @@ tools = importlib.reload(arena_asset_tools)
 # rotation 使用 (Pitch, Yaw, Roll)，scale 使用 (X, Y, Z)。
 BURST_CUE_CONFIGS = [
     {
-        "asset_name": "GCN_Overload_Explosion",
+        "asset_name": "GCN_ShieldHit",
         "destination_path": "/Game/GAS/GameplayCues/InstaneCue",
         "template_path": "/Game/GAS/GameplayCues/InstaneCue/GCN_Hit_Lightning",
-        "cue_tag": "GameplayCue.Combo.Overload",
-        "niagara_path": "/Game/SlashTrail_SoftTofu/Niagara/Lightning/NS_Hit_Lightning_once",
+        "cue_tag": "GameplayCue.Damage.Result.ShieldHit",
+        "niagara_paths": (
+            "/Game/SlashTrail_SoftTofu/Niagara/Scifi/NS_Hit_Scifi_Once",
+        ),
         "socket_name": "None",
         "attach_policy": "DO_NOT_ATTACH",
         "attachment_rule": "KEEP_WORLD",
         "override_rotation": False,
         "rotation": (0.0, 0.0, 0.0),
         "override_scale": True,
-        "scale": (2.5, 2.5, 2.5),
+        "scale": (1.25, 1.25, 1.25),
+        "cast_shadow": False,
+    },
+    {
+        "asset_name": "GCN_ShieldBreak",
+        "destination_path": "/Game/GAS/GameplayCues/InstaneCue",
+        "template_path": "/Game/GAS/GameplayCues/InstaneCue/GCN_Hit_Lightning",
+        "cue_tag": "GameplayCue.Damage.Result.ShieldBreak",
+        "niagara_paths": (
+            "/Game/SlashTrail_SoftTofu/Niagara/Scifi/NS_Hit_Scifi_Once",
+            "/Game/SlashTrail_SoftTofu/Niagara/Distortion_Only/NS_Hit_Distortion_Once",
+        ),
+        "socket_name": "None",
+        "attach_policy": "DO_NOT_ATTACH",
+        "attachment_rule": "KEEP_WORLD",
+        "override_rotation": False,
+        "rotation": (0.0, 0.0, 0.0),
+        "override_scale": True,
+        "scale": (2.0, 2.0, 2.0),
+        "cast_shadow": False,
+    },
+    {
+        "asset_name": "GCN_HealthHit",
+        "destination_path": "/Game/GAS/GameplayCues/InstaneCue",
+        "template_path": "/Game/GAS/GameplayCues/InstaneCue/GCN_Hit_Physical",
+        "cue_tag": "GameplayCue.Damage.Result.HealthHit",
+        "niagara_paths": (
+            "/Game/SlashTrail_SoftTofu/Niagara/Basic/NS_Hit_Basic_Once",
+        ),
+        "socket_name": "None",
+        "attach_policy": "DO_NOT_ATTACH",
+        "attachment_rule": "KEEP_WORLD",
+        "override_rotation": False,
+        "rotation": (0.0, 0.0, 0.0),
+        "override_scale": True,
+        "scale": (1.0, 1.0, 1.0),
+        "cast_shadow": False,
+    },
+    {
+        "asset_name": "GCN_ShieldBreakHealthHit",
+        "destination_path": "/Game/GAS/GameplayCues/InstaneCue",
+        "template_path": "/Game/GAS/GameplayCues/InstaneCue/GCN_Hit_Physical",
+        "cue_tag": "GameplayCue.Damage.Result.ShieldBreakHealthHit",
+        "niagara_paths": (
+            "/Game/SlashTrail_SoftTofu/Niagara/Scifi/NS_Hit_Scifi_Once",
+            "/Game/SlashTrail_SoftTofu/Niagara/Basic/NS_Hit_Basic_Once",
+        ),
+        "socket_name": "None",
+        "attach_policy": "DO_NOT_ATTACH",
+        "attachment_rule": "KEEP_WORLD",
+        "override_rotation": False,
+        "rotation": (0.0, 0.0, 0.0),
+        "override_scale": True,
+        "scale": (2.25, 2.25, 2.25),
+        "cast_shadow": False,
+    },
+    {
+        "asset_name": "GCN_Overload_Explosion",
+        "destination_path": "/Game/GAS/GameplayCues/InstaneCue",
+        "template_path": "/Game/GAS/GameplayCues/InstaneCue/GCN_Hit_Lightning",
+        "cue_tag": "GameplayCue.Combo.Overload",
+        "niagara_paths": (
+            "/Game/SlashTrail_SoftTofu/Niagara/Lightning/NS_Hit_Lightning_once",
+            "/Game/SlashTrail_SoftTofu/Niagara/Fire/NS_Hit_Fire_Once",
+        ),
+        "socket_name": "None",
+        "attach_policy": "DO_NOT_ATTACH",
+        "attachment_rule": "KEEP_WORLD",
+        "override_rotation": False,
+        "rotation": (0.0, 0.0, 0.0),
+        "override_scale": True,
+        "scale": (3.0, 3.0, 3.0),
+        "cast_shadow": False,
+    },
+    {
+        "asset_name": "GCN_ShieldBreak_Burst",
+        "destination_path": "/Game/GAS/GameplayCues/InstaneCue",
+        "template_path": "/Game/GAS/GameplayCues/InstaneCue/GCN_Hit_Physical",
+        "cue_tag": "GameplayCue.Ability.Shield.Break",
+        "niagara_paths": (
+            "/Game/SlashTrail_SoftTofu/Niagara/Mystic/NS_Hit_Mystic_Once",
+        ),
+        "socket_name": "None",
+        "attach_policy": "DO_NOT_ATTACH",
+        "attachment_rule": "KEEP_WORLD",
+        "override_rotation": False,
+        "rotation": (0.0, 0.0, 0.0),
+        "override_scale": True,
+        "scale": (3.0, 3.0, 3.0),
         "cast_shadow": False,
     },
 ]
@@ -33,7 +123,7 @@ REQUIRED_CONFIG_KEYS = (
     "destination_path",
     "template_path",
     "cue_tag",
-    "niagara_path",
+    "niagara_paths",
     "socket_name",
     "attach_policy",
     "attachment_rule",
@@ -83,7 +173,7 @@ def _validate_cue_defaults(asset_path, generated_class):
 
 
 def validate_configs():
-    """在写入前验证 Burst Cue 配置、模板、Niagara、Tag 和父类。"""
+    """在写入前验证 Burst Cue 配置、模板、一个或多个 Niagara、Tag 和父类。"""
     _require_python_types()
     cue_parent_class = unreal.GameplayCueNotify_Burst
     seen_asset_paths = set()
@@ -96,6 +186,15 @@ def validate_configs():
             )
         _validate_vector_tuple(config["rotation"], "rotation", index)
         _validate_vector_tuple(config["scale"], "scale", index)
+        niagara_paths = config["niagara_paths"]
+        if not isinstance(niagara_paths, (tuple, list)) or not niagara_paths:
+            raise RuntimeError(
+                f"BURST_CUE_CONFIGS[{index}].niagara_paths must contain at least one asset path."
+            )
+        if len(set(niagara_paths)) != len(niagara_paths):
+            raise RuntimeError(
+                f"BURST_CUE_CONFIGS[{index}].niagara_paths contains duplicate asset paths."
+            )
 
         asset_path = _asset_path(config)
         if asset_path in seen_asset_paths:
@@ -103,7 +202,8 @@ def validate_configs():
         seen_asset_paths.add(asset_path)
 
         tools.make_tag(config["cue_tag"])
-        tools.require_asset(config["niagara_path"], unreal.NiagaraSystem)
+        for niagara_path in niagara_paths:
+            tools.require_asset(niagara_path, unreal.NiagaraSystem)
         tools.resolve_enum_value(
             unreal.GameplayCueNotify_AttachPolicy,
             config["attach_policy"],
@@ -118,8 +218,7 @@ def validate_configs():
 
 
 def _configure_cue(generated_class, config):
-    """把单个配置写入 Burst GameplayCue 的类默认对象。"""
-    niagara_system = tools.require_asset(config["niagara_path"], unreal.NiagaraSystem)
+    """将一个或多个 Niagara 写入 Burst GameplayCue，供组合爆发效果复用。"""
     cue_defaults = unreal.get_default_object(generated_class)
     cue_defaults.modify()
     cue_defaults.set_editor_property("gameplay_cue_tag", tools.make_tag(config["cue_tag"]))
@@ -143,14 +242,18 @@ def _configure_cue(generated_class, config):
     )
     cue_defaults.set_editor_property("default_placement_info", placement)
 
-    particle_info = unreal.GameplayCueNotify_ParticleInfo(
-        niagara_system=niagara_system,
-        override_spawn_condition=False,
-        override_placement_info=False,
-        cast_shadow=bool(config["cast_shadow"]),
-    )
+    particle_infos = []
+    for niagara_path in config["niagara_paths"]:
+        particle_infos.append(
+            unreal.GameplayCueNotify_ParticleInfo(
+                niagara_system=tools.require_asset(niagara_path, unreal.NiagaraSystem),
+                override_spawn_condition=False,
+                override_placement_info=False,
+                cast_shadow=bool(config["cast_shadow"]),
+            )
+        )
     burst_effects = unreal.GameplayCueNotify_BurstEffects(
-        burst_particles=[particle_info],
+        burst_particles=particle_infos,
     )
     cue_defaults.set_editor_property("burst_effects", burst_effects)
 

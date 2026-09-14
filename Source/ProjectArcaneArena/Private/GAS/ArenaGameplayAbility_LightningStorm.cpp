@@ -25,7 +25,11 @@ UArenaGameplayAbility_LightningStorm::UArenaGameplayAbility_LightningStorm()
 	StormAreaClass = AArenaLightningStormArea::StaticClass();
 	TargetActorClass = AArenaTargetActor_MouseGround::StaticClass();
 
-	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_LightningStorm));
+	// 雷暴属于消耗 Energy 的玩家主动技能，成功 Commit 后可触发奥术回流。
+	FGameplayTagContainer AbilityAssetTags(ArenaGameplayTags::Ability_LightningStorm);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_EnergySkill);
+	SetAssetTags(AbilityAssetTags);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_LightningStorm);

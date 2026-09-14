@@ -15,6 +15,31 @@ ABILITY_BLUEPRINT_CONFIGS = [
         "destination_path": "/Game/GAS/GameplayAbility",
         "parent_class_name": "ArenaGameplayAbility_Overload",
     },
+    {
+        "asset_name": "GA_EnergyOnKill",
+        "destination_path": "/Game/GAS/GameplayAbility",
+        "parent_class_name": "ArenaGameplayAbility_EnergyOnKill",
+    },
+    {
+        "asset_name": "GA_EnergyOnCrit",
+        "destination_path": "/Game/GAS/GameplayAbility",
+        "parent_class_name": "ArenaGameplayAbility_EnergyOnCrit",
+    },
+    {
+        "asset_name": "GA_EnergyOnAbilityCast",
+        "destination_path": "/Game/GAS/GameplayAbility",
+        "parent_class_name": "ArenaGameplayAbility_EnergyOnAbilityCast",
+    },
+    {
+        "asset_name": "GA_ShieldBreakBlast",
+        "destination_path": "/Game/GAS/GameplayAbility",
+        "parent_class_name": "ArenaGameplayAbility_ShieldBreakBlast",
+    },
+    {
+        "asset_name": "GA_DashLightningTrail",
+        "destination_path": "/Game/GAS/GameplayAbility",
+        "parent_class_name": "ArenaGameplayAbility_DashLightningTrail",
+    },
 ]
 
 REQUIRED_CONFIG_KEYS = (

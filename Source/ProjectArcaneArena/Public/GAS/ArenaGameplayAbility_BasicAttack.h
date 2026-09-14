@@ -97,6 +97,9 @@ private:
 	bool ExtractAimDirection(const FGameplayAbilityTargetDataHandle& TargetData, AActor* AvatarActor, FVector& OutAimDirection) const;
 	// 播放预测普攻 Montage；伤害判定仍由服务器 Sweep 独立完成。
 	void PlayAttackMontage();
+	// 在预测提交点播放普攻起手 Cue，使挥击音在未命中时也能立即出现并由 GAS 去重远端确认。
+	void ExecuteAttackActivationCue(AActor* AvatarActor, UAbilitySystemComponent* SourceASC) const;
+	// 仅在服务器沿校验方向执行近战扫描和权威伤害，不再承担起手表现。
 	void ExecuteServerAttack(AActor* AvatarActor, UAbilitySystemComponent* SourceASC, const FVector& AimDirection);
 
 	UPROPERTY(Transient)

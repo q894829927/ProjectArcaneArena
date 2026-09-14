@@ -76,8 +76,8 @@ private:
 	// 使用 Source ASC 创建 GE_Damage Spec，实际数值计算交给 ExecCalc_Damage。
 	void ApplyDamageToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult);
 
-	// 直接伤害后为存活且非无敌目标应用服务器权威 Burning ActiveGE。
-	void ApplyBurningToTarget(UAbilitySystemComponent* TargetASC, const FHitResult& HitResult);
+	// 直接伤害后应用 Burning ActiveGE；周期 Cue 不继承首次命中坐标，而从目标实时位置生成。
+	void ApplyBurningToTarget(UAbilitySystemComponent* TargetASC);
 
 	// 命中后只由服务端销毁，销毁结果通过 Actor replication 同步给客户端。
 	void FinishProjectile();

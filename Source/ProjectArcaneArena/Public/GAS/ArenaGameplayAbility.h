@@ -14,7 +14,7 @@ class PROJECTARCANEARENA_API UArenaGameplayAbility : public UGameplayAbility
 public:
 	UArenaGameplayAbility();
 
-	// 在服务器 CanActivate 阶段注入一次性开发拒绝，确保走 GAS 正式预测失败与回滚路径。
+	// 统一阻止 BossIntro 战斗技能，并在服务器 CanActivate 阶段注入开发拒绝以验证预测回滚。
 	virtual bool CanActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,

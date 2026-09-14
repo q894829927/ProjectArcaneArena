@@ -1,7 +1,9 @@
 #include "Character/ArenaPlayerCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Core/ArenaGameMode.h"
+#include "Core/ArenaGameState.h"
 #include "Core/ArenaPlayerController.h"
 #include "Core/ArenaPlayerState.h"
 #include "EnhancedInputComponent.h"
@@ -17,6 +19,8 @@
 #include "InputAction.h"
 #include "InputMappingContext.h"
 #include "InputModifiers.h"
+
+DEFINE_LOG_CATEGORY_STATIC(LogArenaPlayerInput, Log, All);
 
 // 构造玩家角色，配置顶视角相机、基础移动参数和默认输入资产。
 AArenaPlayerCharacter::AArenaPlayerCharacter()
@@ -53,6 +57,22 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 	CreateDefaultInputMappings();
 }
 
+// 在角色进入世界时绑定复制阶段，确保 Intro、Outro 与 Victory 冻结不依赖 ASC 初始化先后顺序。
+void AArenaPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	BindGameStateDelegates();
+	RefreshMovementState();
+}
+
+// 客户端完成关卡旅行、首次接管或重生后重新安装角色输入映射，覆盖 Standalone/Cooked 下更严格的初始化时序。
+void AArenaPlayerCharacter::PawnClientRestart()
+{
+	Super::PawnClientRestart();
+	RebuildDefaultInputMappings();
+	AddDefaultMappingContext();
+}
+
 // 在切换过程中平滑推进视角混合值，到达目标后停止不必要的 Tick。
 void AArenaPlayerCharacter::Tick(float DeltaSeconds)
 {
@@ -82,6 +102,7 @@ void AArenaPlayerCharacter::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
 
+	BindGameStateDelegates();
 	InitializeAbilityActorInfo();
 }
 
@@ -90,12 +111,14 @@ void AArenaPlayerCharacter::OnRep_PlayerState()
 {
 	Super::OnRep_PlayerState();
 
+	BindGameStateDelegates();
 	InitializeAbilityActorInfo();
 }
 
-// 销毁当前 Avatar 前解除 PlayerState ASC 上的角色级监听。
+// 销毁当前 Avatar 前解除 PlayerState ASC 与 GameState 上的角色级监听。
 void AArenaPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	UnbindGameStateDelegates();
 	UnbindAbilitySystemDelegates();
 	Super::EndPlay(EndPlayReason);
 }
@@ -178,19 +201,70 @@ void AArenaPlayerCharacter::UnbindAbilitySystemDelegates()
 	BoundAbilitySystemComponent.Reset();
 }
 
-// Dead 的优先级高于 Stunned；只有两个状态都不存在时才恢复 Walking。
-void AArenaPlayerCharacter::RefreshMovementState()
+// 绑定当前世界的 GameState 阶段委托，并立即用现有阶段刷新玩家移动状态。
+void AArenaPlayerCharacter::BindGameStateDelegates()
 {
-	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
-	const UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get();
-	if (!MovementComponent || !ArenaASC)
+	AArenaGameState* ArenaGameState = GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr;
+	if (!ArenaGameState || BoundArenaGameState.Get() == ArenaGameState)
 	{
 		return;
 	}
 
-	const bool bIsDead = ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead);
-	const bool bIsStunned = ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
-	if (bIsDead || bIsStunned)
+	UnbindGameStateDelegates();
+	BoundArenaGameState = ArenaGameState;
+	ArenaGameState->OnGamePhaseChanged.AddUniqueDynamic(this, &AArenaPlayerCharacter::HandleGamePhaseChanged);
+	RefreshMovementState();
+}
+
+// 使用保存的弱引用解除阶段委托，避免关卡切换时查询到新世界的 GameState。
+void AArenaPlayerCharacter::UnbindGameStateDelegates()
+{
+	if (AArenaGameState* ArenaGameState = BoundArenaGameState.Get())
+	{
+		ArenaGameState->OnGamePhaseChanged.RemoveDynamic(this, &AArenaPlayerCharacter::HandleGamePhaseChanged);
+	}
+	BoundArenaGameState.Reset();
+}
+
+// 只读取复制的 GamePhase 作为控制锁定状态源，不额外维护可能失配的角色布尔值或 GameplayTag。
+bool AArenaPlayerCharacter::IsPlayerControlLockedByPhase() const
+{
+	const AArenaGameState* ArenaGameState = BoundArenaGameState.IsValid()
+		? BoundArenaGameState.Get()
+		: (GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr);
+	if (!ArenaGameState)
+	{
+		return false;
+	}
+
+	const EArenaGamePhase GamePhase = ArenaGameState->GetGamePhase();
+	return GamePhase == EArenaGamePhase::BossIntro
+		|| GamePhase == EArenaGamePhase::BossOutro
+		|| GamePhase == EArenaGamePhase::Victory;
+}
+
+// 本地背包与 ESC 菜单只用于输入门控，不参与复制移动模式或服务器玩法阶段。
+bool AArenaPlayerCharacter::IsLocalUIInputLocked() const
+{
+	const AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller);
+	return IsLocallyControlled()
+		&& ArenaPlayerController
+		&& (ArenaPlayerController->IsInventoryOpen() || ArenaPlayerController->IsPauseMenuOpen());
+}
+
+// Dead、Stunned 或终局演出阶段任一存在时冻结移动；全部解除后才恢复 Walking。
+void AArenaPlayerCharacter::RefreshMovementState()
+{
+	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	const UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get();
+	if (!MovementComponent)
+	{
+		return;
+	}
+
+	const bool bIsDead = ArenaASC && ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead);
+	const bool bIsStunned = ArenaASC && ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
+	if (bIsDead || bIsStunned || IsPlayerControlLockedByPhase())
 	{
 		SetSprinting(false);
 		LastMovementInputDirection = FVector::ZeroVector;
@@ -203,7 +277,26 @@ void AArenaPlayerCharacter::RefreshMovementState()
 	}
 }
 
-// State.Dead 增加时执行死亡流程，移除时恢复移动并重置门闩以支持再次死亡。
+// 进入 Intro、Outro 或 Victory 时取消玩家主动技能并清空移动意图，退出时由统一状态函数安全恢复。
+void AArenaPlayerCharacter::HandleGamePhaseChanged(EArenaGamePhase OldPhase, EArenaGamePhase NewPhase)
+{
+	if (NewPhase == EArenaGamePhase::BossIntro
+		|| NewPhase == EArenaGamePhase::BossOutro
+		|| NewPhase == EArenaGamePhase::Victory)
+	{
+		SetSprinting(false);
+		LastMovementInputDirection = FVector::ZeroVector;
+		if (UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get())
+		{
+			FGameplayTagContainer PlayerActiveAbilityTags;
+			PlayerActiveAbilityTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+			ArenaASC->CancelAbilities(&PlayerActiveAbilityTags);
+		}
+	}
+	RefreshMovementState();
+}
+
+// State.Dead 增加时执行死亡流程，移除时恢复移动并重置玩法与统计的再次死亡门闩。
 void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag != ArenaGameplayTags::State_Dead)
@@ -214,6 +307,19 @@ void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag,
 	RefreshMovementState();
 	if (NewCount <= 0)
 	{
+		if (HasAuthority())
+		{
+			if (const AArenaGameState* GameState = GetWorld()
+				? GetWorld()->GetGameState<AArenaGameState>()
+				: nullptr)
+			{
+				if (UArenaBalanceTelemetryComponent* Telemetry =
+					GameState->GetBalanceTelemetryComponent())
+				{
+					Telemetry->RecordPlayerRevived(GetPlayerState<AArenaPlayerState>());
+				}
+			}
+		}
 		const bool bWasDead = bDeathHandled;
 		bDeathHandled = false;
 		if (bWasDead)
@@ -229,6 +335,14 @@ void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag,
 	}
 
 	bDeathHandled = true;
+	if (IsLocallyControlled())
+	{
+		if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller);
+			ArenaPlayerController && ArenaPlayerController->IsInventoryOpen())
+		{
+			ArenaPlayerController->ToggleInventory();
+		}
+	}
 	if (UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get())
 	{
 		ArenaASC->CancelAllAbilities();
@@ -244,7 +358,7 @@ void AArenaPlayerCharacter::HandleDeadTagChanged(const FGameplayTag CallbackTag,
 	}
 }
 
-// 眩晕变化立即刷新移动并取消进行中的技能，解除后由统一状态函数恢复。
+// 眩晕开始时关闭本地背包、刷新移动并取消技能，解除后由统一状态函数恢复。
 void AArenaPlayerCharacter::HandleStunnedTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
 	if (CallbackTag != ArenaGameplayTags::State_Stunned)
@@ -255,6 +369,14 @@ void AArenaPlayerCharacter::HandleStunnedTagChanged(const FGameplayTag CallbackT
 	RefreshMovementState();
 	if (NewCount > 0)
 	{
+		if (IsLocallyControlled())
+		{
+			if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller);
+				ArenaPlayerController && ArenaPlayerController->IsInventoryOpen())
+			{
+				ArenaPlayerController->ToggleInventory();
+			}
+		}
 		if (UArenaAbilitySystemComponent* ArenaASC = BoundAbilitySystemComponent.Get())
 		{
 			ArenaASC->CancelAllAbilities();
@@ -288,15 +410,26 @@ void AArenaPlayerCharacter::RefreshMaxWalkSpeed()
 	MovementComponent->MaxWalkSpeed = FMath::Max(AttributeSet->GetMoveSpeed(), 0.0f) * SpeedMultiplier;
 }
 
-// 本地与服务器共用同一状态入口，Dead/Stunned 永远覆盖奔跑意图。
+// 本地与服务器共用同一状态入口，Dead、Stunned 与控制锁定阶段永远覆盖奔跑意图。
 void AArenaPlayerCharacter::SetSprinting(bool bNewSprinting)
 {
 	const UAbilitySystemComponent* ArenaASC = GetAbilitySystemComponent();
 	const bool bMovementBlocked = ArenaASC
 		&& (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 			|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned));
-	bIsSprinting = bNewSprinting && !bMovementBlocked;
+	bIsSprinting = bNewSprinting && !bMovementBlocked && !IsPlayerControlLockedByPhase();
 	RefreshMaxWalkSpeed();
+}
+
+// 打开本地交互菜单前清除移动方向和奔跑倍率，并通过可靠 RPC 让服务器恢复基础 MoveSpeed。
+void AArenaPlayerCharacter::StopSprintingForLocalMenu()
+{
+	LastMovementInputDirection = FVector::ZeroVector;
+	SetSprinting(false);
+	if (!HasAuthority())
+	{
+		ServerSetSprinting(false);
+	}
 }
 
 // 应用玩家初始属性 GameplayEffect，避免绕过 GAS 直接改属性。
@@ -353,6 +486,7 @@ void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 {
 	Super::SetupPlayerInputComponent(PlayerInputComponent);
 
+	RebuildDefaultInputMappings();
 	AddDefaultMappingContext();
 
 	UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent);
@@ -372,8 +506,26 @@ void AArenaPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	EnhancedInputComponent->BindAction(DashAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Dash);
 	EnhancedInputComponent->BindAction(ShieldAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Shield);
 	EnhancedInputComponent->BindAction(UltimateAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_Ultimate);
+	EnhancedInputComponent->BindAction(
+		InventoryToggleAction,
+		ETriggerEvent::Started,
+		this,
+		&AArenaPlayerCharacter::Input_InventoryTabPressed);
+	EnhancedInputComponent->BindAction(
+		InventoryToggleAction,
+		ETriggerEvent::Completed,
+		this,
+		&AArenaPlayerCharacter::Input_InventoryTabReleased);
+	EnhancedInputComponent->BindAction(
+		InventoryInteractAction,
+		ETriggerEvent::Started,
+		this,
+		&AArenaPlayerCharacter::Input_InteractInventoryPickup);
 	EnhancedInputComponent->BindAction(ViewToggleAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_ToggleView);
 	EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AArenaPlayerCharacter::Input_Look);
+	EnhancedInputComponent->BindAction(BossIntroSkipAction, ETriggerEvent::Started, this, &AArenaPlayerCharacter::Input_BossIntroSkipStarted);
+	EnhancedInputComponent->BindAction(BossIntroSkipAction, ETriggerEvent::Completed, this, &AArenaPlayerCharacter::Input_BossIntroSkipStopped);
+	EnhancedInputComponent->BindAction(BossIntroSkipAction, ETriggerEvent::Canceled, this, &AArenaPlayerCharacter::Input_BossIntroSkipStopped);
 }
 
 // 将默认 MappingContext 添加到本地玩家输入子系统。
@@ -397,6 +549,8 @@ void AArenaPlayerCharacter::AddDefaultMappingContext() const
 		return;
 	}
 
+	// LocalPlayer 子系统会跨关卡保留；先移除同一 Context，再添加可同时避免旅行丢失和重生重复叠加。
+	InputSubsystem->RemoveMappingContext(DefaultMappingContext);
 	InputSubsystem->AddMappingContext(DefaultMappingContext, InputMappingPriority);
 }
 
@@ -432,22 +586,31 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	LookAction = CreateDefaultSubobject<UInputAction>(TEXT("Look"));
 	LookAction->ValueType = EInputActionValueType::Axis2D;
 
-	UInputModifierSwizzleAxis* MoveSwizzle = CreateDefaultSubobject<UInputModifierSwizzleAxis>(TEXT("MoveSwizzle"));
-	MoveSwizzle->Order = EInputAxisSwizzle::YXZ;
+	BossIntroSkipAction = CreateDefaultSubobject<UInputAction>(TEXT("BossIntroSkip"));
+	BossIntroSkipAction->ValueType = EInputActionValueType::Boolean;
 
-	UInputModifierNegate* MoveNegate = CreateDefaultSubobject<UInputModifierNegate>(TEXT("MoveNegate"));
+	InventoryToggleAction = CreateDefaultSubobject<UInputAction>(TEXT("ToggleInventory"));
+	InventoryToggleAction->ValueType = EInputActionValueType::Boolean;
+
+	InventoryInteractAction = CreateDefaultSubobject<UInputAction>(TEXT("InteractInventoryPickup"));
+	InventoryInteractAction->ValueType = EInputActionValueType::Boolean;
+
+	MoveSwizzleModifier = CreateDefaultSubobject<UInputModifierSwizzleAxis>(TEXT("MoveSwizzle"));
+	MoveSwizzleModifier->Order = EInputAxisSwizzle::YXZ;
+
+	MoveNegateModifier = CreateDefaultSubobject<UInputModifierNegate>(TEXT("MoveNegate"));
 
 	FEnhancedActionKeyMapping& MoveForwardMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::W);
-	MoveForwardMapping.Modifiers.Add(MoveSwizzle);
+	MoveForwardMapping.Modifiers.Add(MoveSwizzleModifier);
 
 	FEnhancedActionKeyMapping& MoveBackwardMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::S);
-	MoveBackwardMapping.Modifiers.Add(MoveNegate);
-	MoveBackwardMapping.Modifiers.Add(MoveSwizzle);
+	MoveBackwardMapping.Modifiers.Add(MoveNegateModifier);
+	MoveBackwardMapping.Modifiers.Add(MoveSwizzleModifier);
 
 	FEnhancedActionKeyMapping& MoveRightMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::D);
 
 	FEnhancedActionKeyMapping& MoveLeftMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::A);
-	MoveLeftMapping.Modifiers.Add(MoveNegate);
+	MoveLeftMapping.Modifiers.Add(MoveNegateModifier);
 
 	DefaultMappingContext->MapKey(BasicAttackAction, EKeys::LeftMouseButton);
 	DefaultMappingContext->MapKey(FireballAction, EKeys::Q);
@@ -459,14 +622,74 @@ void AArenaPlayerCharacter::CreateDefaultInputMappings()
 	DefaultMappingContext->MapKey(LookAction, EKeys::Mouse2D);
 	DefaultMappingContext->MapKey(SprintAction, EKeys::LeftShift);
 	DefaultMappingContext->MapKey(SprintAction, EKeys::RightShift);
+	DefaultMappingContext->MapKey(BossIntroSkipAction, EKeys::SpaceBar);
+	DefaultMappingContext->MapKey(InventoryToggleAction, EKeys::Tab);
+	DefaultMappingContext->MapKey(InventoryInteractAction, EKeys::G);
 }
 
-// 将本地技能输入转换为 GameplayTag，让 ASC 决定能否激活技能。
+// 在 Blueprint 属性加载和 Cook 反序列化之后重建全部原生键位，确保正式启动流程不依赖构造期数组副作用。
+void AArenaPlayerCharacter::RebuildDefaultInputMappings()
+{
+	if (!DefaultMappingContext
+		|| !MoveAction
+		|| !SprintAction
+		|| !BasicAttackAction
+		|| !FireballAction
+		|| !DashAction
+		|| !ShieldAction
+		|| !UltimateAction
+		|| !ViewToggleAction
+		|| !LookAction
+		|| !BossIntroSkipAction
+		|| !InventoryToggleAction
+		|| !InventoryInteractAction
+		|| !MoveSwizzleModifier
+		|| !MoveNegateModifier)
+	{
+		UE_LOG(LogArenaPlayerInput, Error, TEXT("Player %s cannot rebuild native input mappings because one or more input subobjects are missing."), *GetNameSafe(this));
+		return;
+	}
+
+	DefaultMappingContext->UnmapAll();
+	MoveSwizzleModifier->Order = EInputAxisSwizzle::YXZ;
+
+	FEnhancedActionKeyMapping& MoveForwardMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::W);
+	MoveForwardMapping.Modifiers.Add(MoveSwizzleModifier);
+
+	FEnhancedActionKeyMapping& MoveBackwardMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::S);
+	MoveBackwardMapping.Modifiers.Add(MoveNegateModifier);
+	MoveBackwardMapping.Modifiers.Add(MoveSwizzleModifier);
+
+	DefaultMappingContext->MapKey(MoveAction, EKeys::D);
+	FEnhancedActionKeyMapping& MoveLeftMapping = DefaultMappingContext->MapKey(MoveAction, EKeys::A);
+	MoveLeftMapping.Modifiers.Add(MoveNegateModifier);
+
+	DefaultMappingContext->MapKey(BasicAttackAction, EKeys::LeftMouseButton);
+	DefaultMappingContext->MapKey(FireballAction, EKeys::Q);
+	DefaultMappingContext->MapKey(DashAction, EKeys::E);
+	DefaultMappingContext->MapKey(ShieldAction, EKeys::F);
+	DefaultMappingContext->MapKey(UltimateAction, EKeys::R);
+	DefaultMappingContext->MapKey(ViewToggleAction, EKeys::Zero);
+	DefaultMappingContext->MapKey(ViewToggleAction, EKeys::NumPadZero);
+	DefaultMappingContext->MapKey(LookAction, EKeys::Mouse2D);
+	DefaultMappingContext->MapKey(SprintAction, EKeys::LeftShift);
+	DefaultMappingContext->MapKey(SprintAction, EKeys::RightShift);
+	DefaultMappingContext->MapKey(BossIntroSkipAction, EKeys::SpaceBar);
+	DefaultMappingContext->MapKey(InventoryToggleAction, EKeys::Tab);
+	DefaultMappingContext->MapKey(InventoryInteractAction, EKeys::G);
+
+	UE_LOG(LogArenaPlayerInput, Log, TEXT("Player %s rebuilt %d native Enhanced Input mappings."),
+		*GetNameSafe(this), DefaultMappingContext->GetMappings().Num());
+}
+
+// 将本地技能输入转换为 GameplayTag，控制阶段或本地菜单锁定时拒绝，其余资格由 ASC/GAS 决定。
 void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
 	// Character 只负责把本地输入转成标签，是否能激活由 ASC/GAS 判断。
 	UArenaAbilitySystemComponent* ArenaASC = Cast<UArenaAbilitySystemComponent>(GetAbilitySystemComponent());
 	if (!ArenaASC
+		|| IsPlayerControlLockedByPhase()
+		|| IsLocalUIInputLocked()
 		|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 		|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))
 	{
@@ -476,13 +699,13 @@ void AArenaPlayerCharacter::Input_AbilityInputTagPressed(const FGameplayTag& Inp
 	ArenaASC->AbilityInputTagPressed(InputTag);
 }
 
-// 处理 WASD 移动，并缓存移动方向供 Dash 等技能读取。
+// 处理 WASD 移动，并在阶段或本地菜单未锁定时缓存方向供 Dash 等技能读取。
 void AArenaPlayerCharacter::Input_Move(const FInputActionValue& Value)
 {
 	const FVector2D MovementVector = Value.Get<FVector2D>();
 	const UAbilitySystemComponent* ArenaASC = GetAbilitySystemComponent();
 
-	if (!Controller || MovementVector.IsNearlyZero()
+	if (!Controller || IsPlayerControlLockedByPhase() || IsLocalUIInputLocked() || MovementVector.IsNearlyZero()
 		|| (ArenaASC && (ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead)
 			|| ArenaASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned))))
 	{
@@ -512,9 +735,14 @@ void AArenaPlayerCharacter::Input_MoveStopped(const FInputActionValue& Value)
 	LastMovementInputDirection = FVector::ZeroVector;
 }
 
-// 本地先更新速度减少输入延迟，再由服务器应用相同的受限奔跑倍率。
+// 本地先验证阶段、菜单和状态并更新速度，再由服务器应用相同的受限奔跑倍率。
 void AArenaPlayerCharacter::Input_SprintStarted(const FInputActionValue& Value)
 {
+	if (IsPlayerControlLockedByPhase() || IsLocalUIInputLocked())
+	{
+		return;
+	}
+
 	SetSprinting(true);
 	if (!HasAuthority())
 	{
@@ -532,10 +760,10 @@ void AArenaPlayerCharacter::Input_SprintStopped(const FInputActionValue& Value)
 	}
 }
 
-// 服务端仅接受开关意图，最终速度仍由受限倍率和服务器持有的 MoveSpeed 决定。
+// 服务端重新验证控制锁定阶段，最终速度仍由受限倍率和服务器持有的 MoveSpeed 决定。
 void AArenaPlayerCharacter::ServerSetSprinting_Implementation(bool bNewSprinting)
 {
-	SetSprinting(bNewSprinting);
+	SetSprinting(bNewSprinting && !IsPlayerControlLockedByPhase());
 }
 
 // 基础攻击输入入口，仅发送 Ability.BasicAttack 标签。
@@ -568,10 +796,91 @@ void AArenaPlayerCharacter::Input_Ultimate()
 	Input_AbilityInputTagPressed(ArenaGameplayTags::Ability_LightningStorm);
 }
 
-// 切换本地视角，并初始化第三人称控制角度或恢复顶视角鼠标模式。
+// Tab 按下交给本地 Controller；松开由获得焦点的 Widget 转发，避免切入 UI 后丢失长按状态。
+void AArenaPlayerCharacter::Input_InventoryTabPressed()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
+	{
+		ArenaPlayerController->HandleInventoryTabPressed();
+	}
+}
+
+// Tab 松开交给 Controller 完成当前手势；UMG 已处理时状态门闩会安全忽略重复回调。
+void AArenaPlayerCharacter::Input_InventoryTabReleased()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
+	{
+		ArenaPlayerController->HandleInventoryTabReleased();
+	}
+}
+
+// G 始终交给 Controller 按背包权限矩阵判断，最终拾取资格由服务器 RPC 重新验证。
+void AArenaPlayerCharacter::Input_InteractInventoryPickup()
+{
+	if (!IsLocallyControlled() || IsLocalUIInputLocked())
+	{
+		return;
+	}
+
+	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
+	{
+		ArenaPlayerController->RequestInteractWithNearestInventoryPickup();
+	}
+}
+
+// 将 Space 长按交给当前 Intro 或 Outro 流程，由服务器独立计时并最终验证跳过资格。
+void AArenaPlayerCharacter::Input_BossIntroSkipStarted()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
+	{
+		const AArenaGameState* ArenaGameState = BoundArenaGameState.IsValid()
+			? BoundArenaGameState.Get()
+			: (GetWorld() ? GetWorld()->GetGameState<AArenaGameState>() : nullptr);
+		if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossIntro)
+		{
+			ArenaPlayerController->SetBossIntroSkipHeld(true);
+		}
+		else if (ArenaGameState && ArenaGameState->GetGamePhase() == EArenaGamePhase::BossOutro)
+		{
+			ArenaPlayerController->SetBossOutroSkipHeld(true);
+		}
+	}
+}
+
+// 松开或取消 Space 时同步清理客户端进度和服务器 Hold Timer。
+void AArenaPlayerCharacter::Input_BossIntroSkipStopped()
+{
+	if (!IsLocallyControlled())
+	{
+		return;
+	}
+
+	if (AArenaPlayerController* ArenaPlayerController = Cast<AArenaPlayerController>(Controller))
+	{
+		ArenaPlayerController->SetBossIntroSkipHeld(false);
+		ArenaPlayerController->SetBossOutroSkipHeld(false);
+	}
+}
+
+// 控制阶段或本地菜单锁定时保持原视角；其余时间切换并同步本地鼠标与准星模式。
 void AArenaPlayerCharacter::Input_ToggleView()
 {
-	if (!IsLocallyControlled() || !Controller)
+	if (!IsLocallyControlled() || !Controller || IsPlayerControlLockedByPhase() || IsLocalUIInputLocked())
 	{
 		return;
 	}
@@ -592,10 +901,10 @@ void AArenaPlayerCharacter::Input_ToggleView()
 	UpdateCameraTransform();
 }
 
-// 第三人称下把鼠标增量转换为受限的 ControlRotation，并立即刷新相机。
+// 第三人称且阶段和本地菜单均未锁定时把鼠标增量转换为受限 ControlRotation。
 void AArenaPlayerCharacter::Input_Look(const FInputActionValue& Value)
 {
-	if (!bThirdPersonView || !Controller)
+	if (!bThirdPersonView || !Controller || IsPlayerControlLockedByPhase() || IsLocalUIInputLocked())
 	{
 		return;
 	}

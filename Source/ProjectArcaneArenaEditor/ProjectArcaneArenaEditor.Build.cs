@@ -12,6 +12,8 @@ public class ProjectArcaneArenaEditor : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"UnrealEd",
+			"GameplayAbilities",
+			"GameplayTags",
 			"Niagara",
 			"NiagaraEditor"
 		});

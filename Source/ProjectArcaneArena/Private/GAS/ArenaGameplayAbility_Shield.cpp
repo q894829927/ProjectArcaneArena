@@ -1,6 +1,7 @@
 #include "GAS/ArenaGameplayAbility_Shield.h"
 
 #include "AbilitySystemComponent.h"
+#include "Core/ArenaPlayerState.h"
 #include "GAS/ArenaAbilityNetworkDebug.h"
 #include "GAS/ArenaGameplayTags.h"
 #include "GameplayEffect.h"
@@ -12,7 +13,11 @@ UArenaGameplayAbility_Shield::UArenaGameplayAbility_Shield()
 	NetworkAbilityId = EArenaNetworkAbilityId::Shield;
 	InputTag = ArenaGameplayTags::Ability_Shield;
 
-	SetAssetTags(FGameplayTagContainer(ArenaGameplayTags::Ability_Shield));
+	// Shield 属于消耗 Energy 的玩家主动技能，成功 Commit 后可触发奥术回流。
+	FGameplayTagContainer AbilityAssetTags(ArenaGameplayTags::Ability_Shield);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_PlayerActive);
+	AbilityAssetTags.AddTag(ArenaGameplayTags::Ability_Type_EnergySkill);
+	SetAssetTags(AbilityAssetTags);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Dead);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::State_Stunned);
 	ActivationBlockedTags.AddTag(ArenaGameplayTags::Cooldown_Shield);
@@ -36,7 +41,24 @@ void UArenaGameplayAbility_Shield::ActivateAbility(
 	FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
 	EffectContext.AddSourceObject(this);
 
-	// 先构造 GE_Shield spec，避免资产配置无效时仍然消耗 Energy 或进入冷却。
+	// OwnerOnly 升级堆叠在客户端和服务器分别计算同一预测值，最终仍由服务器确认。
+	const AArenaPlayerState* ArenaPlayerState = Cast<AArenaPlayerState>(ActorInfo->OwnerActor.Get());
+	const float ShieldUpgradeBonus = ArenaPlayerState
+		? ArenaPlayerState->GetOwnedUpgradeNumericTotal(
+			ArenaGameplayTags::Ability_Shield,
+			FGameplayTag(),
+			ArenaGameplayTags::Upgrade_Shield_Amount)
+		: 0.0f;
+	const float ShieldAmount = FMath::Max(
+		FMath::FloorToFloat(BaseShieldAmount * (1.0f + ShieldUpgradeBonus)),
+		0.0f);
+	if (ShieldAmount <= KINDA_SMALL_NUMBER)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
+	// 先构造并填充 Shield spec，避免资产配置无效时仍然消耗 Energy 或进入冷却。
 	const FGameplayEffectSpecHandle ShieldSpecHandle = SourceASC->MakeOutgoingSpec(
 		ShieldEffectClass,
 		GetAbilityLevel(Handle, ActorInfo),
@@ -46,6 +68,9 @@ void UArenaGameplayAbility_Shield::ActivateAbility(
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
+	ShieldSpecHandle.Data->SetSetByCallerMagnitude(
+		ArenaGameplayTags::SetByCaller_Shield_Amount,
+		ShieldAmount);
 
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
@@ -53,7 +78,7 @@ void UArenaGameplayAbility_Shield::ActivateAbility(
 		return;
 	}
 
-	// 护盾数值只通过 GE 修改 AttributeSet，保持 Cost/Cooldown/Clamp 都在 GAS 流程中。
+	// 护盾数值只通过 SetByCaller GE 修改 AttributeSet，保持 Cost/Cooldown/Clamp 都在 GAS 流程中。
 	SourceASC->ApplyGameplayEffectSpecToSelf(
 		*ShieldSpecHandle.Data.Get(),
 		ActivationInfo.GetActivationPredictionKey());

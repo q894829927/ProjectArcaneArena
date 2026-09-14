@@ -1,11 +1,15 @@
 #include "Core/ArenaPlayerState.h"
 
+#include "Core/ArenaBalanceTelemetryComponent.h"
+#include "Core/ArenaGameState.h"
 #include "Core/ArenaUpgradeDataAsset.h"
+#include "Engine/World.h"
 #include "GAS/ArenaAbilitySystemComponent.h"
 #include "GAS/ArenaAttributeSet.h"
+#include "Item/ArenaInventoryComponent.h"
 #include "Net/UnrealNetwork.h"
 
-// 构造玩家状态，创建长期存在的 ASC 和 AttributeSet。
+// 构造玩家状态，创建跨角色生命周期的 ASC、AttributeSet 和背包 Model。
 AArenaPlayerState::AArenaPlayerState()
 {
 	SetNetUpdateFrequency(100.0f);
@@ -19,9 +23,11 @@ AArenaPlayerState::AArenaPlayerState()
 	AttributeSet = CreateDefaultSubobject<UArenaAttributeSet>(TEXT("AttributeSet"));
 	// 显式注册 AttributeSet 子对象，确保 ASC 能发现并复制属性。
 	AbilitySystemComponent->AddAttributeSetSubobject(AttributeSet.Get());
+
+	InventoryComponent = CreateDefaultSubobject<UArenaInventoryComponent>(TEXT("InventoryComponent"));
 }
 
-// 复制 OwnerOnly 候选/持有升级和公共选择完成状态，UI 只观察这些数据。
+// 复制 OwnerOnly 升级数据、公共选择完成状态与 Victory Ready，UI 只观察这些数据。
 void AArenaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -29,6 +35,20 @@ void AArenaPlayerState::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 	DOREPLIFETIME_CONDITION(AArenaPlayerState, UpgradeCandidates, COND_OwnerOnly);
 	DOREPLIFETIME_CONDITION(AArenaPlayerState, OwnedUpgrades, COND_OwnerOnly);
 	DOREPLIFETIME(AArenaPlayerState, bHasSelectedUpgrade);
+	DOREPLIFETIME(AArenaPlayerState, bVictoryRestartReady);
+}
+
+// 服务器更新该玩家的 Victory 重开确认状态，并立即同步 Listen Server UI。
+void AArenaPlayerState::SetVictoryRestartReady(bool bNewReady)
+{
+	if (!HasAuthority() || bVictoryRestartReady == bNewReady)
+	{
+		return;
+	}
+
+	bVictoryRestartReady = bNewReady;
+	OnVictoryRestartReadyChanged.Broadcast(bVictoryRestartReady);
+	ForceNetUpdate();
 }
 
 // 返回标准 GAS 接口需要的 AbilitySystemComponent。
@@ -47,6 +67,12 @@ UArenaAbilitySystemComponent* AArenaPlayerState::GetArenaAbilitySystemComponent(
 UArenaAttributeSet* AArenaPlayerState::GetArenaAttributeSet() const
 {
 	return AttributeSet;
+}
+
+// 返回 PlayerState 持有的背包组件，重生只更换 Avatar 时仍保留本局物品。
+UArenaInventoryComponent* AArenaPlayerState::GetInventoryComponent() const
+{
+	return InventoryComponent;
 }
 
 // 记录启动技能是否已经授予，避免 Possess/复制路径重复授予。
@@ -89,13 +115,13 @@ int32 AArenaPlayerState::GetUpgradeStackCount(FName UpgradeID) const
 	return 0;
 }
 
-// 汇总匹配路由标签的已拥有升级数值，避免 Ability 依赖具体 UpgradeID。
+// 汇总匹配路由标签的已拥有升级数值；无效 Ability 或伤害标签表示该维度不参与筛选。
 float AArenaPlayerState::GetOwnedUpgradeNumericTotal(
 	FGameplayTag TargetAbilityTag,
 	FGameplayTag DamageTypeTag,
 	FGameplayTag UpgradeTag) const
 {
-	if (!TargetAbilityTag.IsValid() || !DamageTypeTag.IsValid() || !UpgradeTag.IsValid())
+	if (!UpgradeTag.IsValid())
 	{
 		return 0.0f;
 	}
@@ -105,8 +131,8 @@ float AArenaPlayerState::GetOwnedUpgradeNumericTotal(
 	{
 		const UArenaUpgradeDataAsset* UpgradeData = OwnedUpgrade.UpgradeData;
 		if (!UpgradeData || OwnedUpgrade.StackCount <= 0
-			|| UpgradeData->TargetAbilityTag != TargetAbilityTag
-			|| UpgradeData->DamageTypeTag != DamageTypeTag
+			|| (TargetAbilityTag.IsValid() && UpgradeData->TargetAbilityTag != TargetAbilityTag)
+			|| (DamageTypeTag.IsValid() && UpgradeData->DamageTypeTag != DamageTypeTag)
 			|| !UpgradeData->UpgradeTags.HasTagExact(UpgradeTag))
 		{
 			continue;
@@ -139,7 +165,7 @@ void AArenaPlayerState::BeginUpgradeSelection(const TArray<UArenaUpgradeDataAsse
 	ForceNetUpdate();
 }
 
-// 记录已验证升级的数据资产和永久堆叠，并关闭本轮候选。
+// 记录已验证升级和永久堆叠，随后把结果层数上报服务器平衡统计并关闭候选。
 void AArenaPlayerState::CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade)
 {
 	if (!HasAuthority() || !Upgrade || Upgrade->UpgradeID.IsNone())
@@ -164,6 +190,21 @@ void AArenaPlayerState::CompleteUpgradeSelection(UArenaUpgradeDataAsset* Upgrade
 		NewUpgrade.UpgradeID = UpgradeID;
 		NewUpgrade.UpgradeData = Upgrade;
 		NewUpgrade.StackCount = 1;
+	}
+
+	if (const UWorld* World = GetWorld())
+	{
+		if (const AArenaGameState* GameState = World->GetGameState<AArenaGameState>())
+		{
+			if (UArenaBalanceTelemetryComponent* Telemetry =
+				GameState->GetBalanceTelemetryComponent())
+			{
+				Telemetry->RecordUpgradeSelected(
+					this,
+					UpgradeID,
+					GetUpgradeStackCount(UpgradeID));
+			}
+		}
 	}
 
 	UpgradeCandidates.Reset();
@@ -202,4 +243,10 @@ void AArenaPlayerState::OnRep_OwnedUpgrades()
 void AArenaPlayerState::OnRep_HasSelectedUpgrade()
 {
 	OnUpgradeStateChanged.Broadcast();
+}
+
+// Victory Ready 状态复制后刷新本地终局界面。
+void AArenaPlayerState::OnRep_VictoryRestartReady()
+{
+	OnVictoryRestartReadyChanged.Broadcast(bVictoryRestartReady);
 }

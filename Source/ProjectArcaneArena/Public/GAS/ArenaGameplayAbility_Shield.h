@@ -12,11 +12,11 @@ class PROJECTARCANEARENA_API UArenaGameplayAbility_Shield : public UArenaGamepla
 	GENERATED_BODY()
 
 public:
-	// 设置 Shield 的输入标签和状态阻断规则，具体数值由 GameplayEffect 资产配置。
+	// 设置 Shield 的输入标签、基础数值和状态阻断规则。
 	UArenaGameplayAbility_Shield();
 
 protected:
-	// 服务端提交消耗/冷却后，对自身 ASC 应用 GE_Shield。
+	// 两端按 PlayerState 永久升级计算护盾量，提交消耗/冷却后对自身应用 SetByCaller GE。
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
@@ -25,4 +25,7 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Shield")
 	TSubclassOf<UGameplayEffect> ShieldEffectClass;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Shield", meta = (ClampMin = "0.0"))
+	float BaseShieldAmount = 30.0f;
 };

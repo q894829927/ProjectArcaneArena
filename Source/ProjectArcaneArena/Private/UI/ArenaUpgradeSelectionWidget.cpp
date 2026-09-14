@@ -12,25 +12,69 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Core/ArenaUpgradeDataAsset.h"
+#include "InputCoreTypes.h"
 
-// Slate 重建前准备蓝图缺失时的原生 WidgetTree，确保 fallback 界面真正可见。
+// Slate 重建前启用根焦点；父级 Preview 路由会先于任意候选按钮拦截 Tab。
 void UArenaUpgradeSelectionWidget::NativeOnInitialized()
 {
 	Super::NativeOnInitialized();
 
+	SetIsFocusable(true);
 	if (!UpgradeChoiceButton0 || !UpgradeChoiceButton1 || !UpgradeChoiceButton2)
 	{
 		BuildFallbackLayout();
 	}
 }
 
-// Widget 加入视口后绑定按钮并以折叠状态等待服务器候选。
+// Widget 加入视口后绑定按钮并默认折叠，焦点能力已在 Slate 重建前完成配置。
 void UArenaUpgradeSelectionWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 
 	BindChoiceButtons();
 	SetVisibility(ESlateVisibility::Collapsed);
+}
+
+// Upgrade 由焦点路径优先捕获 Tab 按下，并交给 Controller 启动轻点/长按状态机。
+FReply UArenaUpgradeSelectionWidget::NativeOnPreviewKeyDown(
+	const FGeometry& InGeometry,
+	const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Tab)
+	{
+		OnInventoryRequested.Broadcast();
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
+}
+
+// Preview 未消费按键时在普通 KeyDown 路径兜底转发 Tab，避免蓝图焦点差异禁用只读背包。
+FReply UArenaUpgradeSelectionWidget::NativeOnKeyDown(
+	const FGeometry& InGeometry,
+	const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Tab)
+	{
+		OnInventoryRequested.Broadcast();
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnKeyDown(InGeometry, InKeyEvent);
+}
+
+// 冒泡路径捕获 Tab 松开，供 Controller 完成轻点切换或长按临时关闭。
+FReply UArenaUpgradeSelectionWidget::NativeOnKeyUp(
+	const FGeometry& InGeometry,
+	const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Tab)
+	{
+		OnInventoryTabReleased.Broadcast();
+		return FReply::Handled();
+	}
+
+	return Super::NativeOnKeyUp(InGeometry, InKeyEvent);
 }
 
 // 仅展示 Controller 从 PlayerState 快照整理出的候选和层数，并把最终选择意图交还 Controller。
@@ -58,21 +102,28 @@ void UArenaUpgradeSelectionWidget::HideUpgradeChoices()
 	K2_OnUpgradeChoicesChanged();
 }
 
-// 查找第一个可操作候选按钮，避免把不可聚焦的 UserWidget 容器交给 InputMode。
+// 优先聚焦第一个可用候选按钮以支持确认输入；父级 Preview 仍会先于子按钮接管 Tab。
 UWidget* UArenaUpgradeSelectionWidget::GetInitialFocusTarget() const
 {
-	UButton* Buttons[] = { UpgradeChoiceButton0, UpgradeChoiceButton1, UpgradeChoiceButton2 };
-	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Buttons); ++Index)
+	UButton* ChoiceButtons[] = {
+		UpgradeChoiceButton0.Get(),
+		UpgradeChoiceButton1.Get(),
+		UpgradeChoiceButton2.Get()
+	};
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(ChoiceButtons); ++Index)
 	{
-		UButton* Button = Buttons[Index];
-		if (CurrentChoices.IsValidIndex(Index) && CurrentChoices[Index].Upgrade
-			&& Button && Button->GetIsEnabled() && Button->GetIsFocusable())
+		UButton* ChoiceButton = ChoiceButtons[Index];
+		if (CurrentChoices.IsValidIndex(Index)
+			&& ChoiceButton
+			&& ChoiceButton->GetIsEnabled()
+			&& ChoiceButton->GetIsFocusable()
+			&& ChoiceButton->GetVisibility() == ESlateVisibility::Visible)
 		{
-			return Button;
+			return ChoiceButton;
 		}
 	}
 
-	return nullptr;
+	return const_cast<UArenaUpgradeSelectionWidget*>(this);
 }
 
 // 蓝图未提供布局时创建可直接操作且支持本地化的原生三选一界面，后续可用 WBP 子类替换外观。
@@ -173,7 +224,7 @@ void UArenaUpgradeSelectionWidget::BuildFallbackLayout()
 		UpgradeChoiceRarityText2, UpgradeChoiceStackText2);
 }
 
-// 把三个按钮各自绑定到固定候选索引，重复 Construct 时避免重复委托。
+// 把三个候选按钮绑定到固定候选索引，重复 Construct 时避免重复委托。
 void UArenaUpgradeSelectionWidget::BindChoiceButtons()
 {
 	if (UpgradeChoiceButton0)

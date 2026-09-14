@@ -12,6 +12,7 @@
 	GAMEPLAYATTRIBUTE_VALUE_INITTER(PropertyName)
 
 struct FGameplayEffectModCallbackData;
+struct FArenaDamageFeedbackData;
 
 UCLASS()
 class PROJECTARCANEARENA_API UArenaAttributeSet : public UAttributeSet
@@ -27,7 +28,7 @@ public:
 	virtual void PreAttributeChange(const FGameplayAttribute& Attribute, float& NewValue) override;
 	// 修改 BaseValue 前统一 clamp，覆盖 Instant GE 等基础值变化。
 	virtual void PreAttributeBaseChange(const FGameplayAttribute& Attribute, float& NewValue) const override;
-	// 处理 Damage/Healing 元属性，并在实际伤害生效后路由权威 GameplayEvent。
+	// 处理 Damage/Healing 元属性，并在实际伤害生效后派发 Cue 与权威结果事件。
 	virtual void PostGameplayEffectExecute(const FGameplayEffectModCallbackData& Data) override;
 
 	ARENA_ATTRIBUTE_ACCESSORS(UArenaAttributeSet, Health);
@@ -117,8 +118,12 @@ private:
 	void UpdateDeadTag() const;
 	// 根据权威 Shield 数值添加或移除持续 Cue，重复补盾不会重复 Add。
 	void RefreshShieldGameplayCue();
-	// 每次成功 Damage meta 结算仅触发一次按伤害类型分类的命中 Cue。
-	void ExecuteDamageGameplayCue(const FGameplayEffectModCallbackData& Data, float AppliedDamage) const;
+	// 根据结算前后资源损失生成一段权威反馈，并排入目标 ASC 的下一 Tick 批次。
+	void QueueDamageFeedback(
+		const FGameplayEffectModCallbackData& Data,
+		float ShieldBeforeDamage,
+		float ActualShieldDamage,
+		float ActualHealthDamage) const;
 
 	bool bShieldGameplayCueActive = false;
 };
