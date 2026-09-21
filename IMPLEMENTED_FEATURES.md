@@ -487,7 +487,7 @@ Status meanings:
 * 新增 `AArenaProjectileStressTestActor`，支持 `DataPool` 与 `LegacyActor` 两种独立压力模式，共享固定随机种子、速度、寿命和发射率；每个统计窗口输出 Average/P95/P99/Max 帧时间、Active/Target、提交失败和 Data Pool 容量信息。
 * 新增 `AArenaProjectileLegacyBenchmarkActor` 作为 P0 传统 `AActor + USphereComponent + UProjectileMovementComponent` 成本参考，可分别开关 Movement、Collision 与 Replication，不接入正式 Fireball、EnemyProjectile 或 GAS。
 * 新系统与现有主动技能解耦；`AArenaFireballProjectile`、`AArenaEnemyProjectile` 保持原实现，后续只有 Profiling 证明其生命周期成本值得优化时才考虑独立 Actor Pool。
-* 状态：源码已实现并通过窄目标 UBT 编译；`GetStatId()` 修复后的 DataPool 1000 档 PIE smoke test 已连续输出稳定统计，Active=1000 左右、Failed=0、Overflow=0，未再出现 Tickable PURE_VIRTUAL 崩溃；DataPool 5000 档也已稳定运行，Active≈5000、Failed=0、Overflow=0，容量按 GrowChunk 从 5000 扩到 6024，PeakActive 约 5.0k。100/250/500/2000/5000 阶梯、Unreal Insights Capture、Generation 复用回归和 Listen Server 压力验证仍待完成，因此当前记为 `Partial`。
+* 状态：源码已实现并通过窄目标 UBT 编译；`GetStatId()` 修复后的 DataPool 1000 档 PIE smoke test 已连续输出稳定统计，Active=1000 左右、Failed=0、Overflow=0，未再出现 Tickable PURE_VIRTUAL 崩溃；DataPool 5000 档也已稳定运行，Active≈5000、Failed=0、Overflow=0，容量按 GrowChunk 从 5000 扩到 6024，PeakActive 约 5.0k；在 `t.MaxFPS=240`、VSync 关闭后，稳态压力窗口约 9.1~9.2ms/frame（约 108 FPS），PIE `stat unit` 观测到 Frame≈9.43ms、Game≈9.44ms、GPU≈7.74ms。100/250/500/2000/5000 阶梯、Unreal Insights Capture、Generation 复用回归和 Listen Server 压力验证仍待完成，因此当前记为 `Partial`。
 
 ## Verification Notes
 
