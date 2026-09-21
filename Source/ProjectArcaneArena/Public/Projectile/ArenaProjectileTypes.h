@@ -139,6 +139,7 @@ struct PROJECTARCANEARENA_API FArenaProjectileHitCommand
 	float PelletTrackingLifetime = 0.0f;
 	int32 AttackInstanceID = 0;
 	int32 WeaponRuntimeID = INDEX_NONE;
+	int32 VisualTypeID = 0;
 	int32 PelletIndex = 0;
 	int32 PelletCount = 1;
 	int32 ProjectileHitOrdinal = 1;
