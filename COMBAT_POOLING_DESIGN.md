@@ -546,7 +546,7 @@ ServerLaunchTime
 |---|---|---|---|
 | P0：独立压力基线 | Partial | 新增 ProjectileStressTest；保留 Legacy Actor 模式用于成本参考，同时建立空逻辑／Data 模式基线 | 100/250/500/1000/2000/5000 可重复运行，保存 Average/P95/P99 与线程证据 |
 | P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、Free List、Handle、Generation、直线运动和寿命 | 普通 Projectile 不创建每发 Actor/Component；槽位复用无串状态 |
-| P2：Auto Weapon 接入 | Partial | `UArenaAutoAttackComponent` 已挂入 PlayerCharacter；Authority Timer 选最近存活敌人并直接向 Data Pool 发射，使用 AttackInstanceID | 源码已接入；待编译/PIE 验证移动射击、Dead/Stun/阶段停火和既有技能回归 |
+| P2：Auto Weapon 接入 | Partial | `UArenaAutoAttackComponent` 已挂入 PlayerCharacter；Authority Timer 选最近存活敌人并直接向 Data Pool 发射，使用 AttackInstanceID | 首次 PIE 已确认 AttackID 连续递增、Handle/Generation 复用；待验证移动射击、Dead/Stun/阶段停火、Avatar 更换、Listen Server 与既有技能回归 |
 | P3：Spatial Hash Collision | Planned | Target 注册、Cell 查询、Swept Segment、HitCommand Buffer | 不全遍历全部敌人；高速弹不穿透；GAS 结算正确 |
 | P4：Spread / Pierce / 多武器 | Planned | 散射、穿透、多个独立 WeaponRuntime | 同类武器互不覆盖；穿透去重正确 |
 | P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量 Projectile 不创建同数量 Niagara Component |
