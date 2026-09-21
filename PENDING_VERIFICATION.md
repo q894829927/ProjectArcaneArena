@@ -1262,3 +1262,33 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - P2 当前不产生伤害属于预期；P3 接入 Spatial Hash、Swept Collision 和 HitCommand 后再验证真实命中/GAS。
 - [已完成] 两人 Listen Server 已确认两个玩家分别由 Authority 产生独立自动攻击流；日志中 `BP_ArenaPlayerCharacter_C_0` 与 `_C_1` 各自拥有独立 `AttackID=18/19/20`，对应不同 Data Pool Handle，未观察到客户端重复生成。
 - 现有主动技能无行为回归。
+
+
+## P3 Spatial Hash / Swept Collision / HitCommand
+
+### 测试前配置
+
+1. 打开 `BP_ArenaPlayerCharacter` 的原生 `AutoAttackComponent`。
+2. 将 `Damage Effect Class` 设置为 `/Game/GAS/GameplayEffect/GE_Damage`。
+3. 首轮保持 `Damage Type Tag = Damage.Physical`、`Base Damage = 10`、`Skill Multiplier = 1`。
+4. 控制台执行 `arena.Projectile.LogHits 1`，方便把 Data Projectile 命中与现有 `LogArenaDamage` 对照。
+
+### 测试方法
+
+1. 使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译，确认新增 SpatialGrid、HitCommand、SpawnParams 冷数据和 Enemy 注册接口无 UHT/UBT 错误。
+2. 单人 PIE 进入 Combat，保持一名敌人在 Auto Weapon 范围内；确认日志出现 `DataProjectile hit`，随后出现该玩家通过现有 Damage Pipeline 对同一敌人造成伤害。
+3. 将 `ProjectileSpeed` 提高到 6000～10000，反复让敌人位于弹道中间，确认 Previous→Current Swept Collision 不因单帧跨越 Capsule 而漏命中。
+4. 同时存在多名敌人时确认同一非穿透 Projectile 只命中沿路径最早的一个目标并立即回收；P4 之前不测试 Pierce。
+5. 杀死敌人后确认其不再进入 SpatialGrid 有效 Cell；销毁/换波后 WeakObjectPtr 和主动 Unregister 均无残留命中。
+6. 两人 Listen Server 分别攻击不同敌人，确认 Source ASC、Damage/Crit/OnKill 归属到正确玩家，不由客户端重复结算。
+7. Unreal Insights 搜索 `ArenaProjectileSpatialGridBuild`、`ArenaProjectileSweptCollision`、`ArenaProjectileHitCommands`，记录真实敌人数与 Projectile 数下的 Count/Total。
+8. 回归 P1 纯 StressTest：没有 `DamageEffectClass` 的基准 Data Projectile 只做移动/寿命，不应因为 P3 自动参与 GAS 命中。
+
+### 通过标准
+
+- 普通 Data Projectile 不创建 Actor/CollisionComponent/ProjectileMovementComponent，命中仍通过现有 GAS Damage Pipeline 权威结算。
+- Spatial Hash 宽相只返回局部 Cell 候选，不形成 Projectile × 全敌人双重遍历。
+- 高速直线弹不会因为单帧位移跨过敌人而漏判。
+- 非穿透弹一发最多结算一个最早目标；槽位释放后 Generation 正常递增。
+- Dead/销毁目标不再收到 Data Projectile 命中。
+- 双人 Listen Server 的 Source/Target/击杀归属正确，无客户端重复伤害。
