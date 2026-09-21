@@ -1276,7 +1276,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 ### 测试方法
 
 1. 使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译，确认新增 SpatialGrid、HitCommand、SpawnParams 冷数据和 Enemy 注册接口无 UHT/UBT 错误。
-2. 单人 PIE 进入 Combat，保持一名敌人在 Auto Weapon 范围内；确认日志出现 `DataProjectile hit`，随后出现该玩家通过现有 Damage Pipeline 对同一敌人造成伤害。
+2. [已完成] 单人 PIE 进入 Combat，日志已确认 `DataProjectile hit` 后由同一玩家通过现有 Damage Pipeline 对同一敌人造成实际伤害；AttackID 6～13 均正常结算。
 3. 将 `ProjectileSpeed` 提高到 6000～10000，反复让敌人位于弹道中间，确认 Previous→Current Swept Collision 不因单帧跨越 Capsule 而漏命中。
 4. 同时存在多名敌人时确认同一非穿透 Projectile 只命中沿路径最早的一个目标并立即回收；P4 之前不测试 Pierce。
 5. 杀死敌人后确认其不再进入 SpatialGrid 有效 Cell；销毁/换波后 WeakObjectPtr 和主动 Unregister 均无残留命中。
@@ -1286,9 +1286,10 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 ### 通过标准
 
-- 普通 Data Projectile 不创建 Actor/CollisionComponent/ProjectileMovementComponent，命中仍通过现有 GAS Damage Pipeline 权威结算。
+- [已完成] 普通 Data Projectile 命中通过现有 GAS Damage Pipeline 权威结算；本次 `BaseDamage=10` 最终日志为 25 点实际伤害，说明 ExecCalc/属性计算仍生效。
 - Spatial Hash 宽相只返回局部 Cell 候选，不形成 Projectile × 全敌人双重遍历。
 - 高速直线弹不会因为单帧位移跨过敌人而漏判。
 - 非穿透弹一发最多结算一个最早目标；槽位释放后 Generation 正常递增。
+- [基础链路已完成] 敌人死亡后后续 AutoAttack 会切换到其他存活目标；最后一名敌人死亡后 Wave 1 正常清空进入 Upgrade。
 - Dead/销毁目标不再收到 Data Projectile 命中。
 - 双人 Listen Server 的 Source/Target/击杀归属正确，无客户端重复伤害。
