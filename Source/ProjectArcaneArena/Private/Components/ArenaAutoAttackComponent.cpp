@@ -1,5 +1,6 @@
 #include "Components/ArenaAutoAttackComponent.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Character/ArenaEnemyCharacter.h"
 #include "Core/ArenaGameState.h"
@@ -131,9 +132,7 @@ bool UArenaAutoAttackComponent::CanAutoFire() const
 	}
 
 	const UAbilitySystemComponent* OwnerASC =
-		Cast<IAbilitySystemInterface>(OwnerActor)
-			? Cast<IAbilitySystemInterface>(OwnerActor)->GetAbilitySystemComponent()
-			: nullptr;
+		UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(const_cast<AActor*>(OwnerActor));
 	if (!OwnerASC)
 	{
 		return false;
