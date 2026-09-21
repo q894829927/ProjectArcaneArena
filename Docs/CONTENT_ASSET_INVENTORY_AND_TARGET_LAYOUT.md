@@ -2179,7 +2179,7 @@ UI root HUD                     -> ProjectArcaneArena/UI/HUD
 UI DamageNumber                 -> ProjectArcaneArena/UI/DamageNumbers
 UI/MainMenu                     -> ProjectArcaneArena/UI/MainMenu
 UI/Inventory                    -> ProjectArcaneArena/UI/Inventory
-UI/UpgradeIcons                 -> ProjectArcaneArena/UI/Upgrade/Icons
+UI/UpgradeIcons (.uasset)      -> ProjectArcaneArena/UI/Upgrade/Icons\nUI/UpgradeIcons (raw PNG)       -> SourceArt/UI/UpgradeIcons
 Cursor                          -> ProjectArcaneArena/UI/Cursor/Current
 
 TopDown/Input                   -> ProjectArcaneArena/Input
