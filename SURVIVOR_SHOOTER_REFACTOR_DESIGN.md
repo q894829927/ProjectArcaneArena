@@ -420,22 +420,25 @@ P0 Legacy Actor Reference / 独立 Stress Test
 确认传统 AActor + Movement + Collision + Replication 成本
         ↓
 P1 Data Projectile Pool
-预分配槽位 + Free List + Generation + 集中移动
+预分配槽位 + SoA + Free List + Generation + 集中移动
         ↓
-P2 Spatial Hash
-降低 Projectile × Enemy 全遍历和通用碰撞查询
+P2 Auto Weapon 接入
+第一把基础自动武器直接向 Data Pool 发射；与 G-A 是同一实现节点
         ↓
-P3 Shared Niagara / NDC
+P3 Spatial Hash + Swept Collision
+降低 Projectile × Enemy 全遍历和通用碰撞查询，并输出 HitCommand
+        ↓
+P4 Spread / Pierce / 多武器
+验证 AttackInstanceID、穿透去重和多个 WeaponRuntime 隔离
+        ↓
+P5 Shared Niagara / NDC
 降低大量独立粒子 System Instance 和命中特效实例
         ↓
-P4 Launch Reconstruction
+P6 Launch Reconstruction / 轻量网络
 降低逐弹 ReplicateMovement 和网络 Actor 数
         ↓
-P5 Parallel Simulation
-仅在单线程模拟仍为主要瓶颈时按 Chunk 并行
-        ↓
-P6 综合规模化验收
-真实敌群 + GAS + VFX + 网络 + 长时间运行
+P7 Parallel Simulation + 综合规模化验收
+仅在 Insights 证明需要时按 Chunk 并行，并完成真实敌群 + GAS + VFX + 网络 + 长时间运行验收
 ```
 
 Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正式 Fireball。这样性能故事更干净：传统 Actor 成本作为参照，新 Data Projectile 系统从零构建并逐层优化。
@@ -530,14 +533,15 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 | 阶段 | 状态 | 交付 | 验收门槛 |
 |---|---|---|---|
 | P0：独立基线压测 | Partial | StressTestActor；Legacy Actor Reference 与 Data 空载基线；100～5000 阶梯 | 能拆分传统 Actor/Movement/Collision/VFX/Network 成本，并建立新系统起点 |
-| P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、Free List、Handle、Generation、直线移动 | 新自动武器普通弹不依赖每发 Actor/MovementComponent；复用无串状态 |
-| P2：Spatial Hash | Planned | Target Grid、Swept Segment、HitCommand | 不全遍历全部敌人，高速和穿透正确 |
-| P3：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
-| P4：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
-| P5：并行模拟 | Planned | 仅在 Insights 证明需要时按 Chunk 并行 | 线程安全，Projectile Simulation GameThread 成本进一步下降 |
-| P6：综合规模化验收 | Planned | 真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
+| P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、SoA、Free List、Handle、Generation、直线移动 | 普通 Projectile 不依赖每发 Actor/MovementComponent；复用无串状态 |
+| P2：Auto Weapon 接入 | Planned | 与 G-A 共用同一实现节点；一把基础自动武器直接向 Data Pool 发射，携带 AttackInstanceID | 移动中持续自动射击；死亡/Stun/非 Combat 正确停火；现有主动技能不回归 |
+| P3：Spatial Hash Collision | Planned | Target Grid、Swept Segment、HitCommand Buffer | 不全遍历全部敌人；高速弹不穿透；GAS 结算正确 |
+| P4：Spread / Pierce / 多武器 | Planned | 散射、穿透、多个独立 WeaponRuntime | 同类武器互不覆盖；AttackInstanceID 稳定；穿透去重正确 |
+| P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
+| P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
+| P7：并行与综合验收 | Planned | 仅在 Insights 证明需要时 Chunk 并行；真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 线程安全；帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
 
-P0/P1 已进入源码实现：独立压力 Actor、Legacy Actor 参考和 Data Projectile Pool 已存在，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接；尚未完成 PIE 与 Insights 验收，故状态为 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
+P0/P1 已进入源码实现：独立压力 Actor、Legacy Actor 参考和 Data Projectile Pool 已存在，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接。5000 Active 的 DataPool 已取得稳定 PIE/Insights 基线（`ArenaProjectileSimulation` 约 0.041 ms/frame），LegacyActor M0/M1 已完成首轮对照；完整阶梯、Collision/Replication、Generation 专项与 Listen Server 验收仍待补，因此 P0/P1 保持 `Partial`。P2 Auto Weapon 为下一实施阶段，当前仍为 `Planned`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
 
 ### 12.3 合并顺序
 
@@ -546,29 +550,29 @@ P0/P1 已进入源码实现：独立压力 Actor、Legacy Actor 参考和 Data P
 ```text
 P0
 → P1 Data Projectile Pool
-→ G-A 单武器自动攻击
-→ P2 Spatial Hash
-→ G-B / G-C 多槽与三种攻击模式
+→ P2 / G-A 单武器自动攻击（同一实现节点）
+→ P3 Spatial Hash + Swept Collision
+→ P4 / G-B / G-C 多槽、散射、穿透与多武器
 → G-D / G-E 限时生存与构筑
-→ P3 / P4 批量表现与轻量网络
+→ P5 / P6 批量表现与轻量网络
 → G-F（商店可后置）
-→ P5（仅按证据需要）
-→ P6 综合验收
+→ P7 并行（仅按证据需要）+ 综合验收
 ```
 
 关键依赖：
 
 - P0 先建立传统 Actor Reference 和新系统压力场景，不修改正式 Fireball。
-- P1 是 G-A 的技术基础；第一把自动武器就直接向 Data Projectile Pool 发射。
-- G-C 的散射／穿透使用稳定 `AttackInstanceID + ProjectileID + Generation`。
-- P2 的 HitCommand 是 Projectile Simulation 与 GAS 的唯一高频结算边界。
+- P1 是 P2/G-A 的技术基础；第一把自动武器直接向 Data Projectile Pool 发射。
+- P2 与 G-A 是同一实现节点：玩法轨关注自动攻击规则，性能轨关注 Data Projectile 接入与基线延续，不重复建设两套系统。
+- P3 的 HitCommand 是 Projectile Simulation 与 GAS 的唯一高频结算边界。
+- P4 与 G-B/G-C 对齐；散射／穿透／多武器统一使用稳定 `AttackInstanceID + ProjectileID + Generation`。
 - G-D 波末统一清理 Data Projectile Active Slots 和未完成自动攻击调度。
 - G-E 升级数据依赖 WeaponInstanceID 和统一 WeaponFire／Hit 语义。
-- P3/P4 只改变表现和传输方式，不改变服务器 GAS 权威。
-- P5 仅在 Unreal Insights 证明单线程 Projectile Simulation 仍是主要瓶颈时启用。
+- P5/P6 只改变表现和传输方式，不改变服务器 GAS 权威。
+- P7 的 Chunk 并行仅在 Unreal Insights 证明单线程 Projectile Simulation 成为主要瓶颈时启用；综合验收无论是否并行都必须完成。
 - 旧主动技能只做回归，不因新弹幕架构被强制重写。
 
-当前实现进度：仅完成现有源码分析和设计更新；上述新增阶段均为 `Planned`，尚未实现、构建或进行玩法／性能验收。
+当前实现进度：P0/P1 为 `Partial`，已有源码、编译、PIE 与首轮 Unreal Insights 证据；P2～P7 仍为 `Planned`。玩法轨 G-A 尚未开始，因此下一实现节点统一记为 `P2 / G-A 单武器自动攻击`。
 
 ## 13. 验证方案
 
