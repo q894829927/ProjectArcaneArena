@@ -694,3 +694,36 @@ Static validation PASSED.
 ```
 
 只有以上步骤全部通过后，迁移状态才从 `Rewritten` 升为 `Verified`。
+
+### 10.10 序列化引用断链修复（2026-09-22）
+
+重启后的日志确认：迁移目标存在，但 `DA_Waves_Prototype` 仍引用旧路径下的敌人 Blueprint、Affix 和 GE；敌人 Class 加载为空导致 Wave 1 被判定无效。药瓶材质、技能、物品与 Boss Cue 也存在旧依赖。10.9 的静态验收只扫描目录和文本，不能证明 `.uasset` 内部引用有效。
+
+修复状态：`Partial`（配置已实现，独立进程引用验收通过，视觉与 PIE/Cook 待验证）。
+
+- `Config/DefaultEngine.ini` 增加 264 条精确 `PackageRedirects`，依据迁移报告去除 PersistentLevel 重复记录后生成；所有目标文件已确认存在。对 `Lvl_TopDown -> Lvl_Arena` 额外配置对象改名映射。
+- 不二进制替换 `.uasset`，不删除迁移后的资产，不修改波次内容、属性值或服务器权威边界。兼容映射让尚未重存的旧引用在加载时解析到新 Package。
+- 新增 `Scripts/Python/migration/validate_migrated_references.py`，仅加载不保存。在新启动的 `UnrealEditor-Cmd` Python commandlet（NullRHI）中已通过：264 个目标加载、同名旧路径解析一致、两份 Wave Data 的敌人/精英依赖、瓶体/红蓝液体父材质及瓶体/液体/软木材质贴图节点。日志：`Saved/Logs/MigrationReferenceValidation.log`，`redirects=264 failures=0`，退出码 0。
+- NullRHI 不验证 Shader 编译与渲染外观；材质检查直接读取 Texture Expression，避免把无 ShaderMap 时 `GetUsedTextures` 返回空数组误判为丢失贴图。
+- 迁移脚本 rewrite/validate 显式保留 `[CoreRedirects]`，防止把 `OldName` 改成新路径或误报旧路径残留。
+- 已打开的编辑器必须重启才能使用新的 CoreRedirects；不要在旧会话里保存加载失败后的空引用。后续重存资产和清理 Redirector 必须在引用与 PIE 验证通过后进行。
+
+独立 `-game -NullRHI` 正式地图冒烟已通过：Wave 1 解析为 3 个敌人并开始生成，日志确认自动攻击锁定生成的敌人、双方 GAS 伤害结算正常（`Saved/Logs/MigrationWaveSmoke.log`，退出码 0）。此短测不代表完整通关。
+
+仍需完成：重启编辑器检查材质外观、PIE 后续波次与 Boss/升级/物品回归、双视角与 Listen Server PIE、Cook。改名地图使用新路径加载通过；旧地图对象名的软引用重定向未单独验证。P5 三个原本未创建的 NDC/共享 Niagara 目标不在本次迁移清单中，不将其不存在计为本次修复完成。
+
+### 10.11 移除 CoreRedirects 前的独立验收（2026-09-22）
+
+`validate_migrated_references.py` 的正常通过只证明兼容映射生效，不证明资产已脱离旧路径。新增普通 Python 启动脚本：
+
+```powershell
+py -3 Scripts/Python/migration/audit_redirect_independence.py
+```
+
+脚本只读扫描全部 `.uasset/.umap`，将含旧 Package 名称的文件列为候选；候选可包含元数据或 Redirector 自身，不直接断言为真实引用。随后生成 `Saved/MigrationReports/redirect_audit_*/DefaultEngine.ini` 临时副本，只移除本次项目迁移的 264 条 Package 与 1 条 Object 映射，通过 `-DEFENGINEINI` 在独立 Unreal Python commandlet 中加载，不修改正式 `Config/DefaultEngine.ini`，不重存资产，不删除 Redirector。其他引擎/插件配置保持继承。
+
+本次结果：`NOT_READY`。扫描 3111 个资产，131 个含旧包名候选；无映射加载时 38 项业务引用断言失败，包括 Wave Data 的敌人/精英依赖和药瓶父材质/软木贴图。正式配置字节核对未变。报告：`Saved/MigrationReports/redirect_audit_02nfcreu/report.json`，摘要见同目录 `README.md`，原始日志见 `Unreal.log`。
+
+结论：暂不能删除 `[CoreRedirects]`。后续需要在映射启用且引用完整的全新 Editor 会话中，针对报告确认的依赖资产通过 UE 重存，将解析后的新引用写入 Package；地图/ExternalActors 与蓝图也必须覆盖。重存后重新运行本检查，再进行 PIE/视觉/Cook 验收。不得在无映射的失败验收进程中保存资产，也不能用二进制字符串替换冒充重存。
+
+`--scan-only` 只生成候选报告，不启动 Unreal；`--editor <UnrealEditor-Cmd.exe 路径>` 可指定现有编辑器程序。`REVIEW_CANDIDATES` 表示加载通过但旧字符串仍需分类，`LOAD_CHECKS_PASSED` 也不替代完整玩法、渲染与打包验收。

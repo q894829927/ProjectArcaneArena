@@ -1,5 +1,13 @@
 # Project Arcane Arena 待验证清单
 
+## 资产迁移引用兼容修复（2026-09-22）
+
+- 移除映射前检查：`audit_redirect_independence.py` 在临时配置中禁用迁移 CoreRedirects 后返回 `NOT_READY`（38 项引用失败；3111 个资产中 131 个含旧包名候选）。尚未重存资产，不得据兼容加载成功删除映射；详见迁移文档 10.11。
+- 已通过：独立 NullRHI Python commandlet 加载 264 个迁移目标、同名旧路径解析、两份 Wave Data 的敌人/精英引用、药瓶/液体父材质与材质贴图节点，退出码 0。未保存或重写二进制资产。
+- 待验证：关闭旧编辑器会话（不要保存已加载失败的空引用），重启后检查瓶体、红/蓝液体与软木材质实际渲染。
+- 已通过：独立 NullRHI 游戏进程加载正式地图，Wave 1 开始生成 3 个敌人，自动攻击锁敌与双方 GAS 伤害日志正常。待验证：PIE 后续波次、升级选择、Boss Cue 与物品使用，不再出现旧 Package 缺失或 invalid enemy configuration。
+- 待验证：双视角、Listen Server、Cook。通过前不删除 CoreRedirects 或宣称全量迁移 Verified。
+
 ## ESC 菜单
 
 ### 测试方法

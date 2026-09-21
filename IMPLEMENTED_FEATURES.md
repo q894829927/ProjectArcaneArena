@@ -11,6 +11,11 @@ Status meanings:
 
 ## Core Framework
 
+### Migrated Asset Reference Compatibility — Partial
+
+* `Config/DefaultEngine.ini` provides 264 exact package redirects and the renamed arena World object redirect so serialized pre-migration references can load migrated assets. Enemy, material, GAS, inventory and Boss references retain their existing ownership and authority.
+* Fresh-process read-only validation with `Scripts/Python/migration/validate_migrated_references.py` passed target/legacy-path loading, both Wave Data enemy/elite references and potion material parents/texture nodes (2026-09-22). A separate NullRHI game smoke on the migrated arena started Wave 1 with 3 enemies and confirmed spawned enemy targeting and two-way GAS damage. Restarted-editor rendering, full PIE progression, multiplayer and Cook remain pending; assets have not been bulk-resaved.
+
 ### Main Menu Startup Flow - Implemented
 
 * `AArenaMainMenuGameMode`, `AArenaMainMenuPlayerController`, and `UArenaMainMenuWidget` provide an isolated title-screen flow that does not initialize the combat PlayerController, HUD, GAS, waves, inventory, upgrades, or a default Pawn.

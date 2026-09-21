@@ -1074,8 +1074,18 @@ def _read_text_preserve_bom(path: pathlib.Path) -> tuple[str, str]:
     return data.decode(encoding), encoding
 
 
+def _migration_text_lines(path: pathlib.Path, text: str):
+    """保留 CoreRedirects 的旧路径键，防止再次 rewrite 破坏兼容映射。"""
+    in_core_redirects = False
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if path.suffix.lower() == ".ini" and stripped.startswith("[") and stripped.endswith("]"):
+            in_core_redirects = stripped.lower() == "[coreredirects]"
+        yield line, in_core_redirects
+
+
 def rewrite_text_paths(plan: dict) -> int:
-    """修改 Config / Source / Python 中的旧 Content 硬编码路径。"""
+    """重写旧硬编码路径，但保留 CoreRedirects 中用于兼容旧资产的映射。"""
     replacements = build_text_replacements(plan)
     changed_files = 0
 
@@ -1086,14 +1096,18 @@ def rewrite_text_paths(plan: dict) -> int:
             _warn(f"Skip non-UTF8 text file: {path}")
             continue
 
-        new_text = old_text
+        new_lines = []
         replacement_count = 0
 
-        for old, new in replacements:
-            count = new_text.count(old)
-            if count:
-                new_text = new_text.replace(old, new)
-                replacement_count += count
+        for line, protected in _migration_text_lines(path, old_text):
+            if not protected:
+                for old, new in replacements:
+                    count = line.count(old)
+                    if count:
+                        line = line.replace(old, new)
+                        replacement_count += count
+            new_lines.append(line)
+        new_text = "".join(new_lines)
 
         if new_text == old_text:
             continue
@@ -1135,7 +1149,7 @@ def validate_old_asset_roots() -> list[str]:
 
 
 def validate_text_residuals() -> list[str]:
-    """检查构建/生成脚本中是否仍残留旧虚拟路径。"""
+    """检查旧硬编码路径；CoreRedirects 的有意兼容映射由独立加载验收检查。"""
     residuals: list[str] = []
 
     for path in iter_text_files():
@@ -1144,7 +1158,9 @@ def validate_text_residuals() -> list[str]:
         except UnicodeDecodeError:
             continue
 
-        for line_number, line in enumerate(text.splitlines(), start=1):
+        for line_number, (line, protected) in enumerate(_migration_text_lines(path, text), start=1):
+            if protected:
+                continue
             for token in OLD_TEXT_TOKENS:
                 search_start = 0
                 while True:
@@ -1199,6 +1215,7 @@ def validate_migration() -> bool:
     else:
         _log("Validation: no configured old hard-coded path tokens remain.")
 
+    _log("Static checks do not inspect serialized asset references. Run validate_migrated_references.py in a fresh Unreal process before PIE/Cook acceptance.")
     return not asset_residuals and not text_residuals
 
 
