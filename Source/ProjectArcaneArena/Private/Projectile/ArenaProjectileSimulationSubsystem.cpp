@@ -190,6 +190,7 @@ void UArenaProjectileSimulationSubsystem::Deinitialize()
 	PierceRemaining.Empty();
 	AttackInstanceIDs.Empty();
 	WeaponRuntimeIDs.Empty();
+	VisualTypeIDs.Empty();
 	PelletIndices.Empty();
 	PelletCounts.Empty();
 	SameTargetPelletFalloffs.Empty();
@@ -204,6 +205,7 @@ void UArenaProjectileSimulationSubsystem::Deinitialize()
 	ActiveListPositions.Empty();
 	FreeSlots.Empty();
 	PendingHitCommands.Empty();
+	FrameImpactVisualEvents.Empty();
 	CollisionCandidates.Empty();
 	SweepHitCandidates.Empty();
 	ProjectileHitTargets.Empty();
@@ -229,8 +231,15 @@ TStatId UArenaProjectileSimulationSubsystem::GetStatId() const
 // P3 集中推进 Data Projectile，并在 Authority World 通过 Spatial Hash + Swept Collision 生成命中命令。
 void UArenaProjectileSimulationSubsystem::Tick(float DeltaTime)
 {
-	if (DeltaTime <= 0.0f || ActiveSlots.IsEmpty())
+	if (DeltaTime <= 0.0f)
 	{
+		return;
+	}
+
+	FrameImpactVisualEvents.Reset();
+	if (ActiveSlots.IsEmpty())
+	{
+		SimulationUpdated.Broadcast();
 		return;
 	}
 
@@ -276,6 +285,8 @@ void UArenaProjectileSimulationSubsystem::Tick(float DeltaTime)
 		TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileHitCommands);
 		ApplyPendingHitCommands();
 	}
+
+	SimulationUpdated.Broadcast();
 }
 
 // 校验输入后获取可复用槽位；数据池耗尽会明确计数而不是静默覆盖飞行中的 Projectile。
@@ -315,6 +326,7 @@ bool UArenaProjectileSimulationSubsystem::SpawnProjectile(
 	PierceRemaining[Slot] = FMath::Max(Params.PierceRemaining, 0);
 	AttackInstanceIDs[Slot] = Params.AttackInstanceID;
 	WeaponRuntimeIDs[Slot] = Params.WeaponRuntimeID;
+	VisualTypeIDs[Slot] = FMath::Max(Params.VisualTypeID, 0);
 	PelletIndices[Slot] = FMath::Max(Params.PelletIndex, 0);
 	PelletCounts[Slot] = FMath::Max(Params.PelletCount, 1);
 	SameTargetPelletFalloffs[Slot] = FMath::Clamp(Params.SameTargetPelletFalloff, 0.0f, 1.0f);
@@ -367,6 +379,52 @@ bool UArenaProjectileSimulationSubsystem::GetProjectilePosition(
 	return true;
 }
 
+
+// 将当前 ActiveSlots 复制为紧凑只读视觉快照；表现预算截断不影响模拟数组和真实命中。
+void UArenaProjectileSimulationSubsystem::BuildVisualSnapshot(
+	TArray<FArenaProjectileVisualSample>& OutSamples,
+	int32 MaxSamples) const
+{
+	OutSamples.Reset();
+	const int32 SafeMaxSamples = FMath::Max(MaxSamples, 0);
+	const int32 SampleCount = FMath::Min(ActiveSlots.Num(), SafeMaxSamples);
+	OutSamples.Reserve(SampleCount);
+
+	for (int32 ActiveIndex = 0; ActiveIndex < SampleCount; ++ActiveIndex)
+	{
+		const int32 Slot = ActiveSlots[ActiveIndex];
+		if (!Positions.IsValidIndex(Slot)
+			|| !Velocities.IsValidIndex(Slot)
+			|| !Radii.IsValidIndex(Slot)
+			|| !RemainingLife.IsValidIndex(Slot)
+			|| !Generations.IsValidIndex(Slot)
+			|| !VisualTypeIDs.IsValidIndex(Slot))
+		{
+			continue;
+		}
+
+		FArenaProjectileVisualSample& Sample = OutSamples.AddDefaulted_GetRef();
+		Sample.Handle.Slot = Slot;
+		Sample.Handle.Generation = Generations[Slot];
+		Sample.Position = Positions[Slot];
+		Sample.Velocity = Velocities[Slot];
+		Sample.Radius = Radii[Slot];
+		Sample.RemainingLife = RemainingLife[Slot];
+		Sample.VisualTypeID = VisualTypeIDs[Slot];
+		Sample.WeaponRuntimeID = WeaponRuntimeIDs[Slot];
+		Sample.AttackInstanceID = AttackInstanceIDs[Slot];
+		Sample.PelletIndex = PelletIndices[Slot];
+		Sample.PelletCount = PelletCounts[Slot];
+	}
+}
+
+// Impact 事件只存活一个 Simulation Tick；表现层在 SimulationUpdated 回调中同步读取。
+void UArenaProjectileSimulationSubsystem::CopyFrameImpactVisualEvents(
+	TArray<FArenaProjectileImpactVisualEvent>& OutEvents) const
+{
+	OutEvents = FrameImpactVisualEvents;
+}
+
 // 压力测试切档或世界收尾时一次性回收全部槽位，并递增 Generation 使旧 Handle 失效。
 void UArenaProjectileSimulationSubsystem::ResetAllProjectiles()
 {
@@ -398,6 +456,7 @@ void UArenaProjectileSimulationSubsystem::ResetAllProjectiles()
 		PierceRemaining[Slot] = 0;
 		AttackInstanceIDs[Slot] = 0;
 		WeaponRuntimeIDs[Slot] = INDEX_NONE;
+		VisualTypeIDs[Slot] = 0;
 		PelletIndices[Slot] = 0;
 		PelletCounts[Slot] = 1;
 		SameTargetPelletFalloffs[Slot] = 1.0f;
@@ -416,6 +475,7 @@ void UArenaProjectileSimulationSubsystem::ResetAllProjectiles()
 
 	ProjectileHitTargets.Reset();
 	SweepHitCandidates.Reset();
+	FrameImpactVisualEvents.Reset();
 	PelletHitStates.Reset();
 	LastPelletHitStateCleanupTime = 0.0;
 }
@@ -481,6 +541,7 @@ void UArenaProjectileSimulationSubsystem::GrowStorage(int32 NewCapacity)
 	PierceRemaining.SetNum(NewCapacity);
 	AttackInstanceIDs.SetNum(NewCapacity);
 	WeaponRuntimeIDs.SetNum(NewCapacity);
+	VisualTypeIDs.SetNum(NewCapacity);
 	PelletIndices.SetNum(NewCapacity);
 	PelletCounts.SetNum(NewCapacity);
 	SameTargetPelletFalloffs.SetNum(NewCapacity);
@@ -506,6 +567,7 @@ void UArenaProjectileSimulationSubsystem::GrowStorage(int32 NewCapacity)
 		PierceRemaining[Slot] = 0;
 		AttackInstanceIDs[Slot] = 0;
 		WeaponRuntimeIDs[Slot] = INDEX_NONE;
+		VisualTypeIDs[Slot] = 0;
 		PelletIndices[Slot] = 0;
 		PelletCounts[Slot] = 1;
 		SameTargetPelletFalloffs[Slot] = 1.0f;
@@ -550,6 +612,7 @@ void UArenaProjectileSimulationSubsystem::ReleaseSlotAtActiveIndex(int32 ActiveI
 	PierceRemaining[Slot] = 0;
 	AttackInstanceIDs[Slot] = 0;
 	WeaponRuntimeIDs[Slot] = INDEX_NONE;
+	VisualTypeIDs[Slot] = 0;
 	PelletIndices[Slot] = 0;
 	PelletCounts[Slot] = 1;
 	SameTargetPelletFalloffs[Slot] = 1.0f;
@@ -751,6 +814,15 @@ bool UArenaProjectileSimulationSubsystem::ResolveProjectileSweptHits(int32 Slot)
 		HitCommand.PierceRemainingAfterHit = PierceRemaining[Slot];
 		HitCommand.HitResult = HitResult;
 		PendingHitCommands.Add(MoveTemp(HitCommand));
+
+		FArenaProjectileImpactVisualEvent& ImpactEvent = FrameImpactVisualEvents.AddDefaulted_GetRef();
+		ImpactEvent.Position = Candidate.ImpactPoint;
+		ImpactEvent.Normal = Candidate.ImpactNormal;
+		ImpactEvent.VisualTypeID = VisualTypeIDs[Slot];
+		ImpactEvent.WeaponRuntimeID = WeaponRuntimeIDs[Slot];
+		ImpactEvent.AttackInstanceID = AttackInstanceIDs[Slot];
+		ImpactEvent.PelletIndex = PelletIndices[Slot];
+		ImpactEvent.ProjectileHitOrdinal = ProjectileHitOrdinal;
 
 		HitTargets.Add(TargetKey);
 
