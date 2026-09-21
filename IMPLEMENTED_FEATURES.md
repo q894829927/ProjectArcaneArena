@@ -530,7 +530,7 @@ Status meanings:
 * 窄相入口时间由“二维扩张圆 + Z 高度区间”求交得到，替代旧的最近中心点 Alpha，仅用于当前 Character Capsule 近似；它不是范围伤害，也不会自动攻击弹道之外的敌人。
 * 每个发生过命中的 Active Projectile Slot 维护 `ProjectileHitTargets`，记录已经命中过的目标 ObjectKey。Projectile 继续飞行时会跳过历史目标，防止跨帧仍与同一 Capsule 重叠而重复伤害；Slot 回收/复用时立即清理历史。
 * HitCommand/日志新增 `ProjectileHitOrdinal` 与 `PierceRemainingAfterHit`，用于验证一颗 Projectile 的第 1/2/3 次沿线命中和穿透预算。
-* 状态：源码已实现，尚未本地 UBT/PIE。P4-D 通过后，P4 的多武器、Spread 与直线 Pierce 三个核心玩法节点即可达到 `Implemented`。
+* 状态：已完成基础单人 PIE 验证。`PierceCount=2`、单 Pellet、直线发射时，日志中多次出现一次 AutoAttack 后连续对 2～3 个不同敌人各造成 5 点伤害，例如 AttackID 13 后依次对 Enemy 2 / Enemy 0 / Enemy 1 结算，AttackID 14 后依次对 Enemy 2 / Enemy 1 / Enemy 0 结算，说明直线穿透与 `N+1` 命中上限基础行为已生效。由于本次未打开 `arena.Projectile.LogHits 1`，尚不能从 HitCommand 日志直接确认 `ProjectileHitOrdinal / PierceRemaining`、高速同帧顺序和跨帧同目标去重，因此 P4-D 仍保持 `Partial`。
 
 ## Verification Notes
 
