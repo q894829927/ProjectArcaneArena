@@ -483,3 +483,108 @@ Verified: None
 Remaining: 全部正式迁移
 Notes: 已锁定 Canonical Migration Map；后续路径修改必须以本文档为准。
 ```
+
+
+## 10. 自动迁移脚本
+
+仓库已提供：
+
+```text
+Scripts/Python/migration/migrate_content_layout.py
+```
+
+该脚本必须在 **Unreal Editor Python 环境**中执行，不能用系统 Python 直接搬 `.uasset/.umap`。Unreal 资产统一通过 `unreal.EditorAssetLibrary.rename_asset()` 迁移，普通 Python/Markdown/PNG 等辅助文件才使用文件系统移动。
+
+### 10.1 默认 Dry Run
+
+脚本默认：
+
+```python
+RUN_MODE = "dry_run"
+ALLOW_APPLY = False
+```
+
+第一次执行只扫描当前 Asset Registry、检查目标冲突、输出 `Old -> New` 计划，并生成：
+
+```text
+Saved/MigrationReports/content_migration_*.log
+```
+
+不修改任何资产。
+
+在 Unreal Editor 中可通过 **Tools -> Execute Python Script** 选择：
+
+```text
+E:\UE_DEMO\ProjectArcaneArena\Scripts\Python\migration\migrate_content_layout.py
+```
+
+### 10.2 真正执行
+
+确认 Dry Run 中：
+
+- `conflict=0`
+- `review=0`，或已人工确认 Review 项
+- Git 已建立迁移前 checkpoint
+
+之后把脚本顶部改为：
+
+```python
+RUN_MODE = "all"
+ALLOW_APPLY = True
+```
+
+`all` 会按顺序执行：
+
+```text
+Unreal Asset Move
+    ↓
+普通辅助文件移动
+    ↓
+Config / Source / Python 硬编码路径重写
+    ↓
+旧资产根与旧路径残留静态验证
+```
+
+支持的模式：
+
+| RUN_MODE | 行为 |
+|---|---|
+| `dry_run` | 只生成计划，不修改 |
+| `apply` | 只迁移 Unreal 资产和普通辅助文件 |
+| `rewrite` | 只修改 Config / Source / Python 的旧硬编码路径 |
+| `validate` | 只扫描旧资产根和旧字符串残留 |
+| `all` | apply + rewrite + validate |
+
+脚本具有幂等保护：目标已存在且旧位置只是 Redirector 时记为 `ALREADY`；如果旧资产和新资产同时真实存在，则记为 `CONFLICT` 并阻止 Apply。
+
+### 10.3 地图和 External Actor
+
+`Lvl_TopDown -> Lvl_Arena` 仍通过 Unreal Asset API 迁移。脚本永远不会直接移动：
+
+```text
+/Game/__ExternalActors__
+/Game/__ExternalObjects__
+```
+
+地图相关 hash package 继续由 Unreal Engine 自动管理。
+
+如果当前正在编辑的地图导致 `rename_asset` 失败，先打开其他地图，再重新执行脚本；已完成的资产会被幂等跳过。
+
+### 10.4 Redirector
+
+脚本**故意不自动 Fix Up Redirectors**。
+
+必须先完成：
+
+```text
+Save All
+→ 重启 Editor
+→ ProjectArcaneArenaEditor 窄目标编译
+→ PIE
+→ 关键地图 / GAS / Wave / UI / Boss / Inventory 验证
+→ validate 无真实旧资产残留
+```
+
+之后再在 Content Browser 对旧目录执行 Fix Up Redirectors。
+
+这样即使迁移中途发现硬编码遗漏，仍可利用 Redirector 回退，不会过早删除兼容路径。
