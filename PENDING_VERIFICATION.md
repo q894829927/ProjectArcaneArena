@@ -1382,7 +1382,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 1. `PierceCount=0` 回归：一颗 Projectile 只允许出现 `ProjectileHit=1 PierceRemaining=0`，命中第一个目标后立即回收，后方目标不能被同一 Handle 命中。
 2. `PierceCount=1`：同一颗 Projectile 最多命中两个不同目标。日志应按同一个 AttackID/Handle 对应的逻辑弹依次出现 `ProjectileHit=1`、`ProjectileHit=2`，之后回收。
-3. [基础通过] `PierceCount=2` 单 Pellet PIE 中，一次 AutoAttack 后已多次观察到连续伤害 2～3 个不同敌人；AttackID 13 后 Enemy 2 / Enemy 0 / Enemy 1 各受到 5 点，AttackID 14 后 Enemy 2 / Enemy 1 / Enemy 0 各受到 5 点。需要开启 HitCommand 日志后再确认精确 `ProjectileHit=1/2/3` 与 PierceRemaining 序列。
+3. [已完成] `PierceCount=2` 单 Pellet PIE 已通过 HitCommand 日志确认：AttackID 10 依次出现 Enemy 1 / Enemy 0 / Enemy 2，对应 `ProjectileHit=1/2/3` 与 `PierceRemaining=1/0/0`；AttackID 12 同样依次命中 Enemy 2 / Enemy 1 / Enemy 0。单颗 Projectile 最多命中 3 个不同目标且同一轮无重复 Target。
 4. 把 `ProjectileSpeed` 提高到 10000，并保持三名敌人在同一帧可跨越的直线上；确认同一个 Projectile 能在同一 Tick 按 A→B→C 顺序产生多个 HitCommand，不会只打 A 后直接越过 B/C。
 5. 让 Projectile 命中 Enemy A 后继续飞行数帧，并让它仍与 A Capsule 有重叠；确认该 Projectile 不会再次对 A 结算，后续只允许命中新目标。
 6. 将 B 移出弹道，只保留 A 与 C 在直线上；确认不会因为“PierceCount=2”而自动搜索范围里的 B，Pierce 只沿实际 Sweep 路径命中。
@@ -1399,4 +1399,4 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 所有伤害仍通过 HitCommand → GE_Damage → ExecCalc → AttributeSet。
 
 
-当前状态：基础 `PierceCount=2` 直线多目标伤害已通过；仍需 `arena.Projectile.LogHits 1` 完成命中序号/预算、高速同帧多目标、跨帧目标去重与 Spread+Pierce 专项验收。
+当前状态：`PierceCount=2` 的命中序号/预算与单轮目标去重已通过；仍需高速 `ProjectileSpeed=10000` 同帧多目标专项，以及 Spread+Pierce 组合验收。
