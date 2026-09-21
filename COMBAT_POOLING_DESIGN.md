@@ -2,7 +2,7 @@
 
 ## 1. 文档职责与当前状态
 
-- 状态：`Planned`。
+- 状态：`Partial`。
 - 创建／最后更新：2026-09-21。
 - 源码分析基线：`develop`，HEAD `c48c4fc`。
 - 目标：为 Survivor 自动武器新建独立高密度 Projectile 系统，不改造现有 Fireball／EnemyProjectile 作为前置；从预分配 Data Projectile Pool 起步，逐步建立集中模拟、空间哈希碰撞、批量客户端表现、轻量网络同步和可选并行计算路径，并通过固定压力场景形成可量化性能证据。
@@ -29,13 +29,14 @@
 主性能路线调整为：
 
 ```text
-P0：Legacy Actor Reference / 新系统压力场景
+P0：Legacy Actor Reference / 独立压力基线
 → P1：Data Projectile Pool + Central Simulation
-→ P2：Spatial Hash + Swept Collision
-→ P3：Shared Niagara / Niagara Data Channel
-→ P4：Launch Reconstruction / 轻量网络
-→ P5：Chunked Parallel Simulation（仅在采样需要时）
-→ P6：综合规模化验收
+→ P2：Auto Weapon 接入
+→ P3：Spatial Hash + Swept Collision
+→ P4：Spread / Pierce / 多武器
+→ P5：Shared Niagara / Niagara Data Channel
+→ P6：Launch Reconstruction / 轻量网络
+→ P7：Chunked Parallel Simulation（仅在采样需要时）+ 综合规模化验收
 ```
 
 其中 Legacy Actor 仅作为“传统实现成本参考”，不要求先完成 Actor Pool 优化。旧技能 Actor Pool 若未来需要，作为独立可选任务处理。
@@ -552,7 +553,7 @@ ServerLaunchTime
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 客户端重建 | 高密度普通弹不使用逐弹 ReplicateMovement |
 | P7：并行与综合验收 | Planned | 仅在采样需要时 Chunk 并行；真实敌群/GAS/VFX/网络长时间压力 | 帧时间、带宽、内存和数据池容量稳定，形成真实优化对照 |
 
-P0/P1 当前源码进度：StressTestActor、LegacyActor 参考、Data Projectile Pool、Free List、Generation、直线集中模拟与基础统计已写入，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接；尚未完成 PIE 和 Unreal Insights 验收，因此两阶段保持 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于 P0～P7 前置阶段。若未来另做，单独记录为 Legacy Projectile Optimization。
+P0/P1 当前源码进度：StressTestActor、LegacyActor 参考、Data Projectile Pool、SoA 热数据、Free List、Generation、直线集中模拟与基础统计已写入，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接。5000 Active 的 DataPool 已取得稳定 PIE/Insights 基线（`ArenaProjectileSimulation` 约 0.041 ms/frame），LegacyActor M0/M1 也已获得端到端对照；但完整 100/250/500/1000/2000/5000 阶梯、Collision/Replication、Generation 专项与 Listen Server 验收仍未完成，因此 P0/P1 保持 `Partial`。P2 Auto Weapon 尚未开始实现。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于 P0～P7 前置阶段。若未来另做，单独记录为 Legacy Projectile Optimization。
 
 ## 12. 验证计划与证据
 
