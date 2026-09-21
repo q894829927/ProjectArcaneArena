@@ -1319,7 +1319,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 装备 Model 位于 PlayerState，Slot 0 的 RuntimeID 为正且在实例存续期稳定；替换武器会生成新的 RuntimeID。
 - AttackInstanceID 按 WeaponRuntime 独立递增，替换后不继承旧实例计数。
 - 当前单武器玩法、P3 Spatial Hash/Swept Collision/HitCommand/GAS 伤害无回归。
-- Slot 1 尚未自动攻击、Spread/Pierce 尚未产生玩法行为是当前预期。
+- 双槽独立自动攻击已通过；Spread 已进入 P4-C 源码实现待验证，Pierce 尚未产生玩法行为。
 
 
 ### 双槽独立调度追加验收
@@ -1330,4 +1330,38 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 4. [已完成] 发射日志交错出现；Slot 0 的 RuntimeID=1、AttackID 26～29，Slot 1 的 RuntimeID=2、AttackID 50～57，各自独立递增。
 5. [已完成] `ArcaneBoltFast` 的发射频率明显高于 `ArcaneBolt`，慢武器未被快武器的调度覆盖或重置。
 6. [基础通过] 两把武器可同时锁定同一最近敌人并保持各自伤害配置；敌人死亡后共同切换到下一存活目标，P3 命中/GAS/死亡流程正常。不同 TargetRange 的专项分离测试可后置。
-7. 当前仍保持 `ProjectilesPerAttack=1 / SpreadAngleDegrees=0 / PierceCount=0`；这次不验证真正散射与穿透。
+7. 双槽独立调度已完成；后续 P4-C 专项把其中一把改为多 Pellet Spread。Pierce 仍保持 0。
+
+
+## P4-C 霰弹散射与同目标 Pellet 衰减
+
+### 测试前配置
+
+1. 关闭 Live Coding 后使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译。
+2. 选一把测试 WeaponDataAsset，建议复制为 `DA_Weapon_Shotgun`，配置：
+   - `WeaponID=Shotgun`
+   - `ProjectilesPerAttack=5`
+   - `SpreadAngleDegrees=30`
+   - `SameTargetPelletFalloff=0.75`
+   - `MinPelletDamageMultiplier=0.25`
+   - `PierceCount=0`
+   - `FireInterval=1.0` 便于观察单轮日志。
+3. 把 `DA_Weapon_Shotgun` 放入 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Weapon Definitions` 的任一槽，并开启 `Log Successful Shots` 与控制台 `arena.Projectile.LogHits 1`。
+
+### 测试方法
+
+1. 单人 PIE 找到一名较近敌人。每轮攻击应出现 5 条发射日志，五条拥有同一个 `AttackID` 与 `WeaponRuntimeID`，但 `Pellet=1/5...5/5`、Handle 各不相同。
+2. `SpreadAngleDegrees=30` 时预期角度为 `-15 / -7.5 / 0 / +7.5 / +15`；把 Spread 改为 0 时五颗应沿同一路径重合，方便强制测试同目标多 Pellet。
+3. Spread=0 且敌人足够存活时，命中日志的同目标序列应显示 `PelletMultiplier≈1.000 / 0.750 / 0.563 / 0.422 / 0.316`；若继续增加 Pellet，最低不低于 0.25。
+4. 保持同一轮部分 Pellet 打中 Enemy A、部分打中 Enemy B，确认两个目标各自从 1.0 开始计数；下一轮新的 AttackID 也必须重新从 1.0 开始。
+5. 保留另一把普通单发武器同时开火，确认它的 RuntimeID/AttackID 不参与 Shotgun 的衰减计数。
+6. 把 Shotgun BaseDamage/AttackPower 固定并关闭暴击干扰，核对实际 GAS 伤害随 `PelletMultiplier` 递减；衰减通过 SkillMultiplier 缩放整段伤害，而非绕过 ExecCalc 直接扣血。
+7. 敌人死亡、Wave 切换与 Upgrade 阶段回归，确认多 Pellet 不产生迟到伤害或重复 Wave 清理。
+
+### 通过标准
+
+- 一次武器攻击只产生一个 AttackInstanceID；N 个 Pellet 共用该 AttackID，但有 N 个独立 Data Projectile Handle。
+- 散射方向在配置扇形内确定性均匀展开；单发或 Spread=0 行为可预测。
+- 同一轮、同一目标的后续 Pellet 伤害按配置递减并受最低倍率保护；不同目标、不同 AttackID、不同 Runtime、不同玩家互不串计数。
+- 所有伤害仍经过 HitCommand -> GE_Damage -> ExecCalc -> AttributeSet。
+- `PierceCount=0` 时每颗 Pellet 仍只结算最早目标；真正穿透留到 P4-D。
