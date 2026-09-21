@@ -597,3 +597,26 @@ Save All
 2. 本地 `Content/Python/**/__pycache__/*.pyc` 是运行缓存，不属于源码或 Content 资产。现在 Dry Run / Apply 均忽略这些文件，不再迁到 `Scripts/Python`。
 
 因此首次 Dry Run 报告不能直接进入 Apply；拉取上述修正后必须重新执行一次 `dry_run`，以第二次报告为准。
+
+### 10.6 首次 Apply 中断记录（2026-09-22）
+
+首次 `RUN_MODE="all"` 在第 `193/264` 个 Unreal 资产处中断：
+
+```text
+/Game/GameMode/BP_ArenaGameMode
+-> /Game/ProjectArcaneArena/Core/GameMode/BP_ArenaGameMode
+```
+
+前 192 个资产已通过 Unreal API 成功迁移；由于资产阶段尚未完成，后续普通辅助文件移动、文本路径 Rewrite 和 Static Validation **均未执行**。因此当前工作区属于“部分资产已迁移、硬编码尚未重写”的中间状态，必须保留 Redirector，不得执行 Fix Up Redirectors。
+
+迁移脚本已增加三层 Rename 策略：
+
+```text
+EditorAssetLibrary.rename_asset
+    ↓ 失败
+EditorAssetLibrary.rename_loaded_asset
+    ↓ 失败
+AssetTools.rename_assets
+```
+
+重新执行前先拉取脚本修正，并关闭可能正在打开的 `BP_ArenaGameMode` Blueprint Editor；建议打开一个不在迁移清单内的中立地图。脚本会把已经迁移成功的资产识别为 `ALREADY`，只继续剩余项。
