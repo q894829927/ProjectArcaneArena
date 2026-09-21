@@ -7,3 +7,6 @@ DECLARE_LOG_CATEGORY_EXTERN(LogArenaBoss, Log, All);
 
 // 阶段六 B 服务器平衡统计与 CSV 写入共用分类，便于和玩法日志独立筛选。
 DECLARE_LOG_CATEGORY_EXTERN(LogArenaBalance, Log, All);
+
+// 高密度 Data Projectile、压力测试与性能统计共用分类。
+DECLARE_LOG_CATEGORY_EXTERN(LogArenaProjectile, Log, All);
