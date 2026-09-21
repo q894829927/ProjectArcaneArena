@@ -80,6 +80,10 @@ void UArenaProjectileSimulationSubsystem::Deinitialize()
 	PierceRemaining.Empty();
 	AttackInstanceIDs.Empty();
 	WeaponRuntimeIDs.Empty();
+	PelletIndices.Empty();
+	PelletCounts.Empty();
+	SameTargetPelletFalloffs.Empty();
+	MinPelletDamageMultipliers.Empty();
 	SourceActors.Empty();
 	DamageEffectClasses.Empty();
 	DamageTypeTags.Empty();
@@ -91,6 +95,8 @@ void UArenaProjectileSimulationSubsystem::Deinitialize()
 	FreeSlots.Empty();
 	PendingHitCommands.Empty();
 	CollisionCandidates.Empty();
+	PelletHitStates.Empty();
+	LastPelletHitStateCleanupTime = 0.0;
 	SpatialGrid = FArenaProjectileSpatialGrid();
 
 	Super::Deinitialize();
@@ -198,6 +204,10 @@ bool UArenaProjectileSimulationSubsystem::SpawnProjectile(
 	PierceRemaining[Slot] = FMath::Max(Params.PierceRemaining, 0);
 	AttackInstanceIDs[Slot] = Params.AttackInstanceID;
 	WeaponRuntimeIDs[Slot] = Params.WeaponRuntimeID;
+	PelletIndices[Slot] = FMath::Max(Params.PelletIndex, 0);
+	PelletCounts[Slot] = FMath::Max(Params.PelletCount, 1);
+	SameTargetPelletFalloffs[Slot] = FMath::Clamp(Params.SameTargetPelletFalloff, 0.0f, 1.0f);
+	MinPelletDamageMultipliers[Slot] = FMath::Clamp(Params.MinPelletDamageMultiplier, 0.0f, 1.0f);
 	SourceActors[Slot] = Params.SourceActor.Get();
 	DamageEffectClasses[Slot] = Params.DamageEffectClass;
 	DamageTypeTags[Slot] = Params.DamageTypeTag;
@@ -277,6 +287,10 @@ void UArenaProjectileSimulationSubsystem::ResetAllProjectiles()
 		PierceRemaining[Slot] = 0;
 		AttackInstanceIDs[Slot] = 0;
 		WeaponRuntimeIDs[Slot] = INDEX_NONE;
+		PelletIndices[Slot] = 0;
+		PelletCounts[Slot] = 1;
+		SameTargetPelletFalloffs[Slot] = 1.0f;
+		MinPelletDamageMultipliers[Slot] = 1.0f;
 		SourceActors[Slot].Reset();
 		DamageEffectClasses[Slot] = nullptr;
 		DamageTypeTags[Slot] = FGameplayTag();
@@ -288,6 +302,9 @@ void UArenaProjectileSimulationSubsystem::ResetAllProjectiles()
 	{
 		FreeSlots.Add(Slot);
 	}
+
+	PelletHitStates.Reset();
+	LastPelletHitStateCleanupTime = 0.0;
 }
 
 // 清空 P0/P1 累计统计，保留当前 ActiveCount 作为新的峰值起点。
@@ -351,6 +368,10 @@ void UArenaProjectileSimulationSubsystem::GrowStorage(int32 NewCapacity)
 	PierceRemaining.SetNum(NewCapacity);
 	AttackInstanceIDs.SetNum(NewCapacity);
 	WeaponRuntimeIDs.SetNum(NewCapacity);
+	PelletIndices.SetNum(NewCapacity);
+	PelletCounts.SetNum(NewCapacity);
+	SameTargetPelletFalloffs.SetNum(NewCapacity);
+	MinPelletDamageMultipliers.SetNum(NewCapacity);
 	SourceActors.SetNum(NewCapacity);
 	DamageEffectClasses.SetNum(NewCapacity);
 	DamageTypeTags.SetNum(NewCapacity);
@@ -372,6 +393,10 @@ void UArenaProjectileSimulationSubsystem::GrowStorage(int32 NewCapacity)
 		PierceRemaining[Slot] = 0;
 		AttackInstanceIDs[Slot] = 0;
 		WeaponRuntimeIDs[Slot] = INDEX_NONE;
+		PelletIndices[Slot] = 0;
+		PelletCounts[Slot] = 1;
+		SameTargetPelletFalloffs[Slot] = 1.0f;
+		MinPelletDamageMultipliers[Slot] = 1.0f;
 		SourceActors[Slot].Reset();
 		DamageEffectClasses[Slot] = nullptr;
 		DamageTypeTags[Slot] = FGameplayTag();
@@ -412,6 +437,10 @@ void UArenaProjectileSimulationSubsystem::ReleaseSlotAtActiveIndex(int32 ActiveI
 	PierceRemaining[Slot] = 0;
 	AttackInstanceIDs[Slot] = 0;
 	WeaponRuntimeIDs[Slot] = INDEX_NONE;
+	PelletIndices[Slot] = 0;
+	PelletCounts[Slot] = 1;
+	SameTargetPelletFalloffs[Slot] = 1.0f;
+	MinPelletDamageMultipliers[Slot] = 1.0f;
 	SourceActors[Slot].Reset();
 	DamageEffectClasses[Slot] = nullptr;
 	DamageTypeTags[Slot] = FGameplayTag();
@@ -467,6 +496,10 @@ bool UArenaProjectileSimulationSubsystem::FindFirstProjectileHit(
 	if (!Positions.IsValidIndex(Slot)
 		|| !PreviousPositions.IsValidIndex(Slot)
 		|| !Radii.IsValidIndex(Slot)
+		|| !PelletIndices.IsValidIndex(Slot)
+		|| !PelletCounts.IsValidIndex(Slot)
+		|| !SameTargetPelletFalloffs.IsValidIndex(Slot)
+		|| !MinPelletDamageMultipliers.IsValidIndex(Slot)
 		|| !SourceActors.IsValidIndex(Slot)
 		|| !DamageEffectClasses.IsValidIndex(Slot)
 		|| !SourceActors[Slot].IsValid()
@@ -576,8 +609,13 @@ bool UArenaProjectileSimulationSubsystem::FindFirstProjectileHit(
 	OutCommand.DamageTypeTag = DamageTypeTags[Slot];
 	OutCommand.BaseDamage = BaseDamages[Slot];
 	OutCommand.SkillMultiplier = SkillMultipliers[Slot];
+	OutCommand.SameTargetPelletFalloff = SameTargetPelletFalloffs[Slot];
+	OutCommand.MinPelletDamageMultiplier = MinPelletDamageMultipliers[Slot];
+	OutCommand.PelletTrackingLifetime = FMath::Max(RemainingLife[Slot], 0.1f);
 	OutCommand.AttackInstanceID = AttackInstanceIDs[Slot];
 	OutCommand.WeaponRuntimeID = WeaponRuntimeIDs[Slot];
+	OutCommand.PelletIndex = PelletIndices[Slot];
+	OutCommand.PelletCount = PelletCounts[Slot];
 	OutCommand.HitResult = HitResult;
 	return true;
 }
@@ -585,6 +623,22 @@ bool UArenaProjectileSimulationSubsystem::FindFirstProjectileHit(
 // HitCommand 在模拟循环结束后统一消费；伤害仍走 GE_Damage -> ExecCalc_Damage -> AttributeSet，不直接写属性。
 void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 {
+	UWorld* World = GetWorld();
+	const double NowSeconds = World ? static_cast<double>(World->GetTimeSeconds()) : 0.0;
+
+	// 霰弹衰减状态只需要覆盖同一轮 Projectile 的最大剩余寿命；每秒做一次惰性清理，避免高命中率下每帧全表扫描。
+	if (NowSeconds - LastPelletHitStateCleanupTime >= 1.0)
+	{
+		for (auto It = PelletHitStates.CreateIterator(); It; ++It)
+		{
+			if (It.Value().ExpireWorldTime <= NowSeconds)
+			{
+				It.RemoveCurrent();
+			}
+		}
+		LastPelletHitStateCleanupTime = NowSeconds;
+	}
+
 	for (const FArenaProjectileHitCommand& Command : PendingHitCommands)
 	{
 		AActor* SourceActor = Command.SourceActor.Get();
@@ -606,6 +660,32 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 			continue;
 		}
 
+		float PelletDamageMultiplier = 1.0f;
+		int32 SameTargetHitIndex = 0;
+		if (Command.PelletCount > 1
+			&& Command.AttackInstanceID > 0
+			&& Command.WeaponRuntimeID > 0)
+		{
+			const FArenaPelletHitKey PelletHitKey(
+				SourceActor,
+				TargetActor,
+				Command.WeaponRuntimeID,
+				Command.AttackInstanceID);
+			FArenaPelletHitState& PelletHitState = PelletHitStates.FindOrAdd(PelletHitKey);
+			SameTargetHitIndex = FMath::Max(PelletHitState.AppliedHitCount, 0);
+
+			const float Falloff = FMath::Clamp(Command.SameTargetPelletFalloff, 0.0f, 1.0f);
+			const float MinimumMultiplier = FMath::Clamp(Command.MinPelletDamageMultiplier, 0.0f, 1.0f);
+			PelletDamageMultiplier = FMath::Max(
+				MinimumMultiplier,
+				FMath::Pow(Falloff, static_cast<float>(SameTargetHitIndex)));
+
+			++PelletHitState.AppliedHitCount;
+			PelletHitState.ExpireWorldTime = FMath::Max(
+				PelletHitState.ExpireWorldTime,
+				NowSeconds + FMath::Max(static_cast<double>(Command.PelletTrackingLifetime), 0.1));
+		}
+
 		FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
 		EffectContext.AddSourceObject(SourceActor);
 		EffectContext.AddHitResult(Command.HitResult, true);
@@ -623,7 +703,7 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 			FMath::Max(Command.BaseDamage, 0.0f));
 		DamageSpec->SetSetByCallerMagnitude(
 			ArenaGameplayTags::SetByCaller_Damage_SkillMultiplier,
-			FMath::Max(Command.SkillMultiplier, 0.0f));
+			FMath::Max(Command.SkillMultiplier * PelletDamageMultiplier, 0.0f));
 		if (Command.DamageTypeTag.IsValid())
 		{
 			DamageSpec->AddDynamicAssetTag(Command.DamageTypeTag);
@@ -636,14 +716,19 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 			UE_LOG(
 				LogArenaProjectile,
 				Log,
-				TEXT("DataProjectile hit. Source=%s Target=%s AttackID=%d WeaponRuntimeID=%d BaseDamage=%.2f."),
+				TEXT("DataProjectile hit. Source=%s Target=%s AttackID=%d WeaponRuntimeID=%d Pellet=%d/%d SameTargetHit=%d PelletMultiplier=%.3f BaseDamage=%.2f."),
 				*GetNameSafe(SourceActor),
 				*GetNameSafe(TargetActor),
 				Command.AttackInstanceID,
 				Command.WeaponRuntimeID,
+				Command.PelletIndex + 1,
+				FMath::Max(Command.PelletCount, 1),
+				SameTargetHitIndex + 1,
+				PelletDamageMultiplier,
 				Command.BaseDamage);
 		}
 	}
 
 	PendingHitCommands.Reset();
 }
+
