@@ -137,5 +137,7 @@ struct PROJECTARCANEARENA_API FArenaProjectileHitCommand
 	int32 WeaponRuntimeID = INDEX_NONE;
 	int32 PelletIndex = 0;
 	int32 PelletCount = 1;
+	int32 ProjectileHitOrdinal = 1;
+	int32 PierceRemainingAfterHit = 0;
 	FHitResult HitResult;
 };
