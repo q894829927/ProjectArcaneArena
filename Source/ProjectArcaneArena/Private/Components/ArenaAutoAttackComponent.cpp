@@ -352,6 +352,7 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 	const float SpreadDegrees = FMath::Clamp(WeaponDefinition ? WeaponDefinition->SpreadAngleDegrees : 0.0f, 0.0f, 360.0f);
 	const float PelletFalloff = FMath::Clamp(WeaponDefinition ? WeaponDefinition->SameTargetPelletFalloff : 1.0f, 0.0f, 1.0f);
 	const float MinPelletMultiplier = FMath::Clamp(WeaponDefinition ? WeaponDefinition->MinPelletDamageMultiplier : 1.0f, 0.0f, 1.0f);
+	const int32 ResolvedPierceCount = FMath::Clamp(WeaponDefinition ? WeaponDefinition->PierceCount : 0, 0, 64);
 
 	const FVector OriginBase = OwnerActor->GetActorLocation() + FVector::UpVector * ResolvedSpawnHeight;
 	const FVector TargetPoint = TargetActor->GetActorLocation() + FVector::UpVector * ResolvedSpawnHeight;
@@ -395,8 +396,8 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 		Params.Velocity = PelletDirection * FMath::Max(ResolvedProjectileSpeed, 0.0f);
 		Params.Radius = FMath::Max(ResolvedProjectileRadius, 0.0f);
 		Params.Lifetime = FMath::Max(ResolvedProjectileLifetime, 0.05f);
-		// P4-D 才把 WeaponDataAsset::PierceCount 接入真实命中继续飞行与同 Projectile 目标去重。
-		Params.PierceRemaining = 0;
+		// PierceCount 表示首个命中后还能继续穿过的额外目标数；SimulationSubsystem 负责沿直线顺序结算与目标去重。
+		Params.PierceRemaining = ResolvedPierceCount;
 		Params.AttackInstanceID = AttackInstanceID;
 		Params.WeaponRuntimeID = ResolvedWeaponRuntimeID;
 		Params.PelletIndex = PelletIndex;
@@ -435,7 +436,7 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 			UE_LOG(
 				LogArenaProjectile,
 				Log,
-				TEXT("AutoAttack fired. Owner=%s Slot=%d Weapon=%s Target=%s AttackID=%d WeaponRuntimeID=%d Pellet=%d/%d Angle=%.2f Handle=%d:%d."),
+				TEXT("AutoAttack fired. Owner=%s Slot=%d Weapon=%s Target=%s AttackID=%d WeaponRuntimeID=%d Pellet=%d/%d Angle=%.2f Pierce=%d Handle=%d:%d."),
 				*GetNameSafe(OwnerActor),
 				SlotIndex,
 				*WeaponLabel,
@@ -445,6 +446,7 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 				PelletIndex + 1,
 				PelletCount,
 				PelletAngleDegrees,
+				ResolvedPierceCount,
 				Handle.Slot,
 				Handle.Generation);
 		}
