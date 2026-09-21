@@ -60,6 +60,20 @@ struct PROJECTARCANEARENA_API FArenaProjectileSpawnParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile")
 	int32 WeaponRuntimeID = INDEX_NONE;
 
+	// 同一轮散射共享 AttackInstanceID，但每颗 Pellet 有独立索引与 Projectile Handle。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Spread")
+	int32 PelletIndex = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Spread", meta = (ClampMin = "1"))
+	int32 PelletCount = 1;
+
+	// 同一次攻击对同一目标的后续 Pellet 伤害衰减参数；实际倍率在 HitCommand 消费阶段统一计算。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Spread", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SameTargetPelletFalloff = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Spread", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MinPelletDamageMultiplier = 1.0f;
+
 	// 发射者只在 SpawnParams 中短暂持有；SimulationSubsystem 内部转换为 WeakObjectPtr，避免 Projectile 延长 Avatar 生命周期。
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Damage")
 	TObjectPtr<AActor> SourceActor = nullptr;
@@ -116,7 +130,12 @@ struct PROJECTARCANEARENA_API FArenaProjectileHitCommand
 	FGameplayTag DamageTypeTag;
 	float BaseDamage = 0.0f;
 	float SkillMultiplier = 1.0f;
+	float SameTargetPelletFalloff = 1.0f;
+	float MinPelletDamageMultiplier = 1.0f;
+	float PelletTrackingLifetime = 0.0f;
 	int32 AttackInstanceID = 0;
 	int32 WeaponRuntimeID = INDEX_NONE;
+	int32 PelletIndex = 0;
+	int32 PelletCount = 1;
 	FHitResult HitResult;
 };
