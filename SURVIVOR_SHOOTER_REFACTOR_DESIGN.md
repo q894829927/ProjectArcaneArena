@@ -537,7 +537,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 | P2：Auto Weapon 接入 | Implemented | 与 G-A 共用同一实现节点；`UArenaAutoAttackComponent` 直接向 Data Pool 发射并携带 AttackInstanceID | 已验证移动射击、范围/阶段/死亡门控、死亡目标切换与两人 Listen Server 独立发射；Stun、Avatar 更换和完整回归待补 |
 | P3：Spatial Hash Collision | Implemented | Enemy 注册、Spatial Hash Cell 查询、Previous→Current Swept Collision、HitCommand Buffer 与现有 GAS Damage Pipeline | 已确认命中/GAS、击杀/目标切换、`ProjectileSpeed=10000` 高速 Swept Collision 与同一直线非穿透最早目标；多人 Source 归属专项验证后置 |
 | P4：Spread / Pierce / 多武器 | Implemented | 多武器、Spread/PelletFalloff 与直线 Pierce 核心玩法均已通过 PIE | 高速同帧、多人与规模化性能回归后置到 Verified |
-| P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
+| P5：批量表现 | Partial | VisualSubsystem 已接入 Simulation 完成委托，并批量写 Active Projectile Snapshot / Impact 两个 Global NDC；单共享 Niagara System 路径已预留 | 待 UBT/PIE、NDC/Shared System 资产配置与 Niagara System Instance/帧耗时验收 |
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
 | P7：并行与综合验收 | Planned | 仅在 Insights 证明需要时 Chunk 并行；真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 线程安全；帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
 
@@ -572,7 +572,7 @@ P0
 - P7 的 Chunk 并行仅在 Unreal Insights 证明单线程 Projectile Simulation 成为主要瓶颈时启用；综合验收无论是否并行都必须完成。
 - 旧主动技能只做回归，不因新弹幕架构被强制重写。
 
-当前实现进度：P0/P1 为 `Partial`；P2 / G-A、P3、G-B、G-C 与 P4 均为 `Implemented`。P4 的高速同帧、多人与综合性能专项保留到后续 `Verified`；P5～P7 与 G-D～G-F 仍为 `Planned`。
+当前实现进度：P0/P1 为 `Partial`；P2 / G-A、P3、G-B、G-C 与 P4 均为 `Implemented`。P5-A Shared Niagara/NDC 表现桥已完成源码接入但尚未本地资产/运行验收，因此 P5 为 `Partial`；P6～P7 与 G-D～G-F 仍为 `Planned`。
 
 ## 13. 验证方案
 
