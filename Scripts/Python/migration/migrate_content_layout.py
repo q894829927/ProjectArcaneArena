@@ -220,6 +220,56 @@ def _ensure_virtual_directory(asset_path: str) -> None:
             raise RuntimeError(f"Failed to create Unreal directory: {directory}")
 
 
+def _rename_unreal_asset(source: str, target: str) -> bool:
+    """按普通路径、已加载资产、AssetTools 三层方式尝试迁移资产。
+
+    部分 Blueprint（尤其当前 World/GameMode 正在引用的 Blueprint）在
+    EditorAssetLibrary.rename_asset() 下可能返回 False。此时先对已加载 UObject
+    使用 rename_loaded_asset()；仍失败再交给 AssetTools RenameAssets。
+    所有方式仍通过 Unreal Editor API 执行，不直接移动 .uasset/.umap。
+    """
+    if unreal.EditorAssetLibrary.rename_asset(source, target):
+        return True
+
+    _warn(
+        f"rename_asset returned False, trying loaded-asset fallback: "
+        f"{source} -> {target}"
+    )
+
+    asset = unreal.EditorAssetLibrary.load_asset(source)
+    if asset is None:
+        _error(f"Fallback cannot load source asset: {source}")
+        return False
+
+    try:
+        if unreal.EditorAssetLibrary.rename_loaded_asset(asset, target):
+            _log(f"[FALLBACK] rename_loaded_asset succeeded: {source} -> {target}")
+            return True
+    except Exception as exc:
+        _warn(f"rename_loaded_asset raised for {source}: {exc}")
+
+    _warn(
+        f"rename_loaded_asset failed, trying AssetTools fallback: "
+        f"{source} -> {target}"
+    )
+
+    try:
+        package_path, new_name = target.rsplit("/", 1)
+        rename_data = unreal.AssetRenameData()
+        rename_data.set_editor_property("asset", asset)
+        rename_data.set_editor_property("new_package_path", package_path)
+        rename_data.set_editor_property("new_name", new_name)
+
+        asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+        if asset_tools.rename_assets([rename_data]):
+            _log(f"[FALLBACK] AssetTools rename_assets succeeded: {source} -> {target}")
+            return True
+    except Exception as exc:
+        _warn(f"AssetTools rename fallback raised for {source}: {exc}")
+
+    return False
+
+
 # -----------------------------------------------------------------------------
 # Unreal 资产分类
 # -----------------------------------------------------------------------------
@@ -669,10 +719,11 @@ def apply_asset_moves(plan: dict) -> None:
         _ensure_virtual_directory(target)
         _log(f"[{index}/{len(moves)}] rename_asset: {source} -> {target}")
 
-        if not unreal.EditorAssetLibrary.rename_asset(source, target):
+        if not _rename_unreal_asset(source, target):
             raise RuntimeError(
-                f"rename_asset failed: {source} -> {target}. "
-                "If this is a map, open another map and run the script again."
+                f"All Unreal rename methods failed: {source} -> {target}. "
+                "Close any Blueprint/Map editors that have this asset open, "
+                "open a neutral map, then rerun; already completed moves are idempotent."
             )
 
         if SAVE_MOVED_ASSETS:
