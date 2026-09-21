@@ -951,6 +951,12 @@ def build_text_replacements(plan: dict) -> list[tuple[str, str]]:
 
     # Config 的目录扫描语义不能靠 /Game/GAS 根前缀替换，必须明确指定。
     replacements[
+        "ContentBrowserTab1.SelectedPaths=/Game/TopDownBP"
+    ] = (
+        f"ContentBrowserTab1.SelectedPaths={PROJECT_NAMESPACE}"
+    )
+
+    replacements[
         "+GameplayCueNotifyPaths=/Game/GAS"
     ] = (
         f"+GameplayCueNotifyPaths={PROJECT_NAMESPACE}/Combat/GAS/Cues"
@@ -1140,10 +1146,26 @@ def validate_text_residuals() -> list[str]:
 
         for line_number, line in enumerate(text.splitlines(), start=1):
             for token in OLD_TEXT_TOKENS:
-                if token in line:
-                    residuals.append(
-                        f"{path}:{line_number}: contains {token}"
-                    )
+                search_start = 0
+                while True:
+                    index = line.find(token, search_start)
+                    if index < 0:
+                        break
+
+                    end = index + len(token)
+                    next_char = line[end:end + 1]
+                    if not next_char or next_char in "/.\"')],};":
+                        residuals.append(
+                            f"{path}:{line_number}: contains {token}"
+                        )
+                        break
+
+                    search_start = end
+
+                else:
+                    continue
+
+                if residuals and residuals[-1].startswith(f"{path}:{line_number}:"):
                     break
 
     return residuals
