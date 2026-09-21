@@ -29,37 +29,37 @@
 
 | 状态 | 当前路径 | 目标路径 | 备注 |
 |---|---|---|---|
-| Planned | `/Game/GameMode` | `/Game/ProjectArcaneArena/Core/GameMode` | GameMode 相关 Blueprint/资产统一进入 Core |
-| Planned | `/Game/Characters/ArenaPlayer` | `/Game/ProjectArcaneArena/Characters/Player` | 玩家 Character、AnimBP 等 |
-| Planned | `/Game/Characters/ArenaEnemy` | `/Game/ProjectArcaneArena/Characters/Enemies` | 普通、远程、Elite 等敌人 |
-| Planned | `/Game/Boss` | `/Game/ProjectArcaneArena/Characters/Boss` | Boss Character、AI、Animation、GAS、VFX 等整体迁移 |
-| Planned | `/Game/GAS/GameplayAbility` | `/Game/ProjectArcaneArena/Combat/GAS/Abilities` | 再按 Player / Enemy / Triggers 分类 |
-| Planned | `/Game/GAS/GameplayEffect` | `/Game/ProjectArcaneArena/Combat/GAS/Effects` | 再按 Core / Init / Cooldowns / Costs / Status / Triggers / Upgrades / Enemy 分类 |
-| Planned | `/Game/GAS/GameplayCues` | `/Game/ProjectArcaneArena/Combat/GAS/Cues` | `InstaneCue` 同时纠正为 `Instant`，`DurationCue` 统一为 `Looping` |
-| Planned | `/Game/GAS/Area` | `/Game/ProjectArcaneArena/Combat/Areas` | Area Actor 不是 GAS 资产，从 GAS 根中拆出 |
-| Planned | `/Game/GAS/DamageFeedback` | `/Game/ProjectArcaneArena/Combat/Feedback` | CameraShake / Material / Sound 等表现资产从 GAS 根中拆出 |
-| Planned | `/Game/GAS/Projectile` | `/Game/ProjectArcaneArena/Combat/Projectiles/Actors` | 旧 Fireball / Enemy Actor Projectile；与新 Data Projectile 共用 Projectile 功能域 |
-| Planned | `/Game/Data/Upgrade` | `/Game/ProjectArcaneArena/Systems/Upgrades/Data` | Roguelike Upgrade DataAsset |
-| Planned | `/Game/Blueprints/DataAsset/DA_Waves_Prototype` | `/Game/ProjectArcaneArena/Systems/Waves/Data/DA_Waves_Prototype` | 单资产迁移；后续新增 Wave Data 也放此目录 |
-| Planned | `/Game/UI` | `/Game/ProjectArcaneArena/UI` | HUD、MainMenu、Upgrade、Inventory、DamageNumber 等 |
-| Planned | `/Game/TopDown/Lvl_TopDown` | `/Game/ProjectArcaneArena/World/Maps/Lvl_Arena` | **同时改名**：`Lvl_TopDown -> Lvl_Arena` |
-| Planned | 项目自有 `/Game/Niagara` | `/Game/ProjectArcaneArena/VFX/Common` | 只迁项目自制资产；第三方 Niagara 不迁 |
-| Planned | `/Game/Data/Weapon` | `/Game/ProjectArcaneArena/Combat/Weapons/Data` | 现有 ArcaneBolt / Fast / Shotgun DataAsset |
+| Rewritten | `/Game/GameMode` | `/Game/ProjectArcaneArena/Core/GameMode` | GameMode 相关 Blueprint/资产统一进入 Core |
+| Rewritten | `/Game/Characters/ArenaPlayer` | `/Game/ProjectArcaneArena/Characters/Player` | 玩家 Character、AnimBP 等 |
+| Rewritten | `/Game/Characters/ArenaEnemy` | `/Game/ProjectArcaneArena/Characters/Enemies` | 普通、远程、Elite 等敌人 |
+| Rewritten | `/Game/Boss` | `/Game/ProjectArcaneArena/Characters/Boss` | Boss Character、AI、Animation、GAS、VFX 等整体迁移 |
+| Rewritten | `/Game/GAS/GameplayAbility` | `/Game/ProjectArcaneArena/Combat/GAS/Abilities` | 再按 Player / Enemy / Triggers 分类 |
+| Rewritten | `/Game/GAS/GameplayEffect` | `/Game/ProjectArcaneArena/Combat/GAS/Effects` | 再按 Core / Init / Cooldowns / Costs / Status / Triggers / Upgrades / Enemy 分类 |
+| Rewritten | `/Game/GAS/GameplayCues` | `/Game/ProjectArcaneArena/Combat/GAS/Cues` | `InstaneCue` 同时纠正为 `Instant`，`DurationCue` 统一为 `Looping` |
+| Rewritten | `/Game/GAS/Area` | `/Game/ProjectArcaneArena/Combat/Areas` | Area Actor 不是 GAS 资产，从 GAS 根中拆出 |
+| Rewritten | `/Game/GAS/DamageFeedback` | `/Game/ProjectArcaneArena/Combat/Feedback` | CameraShake / Material / Sound 等表现资产从 GAS 根中拆出 |
+| Rewritten | `/Game/GAS/Projectile` | `/Game/ProjectArcaneArena/Combat/Projectiles/Actors` | 旧 Fireball / Enemy Actor Projectile；与新 Data Projectile 共用 Projectile 功能域 |
+| Rewritten | `/Game/Data/Upgrade` | `/Game/ProjectArcaneArena/Systems/Upgrades/Data` | Roguelike Upgrade DataAsset |
+| Rewritten | `/Game/Blueprints/DataAsset/DA_Waves_Prototype` | `/Game/ProjectArcaneArena/Systems/Waves/Data/DA_Waves_Prototype` | 单资产迁移；后续新增 Wave Data 也放此目录 |
+| Rewritten | `/Game/UI` | `/Game/ProjectArcaneArena/UI` | HUD、MainMenu、Upgrade、Inventory、DamageNumber 等 |
+| Rewritten | `/Game/TopDown/Lvl_TopDown` | `/Game/ProjectArcaneArena/World/Maps/Lvl_Arena` | **同时改名**：`Lvl_TopDown -> Lvl_Arena` |
+| Rewritten | 项目自有 `/Game/Niagara` | `/Game/ProjectArcaneArena/VFX/Common` | 只迁项目自制资产；第三方 Niagara 不迁 |
+| Rewritten | `/Game/Data/Weapon` | `/Game/ProjectArcaneArena/Combat/Weapons/Data` | 现有 ArcaneBolt / Fast / Shotgun DataAsset |
 | Planned | 新 Weapon 资产 | `/Game/ProjectArcaneArena/Combat/Weapons` | 新增资产直接使用目标路径，无旧路径 |
 | Planned | 新 Data Projectile 资产 | `/Game/ProjectArcaneArena/Combat/Projectiles` | 新增资产直接使用目标路径，无旧路径 |
-| Planned | `/Game/Blueprints/ArenaLightningStormArea` | `/Game/ProjectArcaneArena/Combat/Areas/LightningStorm` | 与 DashTrail Area 统一归入 Combat/Areas |
-| Planned | `/Game/Data/EnemyAffix` | `/Game/ProjectArcaneArena/Characters/Enemies/Data/Affixes` | Elite/Affix 配置归敌人功能域 |
-| Planned | `/Game/Items/Inventory` | `/Game/ProjectArcaneArena/Systems/Inventory` | Inventory Data / Effects / Pickup Item 资产 |
-| Planned | `/Game/Items/Pickups` | `/Game/ProjectArcaneArena/Systems/Pickups/Blueprints` | Health/Energy Pickup Actor Blueprint |
-| Planned | `/Game/Data/Pickup` | `/Game/ProjectArcaneArena/Systems/Pickups/Data` | Pickup DropTable / 配置 |
-| Planned | `/Game/Assets/Pickups` | `/Game/ProjectArcaneArena/Systems/Pickups/Art` | 仅项目自有美术；若确认来自外部包则保持原目录 |
-| Planned | `/Game/Core/BP_ArenaPlayerController` | `/Game/ProjectArcaneArena/Core/Controllers/BP_ArenaPlayerController` | Controller 资产从旧根 Core 收敛 |
-| Planned | `/Game/TopDown/Input` | `/Game/ProjectArcaneArena/Input` | Enhanced Input Actions / Mapping Context |
-| Review | `/Game/TopDown/Blueprints` | `/Game/ProjectArcaneArena/Dev/LegacyTemplate/TopDown` 或删除 | 先用 Reference Viewer 确认模板 BP 是否仍被正式项目引用 |
-| Review | `/Game/TopDown/Cursor` + `/Game/Cursor` | `/Game/ProjectArcaneArena/UI/Cursor` | 两套存在同名资产，必须先确认实际引用后再合并，不能直接覆盖 |
-| Planned | `/Game/TopDown/MI_Colorway` | `/Game/ProjectArcaneArena/World/Materials/MI_Colorway` | 地图/环境材质 |
-| Planned | `/Game/Mass` | `/Game/ProjectArcaneArena/Dev/Experiments/Mass` | 当前 MassCluster 属学习/实验对照，不进入正式 Gameplay 根 |
-| Planned | `/Game/Tests` | `/Game/ProjectArcaneArena/Dev/Tests` | Overload / PCG / Projectile 测试资产 |
+| Rewritten | `/Game/Blueprints/ArenaLightningStormArea` | `/Game/ProjectArcaneArena/Combat/Areas/LightningStorm` | 与 DashTrail Area 统一归入 Combat/Areas |
+| Rewritten | `/Game/Data/EnemyAffix` | `/Game/ProjectArcaneArena/Characters/Enemies/Data/Affixes` | Elite/Affix 配置归敌人功能域 |
+| Rewritten | `/Game/Items/Inventory` | `/Game/ProjectArcaneArena/Systems/Inventory` | Inventory Data / Effects / Pickup Item 资产 |
+| Rewritten | `/Game/Items/Pickups` | `/Game/ProjectArcaneArena/Systems/Pickups/Blueprints` | Health/Energy Pickup Actor Blueprint |
+| Rewritten | `/Game/Data/Pickup` | `/Game/ProjectArcaneArena/Systems/Pickups/Data` | Pickup DropTable / 配置 |
+| Rewritten | `/Game/Assets/Pickups` | `/Game/ProjectArcaneArena/Systems/Pickups/Art` | 仅项目自有美术；若确认来自外部包则保持原目录 |
+| Rewritten | `/Game/Core/BP_ArenaPlayerController` | `/Game/ProjectArcaneArena/Core/Controllers/BP_ArenaPlayerController` | Controller 资产从旧根 Core 收敛 |
+| Rewritten | `/Game/TopDown/Input` | `/Game/ProjectArcaneArena/Input` | Enhanced Input Actions / Mapping Context |
+| Rewritten | `/Game/TopDown/Blueprints` | `/Game/ProjectArcaneArena/Dev/LegacyTemplate/TopDown` 或删除 | 先用 Reference Viewer 确认模板 BP 是否仍被正式项目引用 |
+| Rewritten | `/Game/TopDown/Cursor` + `/Game/Cursor` | `/Game/ProjectArcaneArena/UI/Cursor` | 两套存在同名资产，必须先确认实际引用后再合并，不能直接覆盖 |
+| Rewritten | `/Game/TopDown/MI_Colorway` | `/Game/ProjectArcaneArena/World/Materials/MI_Colorway` | 地图/环境材质 |
+| Rewritten | `/Game/Mass` | `/Game/ProjectArcaneArena/Dev/Experiments/Mass` | 当前 MassCluster 属学习/实验对照，不进入正式 Gameplay 根 |
+| Rewritten | `/Game/Tests` | `/Game/ProjectArcaneArena/Dev/Tests` | Overload / PCG / Projectile 测试资产 |
 
 ## 3. 后续硬编码路径替换基准
 
@@ -667,3 +667,30 @@ ContentBrowserTab1.SelectedPaths=/Game/TopDownBP
 2. 将旧路径验证改为带路径边界判断，避免 `/Game/TopDownBP` 这类前缀误报。
 
 完成一次 `RUN_MODE="rewrite"` 或直接同步上述配置后，再运行 `RUN_MODE="validate"`；通过后进入重启 Editor、窄目标编译、PIE 和 Redirector 清理阶段。
+
+### 10.9 Static Validation Passed（2026-09-22）
+
+最终 `RUN_MODE="validate"` 报告：
+
+```text
+move=0
+conflict=0
+review=0
+already_target=264
+Support-file plan: move=0
+Validation: no non-redirector Unreal assets remain under old roots.
+Validation: no configured old hard-coded path tokens remain.
+Static validation PASSED.
+```
+
+这表示**资产迁移、辅助文件迁移、Config/C++/Python 硬编码路径重写和静态残留扫描已经完成**。当前 Canonical Migration Map 中已完成的旧资产迁移项统一记为 `Rewritten`，暂不记为 `Verified`，因为还缺以下运行时验收：
+
+```text
+重启 Editor
+→ ProjectArcaneArenaEditor 窄目标编译
+→ 主地图 / MainMenu / GAS / Wave / Upgrade / Inventory / Boss / P5 路径回归
+→ PIE
+→ 最后 Fix Up Redirectors
+```
+
+只有以上步骤全部通过后，迁移状态才从 `Rewritten` 升为 `Verified`。
