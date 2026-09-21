@@ -10,6 +10,7 @@ class UArenaAbilitySystemComponent;
 class UArenaAttributeSet;
 class UArenaInventoryComponent;
 class UArenaUpgradeDataAsset;
+class UArenaWeaponLoadoutComponent;
 class UAbilitySystemComponent;
 
 USTRUCT(BlueprintType)
@@ -51,6 +52,10 @@ public:
 	// 返回随 PlayerState 生命周期存在的服务器权威背包 Model。
 	UFUNCTION(BlueprintPure, Category = "Arena|Inventory")
 	UArenaInventoryComponent* GetInventoryComponent() const;
+
+	// 返回随 PlayerState 生命周期存在的服务器权威武器装备 Model。
+	UFUNCTION(BlueprintPure, Category = "Arena|Weapon")
+	UArenaWeaponLoadoutComponent* GetWeaponLoadoutComponent() const;
 
 	// 防止重复授予启动技能，后续重生流程会复用该状态。
 	bool HasGrantedStartupAbilities() const { return bGrantedStartupAbilities; }
