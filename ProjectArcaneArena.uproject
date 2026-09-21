@@ -57,6 +57,10 @@
 		{
 			"Name": "CascadeToNiagaraConverter",
 			"Enabled": true
+		},
+		{
+			"Name": "PCG",
+			"Enabled": true
 		}
 	]
 }
