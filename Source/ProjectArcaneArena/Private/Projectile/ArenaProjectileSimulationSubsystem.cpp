@@ -43,6 +43,116 @@ namespace
 		0,
 		TEXT("Log authoritative Data Projectile hit commands when non-zero."),
 		ECVF_Default);
+
+	// 将敌人 Capsule 近似为“水平圆柱 + Z 高度区间”，求 Previous→Current 线段第一次进入扩张体积的 Alpha。
+	// 相比旧的最近中心点 Alpha，这个入口时间可以稳定排序同一帧高速穿过的多个目标。
+	bool ComputeSweptTargetEntry(
+		const FVector& Start,
+		const FVector& End,
+		const FVector& TargetLocation,
+		float CapsuleRadius,
+		float CapsuleHalfHeight,
+		float ProjectileRadius,
+		float& OutAlpha,
+		FVector& OutImpactPoint,
+		FVector& OutImpactNormal)
+	{
+		const float ExpandedRadius = FMath::Max(CapsuleRadius + ProjectileRadius, 1.0f);
+		const float ExpandedHalfHeight = FMath::Max(CapsuleHalfHeight + ProjectileRadius, ExpandedRadius);
+
+		const FVector2D Start2D(Start.X, Start.Y);
+		const FVector2D End2D(End.X, End.Y);
+		const FVector2D Target2D(TargetLocation.X, TargetLocation.Y);
+		const FVector2D Segment2D = End2D - Start2D;
+		const FVector2D Offset2D = Start2D - Target2D;
+
+		float XYEnter = 0.0f;
+		float XYExit = 1.0f;
+		const float A = FVector2D::DotProduct(Segment2D, Segment2D);
+		const float RadiusSquared = FMath::Square(ExpandedRadius);
+
+		if (A <= KINDA_SMALL_NUMBER)
+		{
+			if (Offset2D.SizeSquared() > RadiusSquared)
+			{
+				return false;
+			}
+		}
+		else
+		{
+			const float B = 2.0f * FVector2D::DotProduct(Offset2D, Segment2D);
+			const float C = FVector2D::DotProduct(Offset2D, Offset2D) - RadiusSquared;
+			const float Discriminant = B * B - 4.0f * A * C;
+			if (Discriminant < 0.0f)
+			{
+				return false;
+			}
+
+			const float SqrtDiscriminant = FMath::Sqrt(FMath::Max(Discriminant, 0.0f));
+			float T0 = (-B - SqrtDiscriminant) / (2.0f * A);
+			float T1 = (-B + SqrtDiscriminant) / (2.0f * A);
+			if (T0 > T1)
+			{
+				Swap(T0, T1);
+			}
+			if (T1 < 0.0f || T0 > 1.0f)
+			{
+				return false;
+			}
+
+			XYEnter = FMath::Clamp(T0, 0.0f, 1.0f);
+			XYExit = FMath::Clamp(T1, 0.0f, 1.0f);
+		}
+
+		float ZEnter = 0.0f;
+		float ZExit = 1.0f;
+		const float MinZ = TargetLocation.Z - ExpandedHalfHeight;
+		const float MaxZ = TargetLocation.Z + ExpandedHalfHeight;
+		const float DeltaZ = End.Z - Start.Z;
+
+		if (FMath::Abs(DeltaZ) <= KINDA_SMALL_NUMBER)
+		{
+			if (Start.Z < MinZ || Start.Z > MaxZ)
+			{
+				return false;
+			}
+		}
+		else
+		{
+			float T0 = (MinZ - Start.Z) / DeltaZ;
+			float T1 = (MaxZ - Start.Z) / DeltaZ;
+			if (T0 > T1)
+			{
+				Swap(T0, T1);
+			}
+			if (T1 < 0.0f || T0 > 1.0f)
+			{
+				return false;
+			}
+
+			ZEnter = FMath::Clamp(T0, 0.0f, 1.0f);
+			ZExit = FMath::Clamp(T1, 0.0f, 1.0f);
+		}
+
+		const float EnterAlpha = FMath::Max(XYEnter, ZEnter);
+		const float ExitAlpha = FMath::Min(XYExit, ZExit);
+		if (EnterAlpha > ExitAlpha + KINDA_SMALL_NUMBER)
+		{
+			return false;
+		}
+
+		OutAlpha = FMath::Clamp(EnterAlpha, 0.0f, 1.0f);
+		OutImpactPoint = FMath::Lerp(Start, End, OutAlpha);
+
+		OutImpactNormal = OutImpactPoint - TargetLocation;
+		OutImpactNormal.Z = 0.0f;
+		OutImpactNormal = OutImpactNormal.GetSafeNormal();
+		if (OutImpactNormal.IsNearlyZero())
+		{
+			OutImpactNormal = -(End - Start).GetSafeNormal();
+		}
+		return true;
+	}
 }
 
 // 初始化连续数据槽位；调用 Super 保证 UTickableWorldSubsystem 正确启停 Tick。
@@ -95,6 +205,8 @@ void UArenaProjectileSimulationSubsystem::Deinitialize()
 	FreeSlots.Empty();
 	PendingHitCommands.Empty();
 	CollisionCandidates.Empty();
+	SweepHitCandidates.Empty();
+	ProjectileHitTargets.Empty();
 	PelletHitStates.Empty();
 	LastPelletHitStateCleanupTime = 0.0;
 	SpatialGrid = FArenaProjectileSpatialGrid();
@@ -146,10 +258,8 @@ void UArenaProjectileSimulationSubsystem::Tick(float DeltaTime)
 			&& DamageEffectClasses[Slot])
 		{
 			TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileSweptCollision);
-			FArenaProjectileHitCommand HitCommand;
-			if (FindFirstProjectileHit(Slot, HitCommand))
+			if (ResolveProjectileSweptHits(Slot))
 			{
-				PendingHitCommands.Add(MoveTemp(HitCommand));
 				ReleaseSlotAtActiveIndex(ActiveIndex);
 				continue;
 			}
@@ -196,6 +306,7 @@ bool UArenaProjectileSimulationSubsystem::SpawnProjectile(
 	check(ActiveListPositions.IsValidIndex(Slot));
 	check(ActiveListPositions[Slot] == INDEX_NONE);
 
+	ProjectileHitTargets.Remove(Slot);
 	Positions[Slot] = Params.Position;
 	PreviousPositions[Slot] = Params.Position;
 	Velocities[Slot] = Params.Velocity;
@@ -303,6 +414,8 @@ void UArenaProjectileSimulationSubsystem::ResetAllProjectiles()
 		FreeSlots.Add(Slot);
 	}
 
+	ProjectileHitTargets.Reset();
+	SweepHitCandidates.Reset();
 	PelletHitStates.Reset();
 	LastPelletHitStateCleanupTime = 0.0;
 }
@@ -446,6 +559,7 @@ void UArenaProjectileSimulationSubsystem::ReleaseSlotAtActiveIndex(int32 ActiveI
 	DamageTypeTags[Slot] = FGameplayTag();
 	BaseDamages[Slot] = 0.0f;
 	SkillMultipliers[Slot] = 1.0f;
+	ProjectileHitTargets.Remove(Slot);
 
 	++Generations[Slot];
 	if (Generations[Slot] <= 0)
@@ -489,13 +603,12 @@ void UArenaProjectileSimulationSubsystem::UnregisterCollisionTarget(AArenaEnemyC
 }
 
 // 宽相候选来自 Spatial Hash；窄相用 Previous→Current 的二维扫掠和 Capsule 高度检查，选择本帧最早命中。
-bool UArenaProjectileSimulationSubsystem::FindFirstProjectileHit(
-	int32 Slot,
-	FArenaProjectileHitCommand& OutCommand) const
+bool UArenaProjectileSimulationSubsystem::ResolveProjectileSweptHits(int32 Slot)
 {
 	if (!Positions.IsValidIndex(Slot)
 		|| !PreviousPositions.IsValidIndex(Slot)
 		|| !Radii.IsValidIndex(Slot)
+		|| !PierceRemaining.IsValidIndex(Slot)
 		|| !PelletIndices.IsValidIndex(Slot)
 		|| !PelletCounts.IsValidIndex(Slot)
 		|| !SameTargetPelletFalloffs.IsValidIndex(Slot)
@@ -517,19 +630,19 @@ bool UArenaProjectileSimulationSubsystem::FindFirstProjectileHit(
 		return false;
 	}
 
-	const FVector Start2D(Start.X, Start.Y, 0.0f);
-	const FVector End2D(End.X, End.Y, 0.0f);
-	const FVector Segment2D = End2D - Start2D;
-	const float SegmentLengthSquared2D = Segment2D.SizeSquared();
-
-	float BestAlpha = TNumericLimits<float>::Max();
-	AArenaEnemyCharacter* BestTarget = nullptr;
-	FVector BestImpactPoint = FVector::ZeroVector;
-	FVector BestImpactNormal = FVector::ZeroVector;
+	SweepHitCandidates.Reset();
+	SweepHitCandidates.Reserve(CollisionCandidates.Num());
+	const TArray<FObjectKey>* ExistingHitTargets = ProjectileHitTargets.Find(Slot);
 
 	for (AArenaEnemyCharacter* Target : CollisionCandidates)
 	{
 		if (!IsValid(Target))
+		{
+			continue;
+		}
+
+		const FObjectKey TargetKey(Target);
+		if (ExistingHitTargets && ExistingHitTargets->Contains(TargetKey))
 		{
 			continue;
 		}
@@ -548,76 +661,107 @@ bool UArenaProjectileSimulationSubsystem::FindFirstProjectileHit(
 			CapsuleHalfHeight = FMath::Max(Capsule->GetScaledCapsuleHalfHeight(), CapsuleRadius);
 		}
 
-		const FVector TargetLocation = Target->GetActorLocation();
-		const FVector Target2D(TargetLocation.X, TargetLocation.Y, 0.0f);
-
-		float Alpha = 0.0f;
-		if (SegmentLengthSquared2D > KINDA_SMALL_NUMBER)
-		{
-			Alpha = FMath::Clamp(
-				FVector::DotProduct(Target2D - Start2D, Segment2D) / SegmentLengthSquared2D,
-				0.0f,
-				1.0f);
-		}
-
-		const FVector Closest2D = FMath::Lerp(Start2D, End2D, Alpha);
-		const float CombinedRadius = CapsuleRadius + ProjectileRadius;
-		if (FVector::DistSquared(Closest2D, Target2D) > FMath::Square(CombinedRadius))
+		FArenaProjectileSweepCandidate Candidate;
+		Candidate.Target = Target;
+		if (!ComputeSweptTargetEntry(
+			Start,
+			End,
+			Target->GetActorLocation(),
+			CapsuleRadius,
+			CapsuleHalfHeight,
+			ProjectileRadius,
+			Candidate.Alpha,
+			Candidate.ImpactPoint,
+			Candidate.ImpactNormal))
 		{
 			continue;
 		}
 
-		const FVector Closest3D = FMath::Lerp(Start, End, Alpha);
-		if (FMath::Abs(Closest3D.Z - TargetLocation.Z) > CapsuleHalfHeight + ProjectileRadius)
-		{
-			continue;
-		}
-
-		if (Alpha >= BestAlpha)
-		{
-			continue;
-		}
-
-		BestAlpha = Alpha;
-		BestTarget = Target;
-		BestImpactPoint = Closest3D;
-		BestImpactNormal = BestImpactPoint - TargetLocation;
-		BestImpactNormal.Z = 0.0f;
-		BestImpactNormal = BestImpactNormal.GetSafeNormal();
-		if (BestImpactNormal.IsNearlyZero())
-		{
-			BestImpactNormal = -Velocities[Slot].GetSafeNormal();
-		}
+		SweepHitCandidates.Add(Candidate);
 	}
 
-	if (!BestTarget)
+	if (SweepHitCandidates.IsEmpty())
 	{
 		return false;
 	}
 
-	UPrimitiveComponent* HitComponent = Cast<UPrimitiveComponent>(BestTarget->GetRootComponent());
-	FHitResult HitResult(BestTarget, HitComponent, BestImpactPoint, BestImpactNormal);
-	HitResult.TraceStart = Start;
-	HitResult.TraceEnd = End;
-	HitResult.Time = BestAlpha;
-	HitResult.Distance = FVector::Distance(Start, BestImpactPoint);
-	HitResult.bBlockingHit = true;
+	SweepHitCandidates.Sort([](const FArenaProjectileSweepCandidate& Left, const FArenaProjectileSweepCandidate& Right)
+	{
+		if (!FMath::IsNearlyEqual(Left.Alpha, Right.Alpha))
+		{
+			return Left.Alpha < Right.Alpha;
+		}
 
-	OutCommand.SourceActor = SourceActors[Slot];
-	OutCommand.TargetActor = BestTarget;
-	OutCommand.DamageEffectClass = DamageEffectClasses[Slot];
-	OutCommand.DamageTypeTag = DamageTypeTags[Slot];
-	OutCommand.BaseDamage = BaseDamages[Slot];
-	OutCommand.SkillMultiplier = SkillMultipliers[Slot];
-	OutCommand.SameTargetPelletFalloff = SameTargetPelletFalloffs[Slot];
-	OutCommand.MinPelletDamageMultiplier = MinPelletDamageMultipliers[Slot];
-	OutCommand.PelletTrackingLifetime = FMath::Max(RemainingLife[Slot], 0.1f);
-	OutCommand.AttackInstanceID = AttackInstanceIDs[Slot];
-	OutCommand.WeaponRuntimeID = WeaponRuntimeIDs[Slot];
-	OutCommand.PelletIndex = PelletIndices[Slot];
-	OutCommand.PelletCount = PelletCounts[Slot];
-	OutCommand.HitResult = HitResult;
-	return true;
+		const int32 LeftID = IsValid(Left.Target) ? Left.Target->GetUniqueID() : MAX_int32;
+		const int32 RightID = IsValid(Right.Target) ? Right.Target->GetUniqueID() : MAX_int32;
+		return LeftID < RightID;
+	});
+
+	TArray<FObjectKey>& HitTargets = ProjectileHitTargets.FindOrAdd(Slot);
+	for (const FArenaProjectileSweepCandidate& Candidate : SweepHitCandidates)
+	{
+		AArenaEnemyCharacter* Target = Candidate.Target;
+		if (!IsValid(Target))
+		{
+			continue;
+		}
+
+		const FObjectKey TargetKey(Target);
+		if (HitTargets.Contains(TargetKey))
+		{
+			continue;
+		}
+
+		const UAbilitySystemComponent* TargetASC = Target->GetAbilitySystemComponent();
+		if (!TargetASC || TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+		{
+			continue;
+		}
+
+		const int32 ProjectileHitOrdinal = HitTargets.Num() + 1;
+		const bool bCanContinueAfterThisHit = PierceRemaining[Slot] > 0;
+		if (bCanContinueAfterThisHit)
+		{
+			--PierceRemaining[Slot];
+		}
+
+		UPrimitiveComponent* HitComponent = Cast<UPrimitiveComponent>(Target->GetRootComponent());
+		FHitResult HitResult(Target, HitComponent, Candidate.ImpactPoint, Candidate.ImpactNormal);
+		HitResult.TraceStart = Start;
+		HitResult.TraceEnd = End;
+		HitResult.Time = Candidate.Alpha;
+		HitResult.Distance = FVector::Distance(Start, Candidate.ImpactPoint);
+		HitResult.bBlockingHit = true;
+
+		FArenaProjectileHitCommand HitCommand;
+		HitCommand.SourceActor = SourceActors[Slot];
+		HitCommand.TargetActor = Target;
+		HitCommand.DamageEffectClass = DamageEffectClasses[Slot];
+		HitCommand.DamageTypeTag = DamageTypeTags[Slot];
+		HitCommand.BaseDamage = BaseDamages[Slot];
+		HitCommand.SkillMultiplier = SkillMultipliers[Slot];
+		HitCommand.SameTargetPelletFalloff = SameTargetPelletFalloffs[Slot];
+		HitCommand.MinPelletDamageMultiplier = MinPelletDamageMultipliers[Slot];
+		HitCommand.PelletTrackingLifetime = FMath::Max(RemainingLife[Slot], 0.1f);
+		HitCommand.AttackInstanceID = AttackInstanceIDs[Slot];
+		HitCommand.WeaponRuntimeID = WeaponRuntimeIDs[Slot];
+		HitCommand.PelletIndex = PelletIndices[Slot];
+		HitCommand.PelletCount = PelletCounts[Slot];
+		HitCommand.ProjectileHitOrdinal = ProjectileHitOrdinal;
+		HitCommand.PierceRemainingAfterHit = PierceRemaining[Slot];
+		HitCommand.HitResult = HitResult;
+		PendingHitCommands.Add(MoveTemp(HitCommand));
+
+		HitTargets.Add(TargetKey);
+
+		// PierceCount 表示“首个目标之后还能继续穿过多少个目标”。预算为 0 的这次命中仍然有效，命中后立即回收。
+		if (!bCanContinueAfterThisHit)
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 // HitCommand 在模拟循环结束后统一消费；伤害仍走 GE_Damage -> ExecCalc_Damage -> AttributeSet，不直接写属性。
@@ -722,13 +866,15 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 			UE_LOG(
 				LogArenaProjectile,
 				Log,
-				TEXT("DataProjectile hit. Source=%s Target=%s AttackID=%d WeaponRuntimeID=%d Pellet=%d/%d SameTargetHit=%d PelletMultiplier=%.3f BaseDamage=%.2f."),
+				TEXT("DataProjectile hit. Source=%s Target=%s AttackID=%d WeaponRuntimeID=%d Pellet=%d/%d ProjectileHit=%d PierceRemaining=%d SameTargetHit=%d PelletMultiplier=%.3f BaseDamage=%.2f."),
 				*GetNameSafe(SourceActor),
 				*GetNameSafe(TargetActor),
 				Command.AttackInstanceID,
 				Command.WeaponRuntimeID,
 				Command.PelletIndex + 1,
 				FMath::Max(Command.PelletCount, 1),
+				FMath::Max(Command.ProjectileHitOrdinal, 1),
+				FMath::Max(Command.PierceRemainingAfterHit, 0),
 				SameTargetHitIndex + 1,
 				PelletDamageMultiplier,
 				Command.BaseDamage);
