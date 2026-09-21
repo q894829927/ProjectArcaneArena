@@ -1254,9 +1254,10 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 ### 通过标准
 
-- [基础链路已通过] 单武器在 Combat 中持续自动攻击，日志确认连续 AttackID=1～20、Target 为最近存活敌人、`WeaponRuntimeID=0`；移动中持续射击仍建议再做一次明确观察。
+- [已完成] 单武器在 Combat 中可边移动边持续自动攻击；日志确认连续递增 AttackID、`WeaponRuntimeID=0`。
 - [已完成] 每次成功发射具有正数且递增的 `AttackInstanceID`；本次日志为 1～20，单武器原型 `WeaponRuntimeID=0`。
-- Dead、Stunned、非 Combat、无目标或超出范围时不生成新 Projectile。
+- [部分完成] 超出 TargetRange 后停止生成新 Projectile；Wave 1 清空进入 Upgrade 后停火，Wave 2 恢复 Combat 后从下一 AttackID 继续发射。Dead、Stunned 与 Avatar 更换仍待验证。
 - [已完成] Data Projectile 直接进入 P1 Pool；日志显示 Handle 槽位在寿命结束后以更高 Generation 复用（如 `0:1 → 0:2 → 0:3`），未出现 Spawn failed/Overflow。
+- [已完成] 目标死亡后会在下一轮评估切换到新的存活敌人；本次日志中 Target 从 `_C_0` 切换到 `_C_1/_C_2`，后续死亡后又回到仍存活的 `_C_0`。
 - P2 当前不产生伤害属于预期；P3 接入 Spatial Hash、Swept Collision 和 HitCommand 后再验证真实命中/GAS。
 - 现有主动技能无行为回归。
