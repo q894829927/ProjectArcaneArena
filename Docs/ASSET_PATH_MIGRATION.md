@@ -2,6 +2,8 @@
 
 本文档是本项目 Content 目录重构的**唯一迁移映射记录**。后续修改 C++、Config、Python、GameplayCue 扫描路径、Cook 路径、软引用和文档中的硬编码 `/Game/...` 路径时，以本表为准。
 
+> 全量文件级清单与迁移完成后的分类目录见：`Docs/CONTENT_ASSET_INVENTORY_AND_TARGET_LAYOUT.md`。该文档基于当前 Git tree 自动统计，包含本次范围内全部 Content 文件。
+
 > 状态说明：`Planned` = 尚未迁移；`Moved` = 已在 Unreal Editor 中移动但旧 Redirector 仍保留；`Rewritten` = 代码/配置/脚本硬编码路径已同步；`Verified` = 重启 Editor、PIE/构建/关键资产加载验证通过并清理 Redirector。
 
 ## 1. 规范根目录
