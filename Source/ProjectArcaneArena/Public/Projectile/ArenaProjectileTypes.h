@@ -60,6 +60,10 @@ struct PROJECTARCANEARENA_API FArenaProjectileSpawnParams
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile")
 	int32 WeaponRuntimeID = INDEX_NONE;
 
+	// P5 表现类型只影响共享 Niagara 外观，不参与碰撞、伤害或网络权威。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Visual", meta = (ClampMin = "0"))
+	int32 VisualTypeID = 0;
+
 	// 同一轮散射共享 AttackInstanceID，但每颗 Pellet 有独立索引与 Projectile Handle。
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Spread")
 	int32 PelletIndex = 0;
@@ -140,4 +144,32 @@ struct PROJECTARCANEARENA_API FArenaProjectileHitCommand
 	int32 ProjectileHitOrdinal = 1;
 	int32 PierceRemainingAfterHit = 0;
 	FHitResult HitResult;
+};
+
+
+// P5 从 SimulationSubsystem 批量复制给表现层的轻量快照；不包含 GAS/UObject 伤害状态。
+struct PROJECTARCANEARENA_API FArenaProjectileVisualSample
+{
+	FArenaProjectileHandle Handle;
+	FVector Position = FVector::ZeroVector;
+	FVector Velocity = FVector::ZeroVector;
+	float Radius = 0.0f;
+	float RemainingLife = 0.0f;
+	int32 VisualTypeID = 0;
+	int32 WeaponRuntimeID = INDEX_NONE;
+	int32 AttackInstanceID = 0;
+	int32 PelletIndex = 0;
+	int32 PelletCount = 1;
+};
+
+// P5 命中表现事件；权威伤害已经由 HitCommand/GAS 独立完成，这里只给共享 Niagara/NDC 消费。
+struct PROJECTARCANEARENA_API FArenaProjectileImpactVisualEvent
+{
+	FVector Position = FVector::ZeroVector;
+	FVector Normal = FVector::UpVector;
+	int32 VisualTypeID = 0;
+	int32 WeaponRuntimeID = INDEX_NONE;
+	int32 AttackInstanceID = 0;
+	int32 PelletIndex = 0;
+	int32 ProjectileHitOrdinal = 1;
 };
