@@ -13,6 +13,7 @@
 #include "GAS/ArenaGameplayAbility_EnemyMeleeAttack.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplayEffect.h"
+#include "Projectile/ArenaProjectileSimulationSubsystem.h"
 #include "UI/ArenaDamageNumberActor.h"
 #include "UI/ArenaEnemyHealthBarWidget.h"
 #include "UI/ArenaEnemyAffixBadgeWidget.h"
@@ -211,6 +212,13 @@ void AArenaEnemyCharacter::BeginPlay()
 		{
 			GrantStartupAbilities();
 		}
+
+		// P3 将敌人生命周期注册到 Data Projectile Spatial Hash，避免每颗子弹扫描全部 Actor。
+		if (UArenaProjectileSimulationSubsystem* ProjectileSubsystem =
+			GetWorld() ? GetWorld()->GetSubsystem<UArenaProjectileSimulationSubsystem>() : nullptr)
+		{
+			ProjectileSubsystem->RegisterCollisionTarget(this);
+		}
 	}
 
 	RefreshHealthBar();
@@ -238,8 +246,16 @@ void AArenaEnemyCharacter::GrantStartupAbilities()
 // 销毁前解绑 GAS 委托，避免属性或标签回调访问失效对象。
 void AArenaEnemyCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
-	UnbindAbilitySystemDelegates();
+	if (HasAuthority())
+	{
+		if (UArenaProjectileSimulationSubsystem* ProjectileSubsystem =
+			GetWorld() ? GetWorld()->GetSubsystem<UArenaProjectileSimulationSubsystem>() : nullptr)
+		{
+			ProjectileSubsystem->UnregisterCollisionTarget(this);
+		}
+	}
 
+	UnbindAbilitySystemDelegates();
 	Super::EndPlay(EndPlayReason);
 }
 
