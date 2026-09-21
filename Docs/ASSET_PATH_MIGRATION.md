@@ -588,3 +588,12 @@ Save All
 之后再在 Content Browser 对旧目录执行 Fix Up Redirectors。
 
 这样即使迁移中途发现硬编码遗漏，仍可利用 Redirector 回退，不会过早删除兼容路径。
+
+### 10.5 Dry Run 实际修正记录（2026-09-22）
+
+首次 Dry Run 暴露了两个脚本层问题，已修正：
+
+1. Unreal Asset Registry 会对部分 World 同时返回 `World` 与 `:PersistentLevel` 子对象。旧脚本会把 `Lvl_TopDown.Lvl_TopDown:PersistentLevel`、`Lvl_OverloadTest.Lvl_OverloadTest:PersistentLevel`误当成独立迁移项。现在统一规范化为所属 PackagePath，同一 `.umap` 只迁移一次。
+2. 本地 `Content/Python/**/__pycache__/*.pyc` 是运行缓存，不属于源码或 Content 资产。现在 Dry Run / Apply 均忽略这些文件，不再迁到 `Scripts/Python`。
+
+因此首次 Dry Run 报告不能直接进入 Apply；拉取上述修正后必须重新执行一次 `dry_run`，以第二次报告为准。
