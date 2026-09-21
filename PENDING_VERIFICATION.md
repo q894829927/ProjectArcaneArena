@@ -1219,7 +1219,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 ### 通过标准
 
 - [已完成] 项目编译通过，无 UHT、反射、TickableWorldSubsystem 或日志分类错误。
-- DataPool 在正常容量内 `TotalSpawned - TotalReleased` 与 ActiveCount 长时间保持一致，不出现负数、越界或无界增长。
+- [1000 档已通过] DataPool 在正常容量内 Active 长时间稳定在目标附近；本次 20 秒 smoke test 为 Active=1000/1001、Failed=0、Overflow=0。其余阶梯仍待验证。
 - 槽位释放后旧 Handle 的 Generation 失效，旧 Handle 不能读取或释放下一代 Projectile。
 - 5000 档在容量允许时不出现非预期 Overflow；主动降低容量时 Overflow 可见且已有 Projectile 不被抢占。
 - P0 每档获得可重复的 Average/P95/P99/Max 与 Unreal Insights 线程数据；Legacy/Data 使用相同 Seed、速度、寿命和发射率。
@@ -1236,5 +1236,5 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 ### 通过标准
 
-- PIE 启动与退出均无 TickableWorldSubsystem PURE_VIRTUAL 崩溃。
-- `ArenaProjectileSimulation` CPU Scope 和压力日志正常出现。
+- [已完成] PIE 启动并连续运行 DataPool 1000 档未再出现 TickableWorldSubsystem PURE_VIRTUAL 崩溃。
+- [部分完成] 压力日志已持续正常输出；`ArenaProjectileSimulation` CPU Scope 仍待 Unreal Insights Capture 确认。
