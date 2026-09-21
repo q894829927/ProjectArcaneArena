@@ -353,6 +353,7 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 	const float PelletFalloff = FMath::Clamp(WeaponDefinition ? WeaponDefinition->SameTargetPelletFalloff : 1.0f, 0.0f, 1.0f);
 	const float MinPelletMultiplier = FMath::Clamp(WeaponDefinition ? WeaponDefinition->MinPelletDamageMultiplier : 1.0f, 0.0f, 1.0f);
 	const int32 ResolvedPierceCount = FMath::Clamp(WeaponDefinition ? WeaponDefinition->PierceCount : 0, 0, 64);
+	const int32 ResolvedVisualTypeID = FMath::Max(WeaponDefinition ? WeaponDefinition->ProjectileVisualTypeID : 0, 0);
 
 	const FVector OriginBase = OwnerActor->GetActorLocation() + FVector::UpVector * ResolvedSpawnHeight;
 	const FVector TargetPoint = TargetActor->GetActorLocation() + FVector::UpVector * ResolvedSpawnHeight;
@@ -400,6 +401,7 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 		Params.PierceRemaining = ResolvedPierceCount;
 		Params.AttackInstanceID = AttackInstanceID;
 		Params.WeaponRuntimeID = ResolvedWeaponRuntimeID;
+		Params.VisualTypeID = ResolvedVisualTypeID;
 		Params.PelletIndex = PelletIndex;
 		Params.PelletCount = PelletCount;
 		Params.SameTargetPelletFalloff = PelletFalloff;
