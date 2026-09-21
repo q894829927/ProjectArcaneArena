@@ -5,7 +5,7 @@
 - 状态：`Planned`。
 - 创建／最后更新：2026-09-21。
 - 源码分析基线：`develop`，HEAD `c48c4fc`。
-- 目标方向：从手动技能驱动的竞技场战斗，逐步扩展为类似《土豆兄弟》的多武器自动攻击、密集敌群、限时生存和波间构筑，并把高密度 Projectile 性能工程作为独立主线，通过固定基准、对象池、数据导向模拟、空间查询、批量表现和网络轻量化形成可量化的优化闭环。
+- 目标方向：从手动技能驱动的竞技场战斗，逐步扩展为类似《土豆兄弟》的多武器自动攻击、密集敌群、限时生存和波间构筑；高密度 Projectile 作为独立新系统实现，现有 Fireball 等主动技能保持原路径，新系统直接使用 Data Projectile Pool、集中模拟、空间查询、批量表现和网络轻量化形成可量化优化闭环。
 - 本文是设计与实施建议，不表示以下类型、功能、资产或性能收益已经存在。
 - 默认保留 UE5 C++、GAS、服务器权威、两人 Listen Server 架构，以及顶视角／第三人称兼容。
 
@@ -199,37 +199,53 @@ Hit Command：把模拟结果带回主线程
 - 穿透集合按本次发射维护；同目标重复碰撞默认不重复伤害，除非武器规则明确允许周期命中。
 - 弹跳／分裂状态、延迟任务及命中集合在复用或释放时完整重置。
 
-### 6.3 两条 Projectile 执行路径
+### 6.3 新弹幕系统与旧技能边界
 
-自动射击重构不要求所有 Projectile 使用同一种实现。
+自动射击重构采用独立 Projectile 系统，不把现有 Fireball／EnemyProjectile 作为技术基础：
 
 ```text
-复杂技能 / 低密度特殊弹
+现有主动技能
+Fireball / Lightning / 特殊敌方 Projectile
         ↓
-Pooled Actor Projectile
+Existing GAS Ability + Actor
         ↓
-现有 Component / 复杂碰撞 / 兼容复制
+当前保持不动
 
-高频自动武器普通弹
+新 Survivor 自动武器
         ↓
-Data Projectile
+UArenaAutoAttackComponent
         ↓
-ProjectileSimulationSubsystem
+UArenaProjectileSimulationSubsystem
+        ↓
+Data Projectile Pool
         ↓
 Spatial Hash + Swept Collision
         ↓
 HitCommand Buffer
+        ↓
+GAS
 ```
 
-Actor 路径负责兼容现有 Fireball、敌方远程弹和后续复杂特殊弹；Data 路径负责普通直线弹、散射弹和穿透弹的规模化压力。两条路径最终都进入同一 GAS 伤害系统。
+因此首版高密度弹幕**不先实现 Actor Projectile Pool**。Fireball 属于低频主动技能，一般不会产生足以主导帧时间的大量并发对象；如果未来 Unreal Insights 证明其 Spawn／Destroy 确实造成明显尖峰，再作为独立 Legacy Projectile Optimization 处理。
 
-完成 Actor Pool 只证明生命周期尖峰被控制，不等于高密度弹幕完成。若固定压力场景表明活跃 Actor／Component／Collision／Replication 仍是主要持续成本，就按配套性能文档进入 Data Projectile 阶段。
+新系统中的对象池指预分配的数据槽位池，而不是 `AActor` 池。普通弹幕从第一版就不创建每发 `AActor`、CollisionComponent 或 ProjectileMovementComponent。
 
-### 6.4 Data Projectile 集中模拟
+### 6.4 Data Projectile Pool 与集中模拟
 
-建议新增 `UArenaProjectileSimulationSubsystem`，集中维护普通弹体，不为每发创建 `AActor`、`USphereComponent` 或 `UProjectileMovementComponent`。
+建议新增 `UArenaProjectileSimulationSubsystem`，同时承担普通弹幕的数据池和集中模拟。
 
-核心热数据优先采用连续存储，并在验证正确性后评估数组结构（SoA）：
+第一版预分配固定或可扩展槽位，例如压力测试容量 5000：
+
+```text
+FreeSlots
+ActiveSlots
+ProjectileID
+Generation
+```
+
+武器发射时从 FreeSlots 取得槽位，写入 Projectile 数据；Projectile 命中、超时或退出世界时归还槽位。Generation 用于阻止旧视觉／网络／延迟回调误操作已经复用的槽位。
+
+核心热数据优先采用连续存储，并在正确性稳定后评估数组结构（SoA）：
 
 ```text
 Positions[]
@@ -254,6 +270,7 @@ AttackInstanceIDs[]
 → 连续扫掠窄相
 → 更新穿透／寿命
 → 生成 HitCommand
+→ 释放结束 Projectile 槽位
 → GameThread 统一进入 GAS
 ```
 
@@ -396,30 +413,32 @@ GameMode／WaveManager 管理权威刷新和完成条件，GameState 复制结�
 
 ### 9.1 Projectile 性能演进
 
+新弹幕系统不经过“先优化旧 Fireball Actor Pool”这一步。传统 Actor Projectile 只作为成本参考：
+
 ```text
-Baseline
-AActor + Spawn/Destroy + ProjectileMovement + Collision + ReplicateMovement
+P0 Legacy Actor Reference / 独立 Stress Test
+确认传统 AActor + Movement + Collision + Replication 成本
         ↓
-V1 Actor Pool
-消除 Spawn/Destroy/GC 与组件初始化尖峰
+P1 Data Projectile Pool
+预分配槽位 + Free List + Generation + 集中移动
         ↓
-V2 Data Projectile
-消除高密度普通弹的每发 UObject / Component / Movement 持续成本
+P2 Spatial Hash
+降低 Projectile × Enemy 全遍历和通用碰撞查询
         ↓
-V3 Spatial Hash
-降低 Projectile × Enemy 全遍历和大量通用碰撞查询
-        ↓
-V4 Shared Niagara / NDC
+P3 Shared Niagara / NDC
 降低大量独立粒子 System Instance 和命中特效实例
         ↓
-V5 Launch Reconstruction
-降低每弹 ReplicateMovement 和网络 Actor 数
+P4 Launch Reconstruction
+降低逐弹 ReplicateMovement 和网络 Actor 数
         ↓
-V6 Parallel Simulation
-仅在单线程模拟仍为瓶颈时按 Chunk 并行
+P5 Parallel Simulation
+仅在单线程模拟仍为主要瓶颈时按 Chunk 并行
+        ↓
+P6 综合规模化验收
+真实敌群 + GAS + VFX + 网络 + 长时间运行
 ```
 
-每一级都使用同一压力场景保存 Unreal Insights 数据。对象池若只改善 P99/GC 尖峰而平均 GameThread 仍随活跃 Projectile 线性增长，应明确记录“对象池解决生命周期，不解决持续模拟”，然后进入下一阶段。
+Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正式 Fireball。这样性能故事更干净：传统 Actor 成本作为参照，新 Data Projectile 系统从零构建并逐层优化。
 
 ### 9.2 敌群优化顺序
 
@@ -471,28 +490,25 @@ V6 Parallel Simulation
 |---|---|
 | [ArenaPlayerState.h](Source/ProjectArcaneArena/Public/Core/ArenaPlayerState.h) | 创建武器装备 Model，保留永久构筑与现有 ASC 所有权 |
 | [ArenaGameplayAbility_BasicAttack.cpp](Source/ProjectArcaneArena/Private/GAS/ArenaGameplayAbility_BasicAttack.cpp) | 保留手动入口，不把原动画／输入生命周期直接复制到自动武器 |
-| [ArenaGameplayAbility_Fireball.cpp](Source/ProjectArcaneArena/Private/GAS/ArenaGameplayAbility_Fireball.cpp) | Actor Pool 兼容接入，按需抽取稳定发射数据与构筑快照 |
-| [ArenaAbilitySystemComponent.cpp](Source/ProjectArcaneArena/Private/GAS/ArenaAbilitySystemComponent.cpp) | 区分 WeaponFire 与主动施放事件；接收统一 HitCommand 结算入口所需上下文 |
+| [ArenaAbilitySystemComponent.cpp](Source/ProjectArcaneArena/Private/GAS/ArenaAbilitySystemComponent.cpp) 或独立 Resolver | 区分 WeaponFire 与主动施放事件；主线程消费 Projectile HitCommand 并接入现有 GAS |
 | [ArenaWaveDataAsset.h](Source/ProjectArcaneArena/Public/Core/ArenaWaveDataAsset.h) | 增加完成规则、时间、密度曲线和活跃上限 |
-| [ArenaWaveManager.cpp](Source/ProjectArcaneArena/Private/Core/ArenaWaveManager.cpp) | 限时刷新、完成判定、无击杀奖励的收尾与幂等保护 |
+| [ArenaWaveManager.cpp](Source/ProjectArcaneArena/Private/Core/ArenaWaveManager.cpp) | 限时刷新、完成判定、Data Projectile 清理、无击杀奖励的收尾与幂等保护 |
 | [ArenaGameMode.cpp](Source/ProjectArcaneArena/Private/Core/ArenaGameMode.cpp) | 成长阶段推进、多人完成条件，后续商店权威规则 |
 | [ArenaGameState.h](Source/ProjectArcaneArena/Public/Core/ArenaGameState.h) | 复制截止时间、必要新阶段与统一战斗许可 |
 | [ArenaEnemyAIController.cpp](Source/ProjectArcaneArena/Private/AI/ArenaEnemyAIController.cpp) | 阶段停火、调度错峰、减少重复查询 |
-| [ArenaGameplayAbility_EnemyAttackBase.cpp](Source/ProjectArcaneArena/Private/GAS/ArenaGameplayAbility_EnemyAttackBase.cpp) | 保留取消流程，接入资源预留和阶段许可 |
 | [ArenaUpgradeDataAsset.h](Source/ProjectArcaneArena/Public/Core/ArenaUpgradeDataAsset.h) | 定义武器升级作用域和兼容数据路由 |
 | [ArenaBalanceTelemetryComponent.cpp](Source/ProjectArcaneArena/Private/Core/ArenaBalanceTelemetryComponent.cpp) | 区分武器攻击、主动施放、真正击杀和波末清理 |
 | 新增 `ArenaWeaponDataAsset.*` | 武器静态定义、攻击模式、Projectile 参数和视觉类型 |
 | 新增 `ArenaWeaponLoadoutComponent.*` | PlayerState 装备 Model、槽位和 WeaponInstanceID |
 | 新增 `ArenaAutoAttackComponent.*` | 服务端自动攻击调度、NextFireTime 和目标缓存 |
 | 新增 `ArenaTargetingSubsystem.*` | 共享目标注册和自动选敌候选查询 |
-| 新增 `ArenaProjectilePoolSubsystem.*` | 现有复杂 Actor Projectile 的预留、激活和回收 |
-| 新增 `ArenaProjectileSimulationSubsystem.*` | 高密度 Data Projectile 的连续存储、集中模拟和 Handle |
+| 新增 `ArenaProjectileTypes.*` | ProjectileHandle、SpawnParams、HitCommand 等纯数据协议 |
+| 新增 `ArenaProjectileSimulationSubsystem.*` | Data Projectile Pool、Free List、Generation、集中移动和寿命 |
 | 新增 `ArenaProjectileSpatialGrid.*` | 目标 Cell 注册、局部候选与 Swept Collision 宽相 |
 | 新增 `ArenaProjectileVisualSubsystem.*` | 客户端 Shared Niagara / NDC 弹体与命中特效 |
 | 新增 `ArenaProjectileStressTestActor.*` | 可重复的 100～5000 Projectile 性能压力入口 |
 
-新增 C++ 类型同步头文件、反射和中文注释。新增武器 DataAsset、攻击 Ability Blueprint、视觉资产和测试 WaveData，通过独立、幂等的资产脚本创建；不直接批量覆写当前正式波次和既有技能资产。
-
+首版不把 `ArenaGameplayAbility_Fireball.cpp`、`ArenaFireballProjectile.cpp`、`ArenaEnemyProjectile.cpp` 列为修改目标。新增武器 DataAsset、视觉资产和测试 WaveData 通过独立、幂等的资产脚本创建；不直接批量覆写当前正式波次和既有技能资产。
 
 ## 12. 实施阶段、依赖与当前进度
 
@@ -513,13 +529,15 @@ V6 Parallel Simulation
 
 | 阶段 | 状态 | 交付 | 验收门槛 |
 |---|---|---|---|
-| P0：基线压测 | Planned | StressTestActor、100～5000 阶梯、Insights 捕获 | 能拆分 Actor/Movement/Collision/VFX/Network/GAS 成本 |
-| P1：Actor Pool | Planned | Fireball、EnemyProjectile、数字池与预热 | 生命周期尖峰降低，行为不变，保存与 P0 对照 |
-| P2：Data Projectile | Planned | SimulationSubsystem、连续存储、Handle、集中移动 | 新自动武器普通弹不依赖每发 Actor/MovementComponent |
-| P3：Spatial Hash | Planned | Target Grid、Swept Segment、HitCommand | 不全遍历全部敌人，高速和穿透正确 |
-| P4：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
-| P5：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
-| P6：并行与综合验收 | Planned | 证据驱动 Chunk 并行、综合长时间压力 | 帧时间、带宽、内存和对象数量稳定；形成真实前后对照 |
+| P0：独立基线压测 | Planned | StressTestActor；Legacy Actor Reference 与 Data 空载基线；100～5000 阶梯 | 能拆分传统 Actor/Movement/Collision/VFX/Network 成本，并建立新系统起点 |
+| P1：Data Projectile Pool | Planned | SimulationSubsystem、预分配槽位、Free List、Handle、Generation、直线移动 | 新自动武器普通弹不依赖每发 Actor/MovementComponent；复用无串状态 |
+| P2：Spatial Hash | Planned | Target Grid、Swept Segment、HitCommand | 不全遍历全部敌人，高速和穿透正确 |
+| P3：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
+| P4：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
+| P5：并行模拟 | Planned | 仅在 Insights 证明需要时按 Chunk 并行 | 线程安全，Projectile Simulation GameThread 成本进一步下降 |
+| P6：综合规模化验收 | Planned | 真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
+
+旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
 
 ### 12.3 合并顺序
 
@@ -527,27 +545,28 @@ V6 Parallel Simulation
 
 ```text
 P0
-→ G-A
-→ P1
-→ G-B / G-C
-→ P2 / P3
-→ G-D / G-E
-→ P4 / P5
-→ G-F（可后置）
-→ P6
+→ P1 Data Projectile Pool
+→ G-A 单武器自动攻击
+→ P2 Spatial Hash
+→ G-B / G-C 多槽与三种攻击模式
+→ G-D / G-E 限时生存与构筑
+→ P3 / P4 批量表现与轻量网络
+→ G-F（商店可后置）
+→ P5（仅按证据需要）
+→ P6 综合验收
 ```
-
-原因是自动射击一旦成立就应尽早进入性能基线与高密度路径，避免先扩展大量商店和内容后再发现 Projectile 架构无法承载目标密度。
 
 关键依赖：
 
-- G-A 前完成 P0 的旧架构基线，后面才能形成可信优化对照。
-- G-C 的散射／穿透必须使用稳定 `AttackInstanceID`，为 P2/P3 做准备。
-- P1 继续服务现有复杂 Projectile；P2 不要求把所有旧技能一起迁移。
-- G-D 波末统一清理同时支持 Actor Pool 与 Data Projectile。
+- P0 先建立传统 Actor Reference 和新系统压力场景，不修改正式 Fireball。
+- P1 是 G-A 的技术基础；第一把自动武器就直接向 Data Projectile Pool 发射。
+- G-C 的散射／穿透使用稳定 `AttackInstanceID + ProjectileID + Generation`。
+- P2 的 HitCommand 是 Projectile Simulation 与 GAS 的唯一高频结算边界。
+- G-D 波末统一清理 Data Projectile Active Slots 和未完成自动攻击调度。
 - G-E 升级数据依赖 WeaponInstanceID 和统一 WeaponFire／Hit 语义。
-- P4/P5 只改变表现和传输方式，不改变服务器 GAS 权威。
-- P6 仅在 Unreal Insights 证明单线程模拟仍是主要瓶颈时启用并行。
+- P3/P4 只改变表现和传输方式，不改变服务器 GAS 权威。
+- P5 仅在 Unreal Insights 证明单线程 Projectile Simulation 仍是主要瓶颈时启用。
+- 旧主动技能只做回归，不因新弹幕架构被强制重写。
 
 当前实现进度：仅完成现有源码分析和设计更新；上述新增阶段均为 `Planned`，尚未实现、构建或进行玩法／性能验收。
 
@@ -559,8 +578,7 @@ P0
 - 两名玩家同时使用散射与穿透，同一发对子目标的伤害次数符合规则。
 - 升级射速、伤害和穿透后，仅作用到声明范围，不重复计算。
 - 一轮散射仅产生一次 WeaponFire；OnCrit／OnKill 仍根据实际目标结算。
-- 池耗尽、激活失败、Stun、死亡、换 Pawn 和阶段结束不泄漏预留或延迟发射。
-- Burning 继续期间复用原火球，不读取另一轮攻击的当前来源或位置。
+- Data Pool 耗尽必须记录 Overflow；Stun、死亡、换 Pawn 和阶段结束停止新发射并正确释放已有 Projectile 槽位。
 - 时间到达与全员死亡竞争时，阶段只提交一次，终局不被迟到回调覆盖。
 - 波末清理不授予击杀奖励、不增加击杀统计、不新增掉落。
 - 未来商店重复请求、失效报价、余额不足或满槽时，交易不会部分完成。
@@ -602,14 +620,14 @@ Actor/Data only
 - GameThread、RenderThread、GPU。
 - GC 次数／暂停、Actor 与 Component 数量。
 - Projectile Simulation 时间、SpatialGrid 候选数、实际窄相次数和 HitCommand 数量。
-- Actor Pool 命中率、活跃／空闲／预留峰值和扩容次数。
+- Data Pool Active/Free 槽位、PeakActive、OverflowCount、Generation 错配丢弃数和扩容次数。
 - Niagara System Instance 数量。
 - 网络吞吐、复制 Actor 数量和每秒攻击事件。
 - 长时间运行后的内存平台、待处理发射／命中／数字队列长度。
 
 综合目标场景以固定 1920×1080 配置下 `1000–2000` 活跃普通 Projectile、`100–200` 普通敌人、持续自动攻击、真实 GAS Damage、伤害数字和客户端 VFX 为主要验收区间。开发目标是平均帧时间不高于 16.67ms，并重点控制 P95/P99；Projectile Simulation 本体争取在 1–2ms 量级。该数值属于目标，必须经 P0 校准，未实测前不得写成已经达到的简历成果。
 
-对象池版本、Data Projectile、Spatial Hash、Shared Niagara、Network Reconstruction 和可选 Parallel Simulation 都使用同一压力场景形成版本矩阵。最终简历只引用真实保存的测试环境和结果，不以主观“不卡顿”替代数据。
+Legacy Actor Reference、Data Projectile Pool、Spatial Hash、Shared Niagara、Network Reconstruction 和可选 Parallel Simulation 都使用同一压力场景形成版本矩阵。最终简历只引用真实保存的测试环境和结果，不以主观“不卡顿”替代数据。
 
 ## 14. 工程与文档约束
 
