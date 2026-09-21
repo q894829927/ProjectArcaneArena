@@ -1201,3 +1201,26 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 每次实际 Shield/Health 损失仍只有一个汇总结果音，元素 Cue、结果 Cue 和逐段数字不因丢包产生权威重复。
 - Host/Client 的 HUD 与 CameraShake 只影响对应受伤玩家，世界 Cue 和数字仍可被双方观察。
 - Dedicated Server 无本地表现对象、资源依赖错误或残留 Timer。
+
+
+## 高密度 Projectile P0/P1 编译与基础回归
+
+### 测试方法
+
+1. 关闭 Live Coding 或在 Editor 内使用项目既有 Compile 流程；若走命令行，仅使用 AGENTS.md 规定的 ProjectArcaneArenaEditor 窄目标。
+2. 确认以下新增类完成 UHT/UBT：`UArenaProjectileSimulationSubsystem`、`AArenaProjectileStressTestActor`、`AArenaProjectileLegacyBenchmarkActor`。
+3. 在空白或独立测试地图放置 `AArenaProjectileStressTestActor`，先选择 `DataPool`，保持 `RandomSeed=1337`、固定 Lifetime/Speed。
+4. 分别设置 `TargetActiveProjectiles=100/250/500/1000/2000/5000`，每档稳定运行至少 10 秒，并保存日志与 Unreal Insights Capture。
+5. 重复同样阶梯切换到 `LegacyActor`；先关闭 Collision/Replication，之后分别开启 Movement、Collision、Replication 做分项对照。
+6. DataPool 模式连续运行多个 Lifetime 周期，反复 Start/Stop，检查 Active/Free/Peak/Overflow 和内存是否稳定。
+7. 将 `arena.Projectile.InitialCapacity` 调低后制造溢出，确认 OverflowCount 增加且不会覆盖仍存活槽位。
+8. 在两人 Listen Server PIE 中保持 `bRunOnAuthorityOnly=true`，确认只由 Authority 创建压力逻辑，客户端不会重复生成 Data Projectile。
+
+### 通过标准
+
+- 项目编译通过，无 UHT、反射、TickableWorldSubsystem 或日志分类错误。
+- DataPool 在正常容量内 `TotalSpawned - TotalReleased` 与 ActiveCount 长时间保持一致，不出现负数、越界或无界增长。
+- 槽位释放后旧 Handle 的 Generation 失效，旧 Handle 不能读取或释放下一代 Projectile。
+- 5000 档在容量允许时不出现非预期 Overflow；主动降低容量时 Overflow 可见且已有 Projectile 不被抢占。
+- P0 每档获得可重复的 Average/P95/P99/Max 与 Unreal Insights 线程数据；Legacy/Data 使用相同 Seed、速度、寿命和发射率。
+- Fireball、EnemyProjectile、Dash、Shield 等既有技能行为不因 P0/P1 新系统发生变化。
