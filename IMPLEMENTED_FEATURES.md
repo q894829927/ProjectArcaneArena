@@ -497,14 +497,14 @@ Status meanings:
 * Authority-only 调度保证客户端不会重复创建玩法 Projectile；组件在 Avatar EndPlay 时清理 Timer，因此换 Pawn / 销毁旧 Avatar 不会继续发射。
 * 状态：`Implemented`。源码已接入并完成单人及两人 Listen Server 基础 PIE 验证；Combat 中每个玩家由 Authority 独立调度自动攻击，AttackInstanceID 在各自组件内连续递增，Data Pool Handle 正常复用并递增 Generation。已确认移动中持续攻击、超出 TargetRange 后停火、死亡停火、死亡目标切换、Upgrade 停火/下一波 Combat 恢复，以及两名玩家同时发射不重复生成。Stunned 当前缺少可方便施加到玩家的现成测试能力，暂缓专项验证；Avatar 更换与完整主动技能回归仍保留在待验证项，因此尚未标记为 `Verified`。
 
-### Projectile P3 — Partial
+### Projectile P3 — Implemented
 
 * 新增 `FArenaProjectileSpatialGrid`：敌人由 `AArenaEnemyCharacter::BeginPlay/EndPlay` 在 Authority 注册/注销，Spatial Hash 每帧按当前位置重建中心 Cell；Projectile 使用扫掠线段的扩张 Cell AABB 查询局部候选，不再对每颗弹执行全敌人遍历。
 * `UArenaProjectileSimulationSubsystem` 保存 SourceActor、DamageEffectClass、DamageTypeTag、BaseDamage 与 SkillMultiplier 的冷数据快照；位置更新后使用 `PreviousPosition → Position` 的 Swept Narrow Phase，对敌人 Capsule 的 XY 半径和高度做连续命中判断，选择本帧沿线最早目标。
 * 命中后先生成 `FArenaProjectileHitCommand` 再释放 Data Projectile Slot；模拟循环结束后在 GameThread 统一消费命令，通过现有 `GE_Damage → ExecCalc_Damage → AttributeSet` 权威路径结算，不直接写 Health/Shield。
 * 新增 CVar `arena.Projectile.SpatialCellSize`（默认 300）与 `arena.Projectile.LogHits`；Unreal Insights 增加 `ArenaProjectileSpatialGridBuild`、`ArenaProjectileSweptCollision`、`ArenaProjectileHitCommands` Scope。
 * Auto Weapon 新增 `DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 配置并写入 SpawnParams；默认 DamageType 为 Physical。当前需要在 `BP_ArenaPlayerCharacter -> AutoAttackComponent` 上把 `DamageEffectClass` 配为现有 `/Game/GAS/GameplayEffect/GE_Damage`。
-* 状态：源码已实现并完成基础 PIE 命中/GAS 与高速 Swept Collision 验证。常速日志确认 AttackID 6～13 通过 Data Projectile 命中后进入现有 Damage Pipeline；高速 10000 测试中 AttackID 16～21 仍连续命中并结算，未观察到单帧跨越 Capsule 的漏判，Handle `0:16 → 0:21` 显示命中后槽位立即回收且 Generation 持续递增。敌人死亡后自动切换目标，波次流程正常。单发沿线最早目标和两人 Listen Server Source/Target 归属仍待专项验证，因此保持 `Partial`。P4 的 Pierce/Spread/多武器尚未实现。
+* 状态：`Implemented`。源码已完成 Spatial Hash、Previous→Current Swept Collision、HitCommand 与现有 GAS Damage Pipeline 接线，并通过基础 PIE、高速 `ProjectileSpeed=10000`、死亡目标切换与同一直线非穿透/最早目标验证；非穿透 Projectile 只结算沿线最早目标并立即回收。两人 Listen Server 的 P3 Source/Target/击杀归属专项验证暂缓，保留为后续回归，因此尚未标记为 `Verified`。P4 的真正 Pierce/Spread/多武器仍未实现。
 
 ## Verification Notes
 
