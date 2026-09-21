@@ -318,7 +318,7 @@ AActor* UArenaAutoAttackComponent::FindNearestLivingEnemy(float InTargetRange) c
 	return BestTarget;
 }
 
-// 根据指定 WeaponRuntime 的静态定义生成一轮单发 Data Projectile；Spread/Pierce 行为仍留在后续 P4-C。
+// 根据指定 WeaponRuntime 生成一轮 Data Projectile；同一轮所有 Pellet 共享 AttackInstanceID，只拥有不同 Handle 与方向。
 bool UArenaAutoAttackComponent::FireAtTarget(
 	AActor* TargetActor,
 	int32 SlotIndex,
@@ -348,6 +348,10 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 	const FGameplayTag ResolvedDamageType = WeaponDefinition ? WeaponDefinition->DamageTypeTag : DamageTypeTag;
 	const float ResolvedBaseDamage = WeaponDefinition ? WeaponDefinition->BaseDamage : BaseDamage;
 	const float ResolvedSkillMultiplier = WeaponDefinition ? WeaponDefinition->SkillMultiplier : SkillMultiplier;
+	const int32 PelletCount = FMath::Clamp(WeaponDefinition ? WeaponDefinition->ProjectilesPerAttack : 1, 1, 64);
+	const float SpreadDegrees = FMath::Clamp(WeaponDefinition ? WeaponDefinition->SpreadAngleDegrees : 0.0f, 0.0f, 360.0f);
+	const float PelletFalloff = FMath::Clamp(WeaponDefinition ? WeaponDefinition->SameTargetPelletFalloff : 1.0f, 0.0f, 1.0f);
+	const float MinPelletMultiplier = FMath::Clamp(WeaponDefinition ? WeaponDefinition->MinPelletDamageMultiplier : 1.0f, 0.0f, 1.0f);
 
 	const FVector OriginBase = OwnerActor->GetActorLocation() + FVector::UpVector * ResolvedSpawnHeight;
 	const FVector TargetPoint = TargetActor->GetActorLocation() + FVector::UpVector * ResolvedSpawnHeight;
@@ -358,67 +362,100 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 		return false;
 	}
 
-	const FVector Direction = ToTarget / TargetDistance;
-	const float SafeForwardOffset = FMath::Clamp(
-		ResolvedForwardOffset,
-		0.0f,
-		FMath::Max(TargetDistance - 1.0f, 0.0f));
-
-	FArenaProjectileSpawnParams Params;
-	Params.Position = OriginBase + Direction * SafeForwardOffset;
-	Params.Velocity = Direction * FMath::Max(ResolvedProjectileSpeed, 0.0f);
-	Params.Radius = FMath::Max(ResolvedProjectileRadius, 0.0f);
-	Params.Lifetime = FMath::Max(ResolvedProjectileLifetime, 0.05f);
-	// P4-C 才把 WeaponDataAsset::PierceCount 接入真实命中继续飞行与命中去重。
-	Params.PierceRemaining = 0;
-
+	const FVector AimDirection = ToTarget / TargetDistance;
 	const int32 AttackInstanceID = AllocateAttackInstanceIDForRuntime(ResolvedWeaponRuntimeID);
 	if (AttackInstanceID <= 0)
 	{
 		return false;
 	}
 
-	Params.AttackInstanceID = AttackInstanceID;
-	Params.WeaponRuntimeID = ResolvedWeaponRuntimeID;
-	Params.SourceActor = OwnerActor;
-	Params.DamageEffectClass = ResolvedDamageEffect;
-	Params.DamageTypeTag = ResolvedDamageType;
-	Params.BaseDamage = ResolvedBaseDamage;
-	Params.SkillMultiplier = ResolvedSkillMultiplier;
-
-	FArenaProjectileHandle Handle;
-	if (!ProjectileSubsystem->SpawnProjectile(Params, Handle))
+	int32 SpawnedPelletCount = 0;
+	for (int32 PelletIndex = 0; PelletIndex < PelletCount; ++PelletIndex)
 	{
-		UE_LOG(
-			LogArenaProjectile,
-			Warning,
-			TEXT("AutoAttack Data Projectile spawn failed. Owner=%s Slot=%d RuntimeID=%d Target=%s."),
-			*GetNameSafe(OwnerActor),
-			SlotIndex,
-			ResolvedWeaponRuntimeID,
-			*GetNameSafe(TargetActor));
+		float PelletAngleDegrees = 0.0f;
+		if (PelletCount > 1 && SpreadDegrees > KINDA_SMALL_NUMBER)
+		{
+			const float NormalizedIndex = static_cast<float>(PelletIndex) / static_cast<float>(PelletCount - 1);
+			PelletAngleDegrees = FMath::Lerp(-SpreadDegrees * 0.5f, SpreadDegrees * 0.5f, NormalizedIndex);
+		}
+
+		const FVector PelletDirection = AimDirection.RotateAngleAxis(PelletAngleDegrees, FVector::UpVector).GetSafeNormal();
+		if (PelletDirection.IsNearlyZero())
+		{
+			continue;
+		}
+
+		const float SafeForwardOffset = FMath::Clamp(
+			ResolvedForwardOffset,
+			0.0f,
+			FMath::Max(TargetDistance - 1.0f, 0.0f));
+
+		FArenaProjectileSpawnParams Params;
+		Params.Position = OriginBase + PelletDirection * SafeForwardOffset;
+		Params.Velocity = PelletDirection * FMath::Max(ResolvedProjectileSpeed, 0.0f);
+		Params.Radius = FMath::Max(ResolvedProjectileRadius, 0.0f);
+		Params.Lifetime = FMath::Max(ResolvedProjectileLifetime, 0.05f);
+		// P4-D 才把 WeaponDataAsset::PierceCount 接入真实命中继续飞行与同 Projectile 目标去重。
+		Params.PierceRemaining = 0;
+		Params.AttackInstanceID = AttackInstanceID;
+		Params.WeaponRuntimeID = ResolvedWeaponRuntimeID;
+		Params.PelletIndex = PelletIndex;
+		Params.PelletCount = PelletCount;
+		Params.SameTargetPelletFalloff = PelletFalloff;
+		Params.MinPelletDamageMultiplier = MinPelletMultiplier;
+		Params.SourceActor = OwnerActor;
+		Params.DamageEffectClass = ResolvedDamageEffect;
+		Params.DamageTypeTag = ResolvedDamageType;
+		Params.BaseDamage = ResolvedBaseDamage;
+		Params.SkillMultiplier = ResolvedSkillMultiplier;
+
+		FArenaProjectileHandle Handle;
+		if (!ProjectileSubsystem->SpawnProjectile(Params, Handle))
+		{
+			UE_LOG(
+				LogArenaProjectile,
+				Warning,
+				TEXT("AutoAttack pellet spawn failed. Owner=%s Slot=%d RuntimeID=%d AttackID=%d Pellet=%d/%d Target=%s."),
+				*GetNameSafe(OwnerActor),
+				SlotIndex,
+				ResolvedWeaponRuntimeID,
+				AttackInstanceID,
+				PelletIndex + 1,
+				PelletCount,
+				*GetNameSafe(TargetActor));
+			continue;
+		}
+
+		++SpawnedPelletCount;
+		if (bLogSuccessfulShots)
+		{
+			const FString WeaponLabel = WeaponDefinition
+				? WeaponDefinition->WeaponID.ToString()
+				: TEXT("LegacyInlineConfig");
+			UE_LOG(
+				LogArenaProjectile,
+				Log,
+				TEXT("AutoAttack fired. Owner=%s Slot=%d Weapon=%s Target=%s AttackID=%d WeaponRuntimeID=%d Pellet=%d/%d Angle=%.2f Handle=%d:%d."),
+				*GetNameSafe(OwnerActor),
+				SlotIndex,
+				*WeaponLabel,
+				*GetNameSafe(TargetActor),
+				AttackInstanceID,
+				ResolvedWeaponRuntimeID,
+				PelletIndex + 1,
+				PelletCount,
+				PelletAngleDegrees,
+				Handle.Slot,
+				Handle.Generation);
+		}
+	}
+
+	if (SpawnedPelletCount <= 0)
+	{
 		return false;
 	}
 
 	LastAttackInstanceID = AttackInstanceID;
-	if (bLogSuccessfulShots)
-	{
-		const FString WeaponLabel = WeaponDefinition
-			? WeaponDefinition->WeaponID.ToString()
-			: TEXT("LegacyInlineConfig");
-		UE_LOG(
-			LogArenaProjectile,
-			Log,
-			TEXT("AutoAttack fired. Owner=%s Slot=%d Weapon=%s Target=%s AttackID=%d WeaponRuntimeID=%d Handle=%d:%d."),
-			*GetNameSafe(OwnerActor),
-			SlotIndex,
-			*WeaponLabel,
-			*GetNameSafe(TargetActor),
-			AttackInstanceID,
-			ResolvedWeaponRuntimeID,
-			Handle.Slot,
-			Handle.Generation);
-	}
 	return true;
 }
 
