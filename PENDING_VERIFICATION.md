@@ -1254,9 +1254,9 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 ### 通过标准
 
-- 单武器在 Combat 中可移动持续自动攻击，最近存活敌人选择稳定。
-- 每次成功发射具有正数且递增的 `AttackInstanceID`；单武器原型 `WeaponRuntimeID` 保持配置值。
+- [基础链路已通过] 单武器在 Combat 中持续自动攻击，日志确认连续 AttackID=1～20、Target 为最近存活敌人、`WeaponRuntimeID=0`；移动中持续射击仍建议再做一次明确观察。
+- [已完成] 每次成功发射具有正数且递增的 `AttackInstanceID`；本次日志为 1～20，单武器原型 `WeaponRuntimeID=0`。
 - Dead、Stunned、非 Combat、无目标或超出范围时不生成新 Projectile。
-- Data Projectile 直接进入 P1 Pool，不创建新的 Projectile Actor / MovementComponent。
+- [已完成] Data Projectile 直接进入 P1 Pool；日志显示 Handle 槽位在寿命结束后以更高 Generation 复用（如 `0:1 → 0:2 → 0:3`），未出现 Spawn failed/Overflow。
 - P2 当前不产生伤害属于预期；P3 接入 Spatial Hash、Swept Collision 和 HitCommand 后再验证真实命中/GAS。
 - 现有主动技能无行为回归。
