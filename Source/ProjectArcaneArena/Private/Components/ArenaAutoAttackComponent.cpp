@@ -38,6 +38,15 @@ void UArenaAutoAttackComponent::BeginPlay()
 	NextAttackInstanceID = 1;
 	ScheduleNextEvaluation(RetryInterval);
 
+	if (!DamageEffectClass)
+	{
+		UE_LOG(
+			LogArenaProjectile,
+			Warning,
+			TEXT("AutoAttack DamageEffectClass is not configured on %s; Data Projectiles will move but cannot resolve P3 damage hits."),
+			*GetNameSafe(OwnerActor));
+	}
+
 	UE_LOG(
 		LogArenaProjectile,
 		Log,
