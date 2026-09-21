@@ -8,6 +8,7 @@
 #include "ArenaProjectileSimulationSubsystem.generated.h"
 
 class AActor;
+class AArenaEnemyCharacter;
 
 // 同一轮霰弹对同一目标的命中计数 Key；FObjectKey 不持有 UObject 强引用，避免伤害衰减状态延长 Actor 生命周期。
 struct FArenaPelletHitKey
@@ -45,6 +46,15 @@ struct FArenaPelletHitState
 {
 	int32 AppliedHitCount = 0;
 	double ExpireWorldTime = 0.0;
+};
+
+// 单颗 Projectile 当前帧扫掠得到的候选命中；只作为 GameThread 临时排序数据，不持有跨帧玩法状态。
+struct FArenaProjectileSweepCandidate
+{
+	AArenaEnemyCharacter* Target = nullptr;
+	float Alpha = 0.0f;
+	FVector ImpactPoint = FVector::ZeroVector;
+	FVector ImpactNormal = FVector::ZeroVector;
 };
 
 // World 级高密度 Data Projectile 数据池与集中模拟器；P3 已加入 Spatial Hash、Swept Collision 与 HitCommand GAS 结算。
@@ -116,8 +126,9 @@ private:
 	// 校验 Slot、Generation 和 ActiveListPosition，统一隔离迟到回调。
 	bool IsSlotGenerationValid(int32 Slot, int32 Generation) const;
 
-	// 对单颗 Projectile 的 PreviousPosition→Position 做 Swept Narrow Phase，并返回沿线最早命中的目标。
-	bool FindFirstProjectileHit(int32 Slot, FArenaProjectileHitCommand& OutCommand) const;
+	// 对单颗 Projectile 的 PreviousPosition→Position 做直线 Swept Collision；按沿线顺序生成本帧所有允许的 Pierce 命中。
+	// 返回 true 表示该 Projectile 已耗尽 Pierce 预算，应在当前 Tick 立即回收。
+	bool ResolveProjectileSweptHits(int32 Slot);
 
 	// 模拟阶段结束后统一在 GameThread 消费命中命令，所有属性修改继续通过 GE_Damage / ExecCalc。
 	void ApplyPendingHitCommands();
@@ -147,7 +158,11 @@ private:
 
 	FArenaProjectileSpatialGrid SpatialGrid;
 	TArray<FArenaProjectileHitCommand> PendingHitCommands;
-	mutable TArray<class AArenaEnemyCharacter*> CollisionCandidates;
+	TArray<AArenaEnemyCharacter*> CollisionCandidates;
+	TArray<FArenaProjectileSweepCandidate> SweepHitCandidates;
+
+	// 只为真正发生过穿透命中的 Active Slot 保存目标历史；释放/复用 Slot 时立即清理，避免同一 Projectile 跨帧重复命中同一 Actor。
+	TMap<int32, TArray<FObjectKey>> ProjectileHitTargets;
 
 	// 仅为同一 AttackInstanceID 的霰弹跨帧命中保存短生命周期计数；到期后延迟清理，避免每颗 Pellet 永久留状态。
 	TMap<FArenaPelletHitKey, FArenaPelletHitState> PelletHitStates;
