@@ -1293,3 +1293,30 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - [基础链路已完成] 敌人死亡后后续 AutoAttack 会切换到其他存活目标；最后一名敌人死亡后 Wave 1 正常清空进入 Upgrade。
 - Dead/销毁目标不再收到 Data Projectile 命中。
 - 双人 Listen Server 的 Source/Target/击杀归属正确，无客户端重复伤害。
+
+
+## P4-A/B WeaponDataAsset / WeaponRuntime
+
+### 测试前配置
+
+1. 关闭 Live Coding，使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译。
+2. Content Browser 新建 Data Asset，Class 选择 `ArenaWeaponDataAsset`，建议保存为 `/Game/Data/Weapon/DA_Weapon_ArcaneBolt`。
+3. 首轮把资产配置为当前已验证单武器参数：`WeaponID=ArcaneBolt`、`FireInterval=0.5`、`TargetRange=1400`、`ProjectileSpeed=1800`、`Lifetime=3`、`Radius=8`、`DamageEffectClass=GE_Damage`、`DamageTypeTag=Damage.Physical`、`BaseDamage` 使用当前测试值、`SkillMultiplier=1`、`ProjectilesPerAttack=1`、`SpreadAngleDegrees=0`、`PierceCount=0`。
+4. 打开 `BP_ArenaPlayerCharacter -> AutoAttackComponent`，把 `Default Weapon Definition` 指向 `DA_Weapon_ArcaneBolt`。旧 Inline Config 暂时保留，仅作为未配置资产时的回退。
+
+### 测试方法
+
+1. PIE 进入 Combat，确认启动日志从 `Weapon=LegacyInlineConfig RuntimeID=0` 变为 `Weapon=ArcaneBolt RuntimeID=1`（具体 RuntimeID 只要求为正数）。
+2. 开启成功发射日志，确认同一武器实例的 `WeaponRuntimeID` 稳定且 `AttackID=1,2,3...` 独立递增；命中仍进入 P3 Data Projectile + GAS Damage。
+3. 只修改 DataAsset 的 `FireInterval` 或 `ProjectileSpeed` 后重新 PIE，确认实际射速/飞行速度随资产变化，而不是继续读取旧 AutoAttack Inline Config。
+4. 在服务器调用/Blueprint 测试 `EquipWeapon(0, NewDefinition)`，确认替换后获得新的 RuntimeID，AttackID 从 1 重新开始；旧已发射 Projectile 仍保留旧 RuntimeID，不串到新实例。
+5. 验证 Upgrade/死亡停火与 P3 命中、Generation 复用没有回归。
+6. Slot 1 当前只验证可以保存第二个不同 Runtime；本阶段不要求它自动发射，独立多槽 Scheduler 留到 P4-C/G-B 下一步。
+
+### 通过标准
+
+- 武器参数的主数据源可以迁移到 `UArenaWeaponDataAsset`，旧 Inline Config 仅作为兼容回退。
+- 装备 Model 位于 PlayerState，Slot 0 的 RuntimeID 为正且在实例存续期稳定；替换武器会生成新的 RuntimeID。
+- AttackInstanceID 按 WeaponRuntime 独立递增，替换后不继承旧实例计数。
+- 当前单武器玩法、P3 Spatial Hash/Swept Collision/HitCommand/GAS 伤害无回归。
+- Slot 1 尚未自动攻击、Spread/Pierce 尚未产生玩法行为是当前预期。
