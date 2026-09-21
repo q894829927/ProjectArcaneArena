@@ -495,7 +495,7 @@ Status meanings:
 * P2 当前使用低频 `TActorIterator<AArenaEnemyCharacter>` 选择范围内最近存活敌人，成功后直接调用 `UArenaProjectileSimulationSubsystem::SpawnProjectile`，写入 `AttackInstanceID` 与临时单武器 `WeaponRuntimeID`；P3 将把全量遍历替换为共享 Target Grid / Spatial Hash。
 * 当前原型武器参数（射击间隔、索敌距离、速度、寿命、半径和出生偏移）暴露在组件 Details 中；现阶段 Projectile 只有数据飞行，没有碰撞、GAS 伤害或 Niagara 表现。
 * Authority-only 调度保证客户端不会重复创建玩法 Projectile；组件在 Avatar EndPlay 时清理 Timer，因此换 Pawn / 销毁旧 Avatar 不会继续发射。
-* 状态：源码已接入，尚未完成 UBT 编译和 PIE 功能回归，因此保持 `Partial`。
+* 状态：源码已接入并完成首次 PIE 发射验证；Combat 中 Authority 自动攻击连续产生 AttackID 1～20，`WeaponRuntimeID=0`，Data Pool Handle 出现 `0:1 → 0:2 → 0:3` 等槽位复用/Generation 递增，未出现 Spawn failed/Overflow。Dead/Stunned、非 Combat、Avatar 更换、双人 Listen Server 与既有主动技能完整回归仍待验证，因此保持 `Partial`。
 
 ## Verification Notes
 
