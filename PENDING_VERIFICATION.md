@@ -1238,3 +1238,25 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 - [已完成] PIE 启动并连续运行 DataPool 1000 档未再出现 TickableWorldSubsystem PURE_VIRTUAL 崩溃。
 - [已完成] 修正 Trace early-return 后，5000 DataPool 的 5 秒稳定区间中 `ArenaProjectileSimulation` Count=539、Total=22.1 ms，约 0.041 ms/frame；Count 与选区帧数一致，不再混入空 World Tick。
+
+
+## P2 / G-A 单武器自动攻击接入
+
+### 测试方法
+
+1. 使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译，确认 `UArenaAutoAttackComponent`、`AArenaPlayerCharacter` 新子组件与 Projectile 类型无 UHT/UBT 错误。
+2. 单人 PIE 进入 `Combat`，至少生成一个存活 `AArenaEnemyCharacter`，确认 `AutoAttack ready` 日志只在 Authority 出现一次。
+3. 在玩家移动过程中观察 Data Pool 的 `TotalSpawned/ActiveCount` 按 `FireInterval` 持续增长；目标离开 `TargetRange` 或死亡后停止向该目标继续发射。
+4. 分别给玩家添加 `State.Stunned`、`State.Dead`，以及切换到 `Upgrade/BossIntro/BossOutro/Victory/Defeat`，确认期间不再新增 Auto Weapon Projectile；恢复 Combat 且状态解除后可重新发射。
+5. 两人 Listen Server PIE 确认每个玩家仅由服务器组件产生一份逻辑发射，客户端不重复 Spawn Data Projectile。
+6. 销毁/替换玩家 Avatar 后确认旧 `UArenaAutoAttackComponent` Timer 已停止，新 Avatar 重新建立调度。
+7. 回归 BasicAttack、Fireball、Dash、Shield、LightningStorm，确认新组件不修改其输入、GAS Commit、Projectile Actor 或表现路径。
+
+### 通过标准
+
+- 单武器在 Combat 中可移动持续自动攻击，最近存活敌人选择稳定。
+- 每次成功发射具有正数且递增的 `AttackInstanceID`；单武器原型 `WeaponRuntimeID` 保持配置值。
+- Dead、Stunned、非 Combat、无目标或超出范围时不生成新 Projectile。
+- Data Projectile 直接进入 P1 Pool，不创建新的 Projectile Actor / MovementComponent。
+- P2 当前不产生伤害属于预期；P3 接入 Spatial Hash、Swept Collision 和 HitCommand 后再验证真实命中/GAS。
+- 现有主动技能无行为回归。
