@@ -2,10 +2,12 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "GameplayTagContainer.h"
 #include "TimerManager.h"
 #include "ArenaAutoAttackComponent.generated.h"
 
 class AActor;
+class UGameplayEffect;
 
 // P2/G-A 单武器自动攻击调度器；仅服务器选择目标并向 Data Projectile Pool 发射，不负责命中与伤害。
 UCLASS(ClassGroup = (Arena), meta = (BlueprintSpawnableComponent))
@@ -87,6 +89,19 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Projectile", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float ProjectileForwardOffset = 60.0f;
+
+	// P3 使用现有 GE_Damage；需在 BP_ArenaPlayerCharacter 的 AutoAttackComponent 上配置该资产。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Damage", meta = (AllowPrivateAccess = "true"))
+	TSubclassOf<UGameplayEffect> DamageEffectClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Damage", meta = (AllowPrivateAccess = "true"))
+	FGameplayTag DamageTypeTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Damage", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float BaseDamage = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Damage", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
+	float SkillMultiplier = 1.0f;
 
 	// P2 单武器原型固定为 0；P4 多武器阶段由装备实例分配独立 RuntimeID。
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true"))
