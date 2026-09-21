@@ -506,13 +506,13 @@ Status meanings:
 * Auto Weapon 新增 `DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 配置并写入 SpawnParams；默认 DamageType 为 Physical。当前需要在 `BP_ArenaPlayerCharacter -> AutoAttackComponent` 上把 `DamageEffectClass` 配为现有 `/Game/GAS/GameplayEffect/GE_Damage`。
 * 状态：`Implemented`。源码已完成 Spatial Hash、Previous→Current Swept Collision、HitCommand 与现有 GAS Damage Pipeline 接线，并通过基础 PIE、高速 `ProjectileSpeed=10000`、死亡目标切换与同一直线非穿透/最早目标验证；非穿透 Projectile 只结算沿线最早目标并立即回收。两人 Listen Server 的 P3 Source/Target/击杀归属专项验证暂缓，保留为后续回归，因此尚未标记为 `Verified`。P4 的真正 Pierce/Spread/多武器仍未实现。
 
-### Projectile P4-A/B — Partial
+### Projectile P4-A/B — Implemented
 
 * 新增 `UArenaWeaponDataAsset`，把 `FireInterval / TargetRange / ProjectileSpeed / Lifetime / Radius / SpawnHeight / ForwardOffset / DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 从单个 AutoAttack 逻辑中抽成可在 Editor 配置的武器静态定义，并预留 `ProjectilesPerAttack / SpreadAngleDegrees / PierceCount` 给后续攻击模式。
 * 新增 PlayerState 持有的 `UArenaWeaponLoadoutComponent` 与 `FArenaWeaponRuntime`。首版默认两槽、最多六槽；每次装备分配新的正数 `WeaponRuntimeID`，每个 Runtime 在服务器保存独立递增的 `AttackInstanceID` 计数，替换/卸下武器不会继承旧实例轮次。
 * `AArenaPlayerState` 现在创建并暴露 `WeaponLoadoutComponent`；装备 Model 跟随 PlayerState 生命周期而不是 Character，后续换 Pawn 不需要丢失本局装备。
 * `UArenaAutoAttackComponent` 已扩展为单 Timer、多 `WeaponRuntime` 独立调度：每个有效槽位维护自己的 `NextFireTime`，分别读取 WeaponDataAsset 的射速、范围、Projectile 与 Damage 参数，并分别申请该 Runtime 的 `AttackInstanceID`。旧 P3 Inline Config 仅在 Loadout 没有任何有效 Runtime 时回退。
-* 验证进展：Slot 0 已通过 PIE，日志确认 `WeaponRuntimeID=1` 在 AttackID 51～62 间保持稳定，P3 命中/GAS 伤害/死亡/Wave 清理无回归。随后已接入 Slot 0～N 独立调度源码，并新增 `DefaultAdditionalWeaponDefinitions` 用于从 Character Blueprint 播种 Slot 1..N。多槽源码尚未 UBT/PIE；Spread/Pierce 仍只有 DataAsset 字段，尚未实现行为，因此 P4 保持 `Partial`。
+* 验证进展：双槽 PIE 已通过。日志确认 Slot 0 `ArcaneBolt` 使用 `WeaponRuntimeID=1`、AttackID 26～29；Slot 1 `ArcaneBoltFast` 使用 `WeaponRuntimeID=2`、AttackID 50～57，两组序列独立且发射交错，伤害分别保持 5 与 2，没有参数/计数器串线。敌人死亡后两把武器均正常切换目标。G-B 多槽调度因此达到 `Implemented`；P4 整体仍为 `Partial`，因为 Spread/Pierce 行为尚未实现。默认武器配置随后收敛为单一 `DefaultWeaponDefinitions` 数组，数组索引直接对应 SlotIndex。
 
 ## Verification Notes
 
