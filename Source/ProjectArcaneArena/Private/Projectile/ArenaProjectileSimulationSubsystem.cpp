@@ -3,6 +3,7 @@
 #include "Core/ArenaLogCategories.h"
 #include "HAL/IConsoleManager.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
+#include "Stats/Stats.h"
 
 namespace
 {
@@ -72,6 +73,12 @@ void UArenaProjectileSimulationSubsystem::Deinitialize()
 bool UArenaProjectileSimulationSubsystem::DoesSupportWorldType(EWorldType::Type WorldType) const
 {
 	return WorldType == EWorldType::Game || WorldType == EWorldType::PIE;
+}
+
+// 返回 Tickable 统计 ID，供引擎 Tick/Stat 系统安全采样本 Subsystem。
+TStatId UArenaProjectileSimulationSubsystem::GetStatId() const
+{
+	RETURN_QUICK_DECLARE_CYCLE_STAT(UArenaProjectileSimulationSubsystem, STATGROUP_Tickables);
 }
 
 // P1 只进行数据导向的位置积分和寿命淘汰；碰撞会在 P2 复用 PreviousPositions 接入。
