@@ -5,7 +5,6 @@
 #include "HAL/IConsoleManager.h"
 #include "NiagaraComponent.h"
 #include "NiagaraDataChannelAccessor.h"
-#include "NiagaraDataChannelFunctionLibrary.h"
 #include "NiagaraDataChannel.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
