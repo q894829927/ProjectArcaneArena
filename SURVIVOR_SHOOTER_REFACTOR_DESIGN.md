@@ -529,15 +529,15 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 
 | 阶段 | 状态 | 交付 | 验收门槛 |
 |---|---|---|---|
-| P0：独立基线压测 | Planned | StressTestActor；Legacy Actor Reference 与 Data 空载基线；100～5000 阶梯 | 能拆分传统 Actor/Movement/Collision/VFX/Network 成本，并建立新系统起点 |
-| P1：Data Projectile Pool | Planned | SimulationSubsystem、预分配槽位、Free List、Handle、Generation、直线移动 | 新自动武器普通弹不依赖每发 Actor/MovementComponent；复用无串状态 |
+| P0：独立基线压测 | Partial | StressTestActor；Legacy Actor Reference 与 Data 空载基线；100～5000 阶梯 | 能拆分传统 Actor/Movement/Collision/VFX/Network 成本，并建立新系统起点 |
+| P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、Free List、Handle、Generation、直线移动 | 新自动武器普通弹不依赖每发 Actor/MovementComponent；复用无串状态 |
 | P2：Spatial Hash | Planned | Target Grid、Swept Segment、HitCommand | 不全遍历全部敌人，高速和穿透正确 |
 | P3：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
 | P4：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
 | P5：并行模拟 | Planned | 仅在 Insights 证明需要时按 Chunk 并行 | 线程安全，Projectile Simulation GameThread 成本进一步下降 |
 | P6：综合规模化验收 | Planned | 真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
 
-旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
+P0/P1 已进入源码实现：独立压力 Actor、Legacy Actor 参考和 Data Projectile Pool 已存在，但尚未通过编译、PIE 与 Insights 验收，故状态为 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
 
 ### 12.3 合并顺序
 
