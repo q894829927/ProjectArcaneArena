@@ -2,3 +2,5 @@
 
 DEFINE_LOG_CATEGORY(LogArenaBoss);
 DEFINE_LOG_CATEGORY(LogArenaBalance);
+
+DEFINE_LOG_CATEGORY(LogArenaProjectile);
