@@ -202,14 +202,21 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 
 	const FVector OriginBase = OwnerActor->GetActorLocation() + FVector::UpVector * ProjectileSpawnHeight;
 	const FVector TargetPoint = TargetActor->GetActorLocation() + FVector::UpVector * ProjectileSpawnHeight;
-	const FVector Direction = (TargetPoint - OriginBase).GetSafeNormal();
-	if (Direction.IsNearlyZero())
+	const FVector ToTarget = TargetPoint - OriginBase;
+	const float TargetDistance = ToTarget.Size();
+	if (TargetDistance <= KINDA_SMALL_NUMBER)
 	{
 		return false;
 	}
 
+	const FVector Direction = ToTarget / TargetDistance;
+	const float SafeForwardOffset = FMath::Clamp(
+		ProjectileForwardOffset,
+		0.0f,
+		FMath::Max(TargetDistance - 1.0f, 0.0f));
+
 	FArenaProjectileSpawnParams Params;
-	Params.Position = OriginBase + Direction * FMath::Max(ProjectileForwardOffset, 0.0f);
+	Params.Position = OriginBase + Direction * SafeForwardOffset;
 	Params.Velocity = Direction * FMath::Max(ProjectileSpeed, 0.0f);
 	Params.Radius = FMath::Max(ProjectileRadius, 0.0f);
 	Params.Lifetime = FMath::Max(ProjectileLifetime, 0.05f);
