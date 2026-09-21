@@ -153,7 +153,7 @@ bool UArenaAutoAttackComponent::CanAutoFire() const
 		&& !OwnerASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
 }
 
-// P2 使用低频最近敌人遍历建立最小可玩链路；P3 会将这里替换为共享空间查询。
+// 自动选敌保持低频最近敌人遍历；P3 的 Spatial Hash 优先解决高频 Projectile×Enemy 碰撞路径。
 AActor* UArenaAutoAttackComponent::FindNearestLivingEnemy() const
 {
 	const AActor* OwnerActor = GetOwner();
@@ -193,7 +193,7 @@ AActor* UArenaAutoAttackComponent::FindNearestLivingEnemy() const
 	return BestTarget;
 }
 
-// 计算当前目标方向并直接写入 Data Pool；P2 不执行 Collision/GAS，命中链路由 P3 接入。
+// 计算当前目标方向并写入 Data Pool；P3 同时快照伤害配置，由 SimulationSubsystem 命中后统一结算。
 bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 {
 	AActor* OwnerActor = GetOwner();
