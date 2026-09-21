@@ -31,14 +31,33 @@
 | Planned | `/Game/Characters/ArenaPlayer` | `/Game/ProjectArcaneArena/Characters/Player` | 玩家 Character、AnimBP 等 |
 | Planned | `/Game/Characters/ArenaEnemy` | `/Game/ProjectArcaneArena/Characters/Enemies` | 普通、远程、Elite 等敌人 |
 | Planned | `/Game/Boss` | `/Game/ProjectArcaneArena/Characters/Boss` | Boss Character、AI、Animation、GAS、VFX 等整体迁移 |
-| Planned | `/Game/GAS` | `/Game/ProjectArcaneArena/Combat/GAS` | GameplayAbility、GameplayEffect、GameplayCue、Area 等 |
+| Planned | `/Game/GAS/GameplayAbility` | `/Game/ProjectArcaneArena/Combat/GAS/Abilities` | 再按 Player / Enemy / Triggers 分类 |
+| Planned | `/Game/GAS/GameplayEffect` | `/Game/ProjectArcaneArena/Combat/GAS/Effects` | 再按 Core / Init / Cooldowns / Costs / Status / Triggers / Upgrades / Enemy 分类 |
+| Planned | `/Game/GAS/GameplayCues` | `/Game/ProjectArcaneArena/Combat/GAS/Cues` | `InstaneCue` 同时纠正为 `Instant`，`DurationCue` 统一为 `Looping` |
+| Planned | `/Game/GAS/Area` | `/Game/ProjectArcaneArena/Combat/Areas` | Area Actor 不是 GAS 资产，从 GAS 根中拆出 |
+| Planned | `/Game/GAS/DamageFeedback` | `/Game/ProjectArcaneArena/Combat/Feedback` | CameraShake / Material / Sound 等表现资产从 GAS 根中拆出 |
+| Planned | `/Game/GAS/Projectile` | `/Game/ProjectArcaneArena/Combat/Projectiles/Actors` | 旧 Fireball / Enemy Actor Projectile；与新 Data Projectile 共用 Projectile 功能域 |
 | Planned | `/Game/Data/Upgrade` | `/Game/ProjectArcaneArena/Systems/Upgrades/Data` | Roguelike Upgrade DataAsset |
 | Planned | `/Game/Blueprints/DataAsset/DA_Waves_Prototype` | `/Game/ProjectArcaneArena/Systems/Waves/Data/DA_Waves_Prototype` | 单资产迁移；后续新增 Wave Data 也放此目录 |
 | Planned | `/Game/UI` | `/Game/ProjectArcaneArena/UI` | HUD、MainMenu、Upgrade、Inventory、DamageNumber 等 |
 | Planned | `/Game/TopDown/Lvl_TopDown` | `/Game/ProjectArcaneArena/World/Maps/Lvl_Arena` | **同时改名**：`Lvl_TopDown -> Lvl_Arena` |
 | Planned | 项目自有 `/Game/Niagara` | `/Game/ProjectArcaneArena/VFX/Common` | 只迁项目自制资产；第三方 Niagara 不迁 |
+| Planned | `/Game/Data/Weapon` | `/Game/ProjectArcaneArena/Combat/Weapons/Data` | 现有 ArcaneBolt / Fast / Shotgun DataAsset |
 | Planned | 新 Weapon 资产 | `/Game/ProjectArcaneArena/Combat/Weapons` | 新增资产直接使用目标路径，无旧路径 |
 | Planned | 新 Data Projectile 资产 | `/Game/ProjectArcaneArena/Combat/Projectiles` | 新增资产直接使用目标路径，无旧路径 |
+| Planned | `/Game/Blueprints/ArenaLightningStormArea` | `/Game/ProjectArcaneArena/Combat/Areas/LightningStorm` | 与 DashTrail Area 统一归入 Combat/Areas |
+| Planned | `/Game/Data/EnemyAffix` | `/Game/ProjectArcaneArena/Characters/Enemies/Data/Affixes` | Elite/Affix 配置归敌人功能域 |
+| Planned | `/Game/Items/Inventory` | `/Game/ProjectArcaneArena/Systems/Inventory` | Inventory Data / Effects / Pickup Item 资产 |
+| Planned | `/Game/Items/Pickups` | `/Game/ProjectArcaneArena/Systems/Pickups/Blueprints` | Health/Energy Pickup Actor Blueprint |
+| Planned | `/Game/Data/Pickup` | `/Game/ProjectArcaneArena/Systems/Pickups/Data` | Pickup DropTable / 配置 |
+| Planned | `/Game/Assets/Pickups` | `/Game/ProjectArcaneArena/Systems/Pickups/Art` | 仅项目自有美术；若确认来自外部包则保持原目录 |
+| Planned | `/Game/Core/BP_ArenaPlayerController` | `/Game/ProjectArcaneArena/Core/Controllers/BP_ArenaPlayerController` | Controller 资产从旧根 Core 收敛 |
+| Planned | `/Game/TopDown/Input` | `/Game/ProjectArcaneArena/Input` | Enhanced Input Actions / Mapping Context |
+| Review | `/Game/TopDown/Blueprints` | `/Game/ProjectArcaneArena/Dev/LegacyTemplate/TopDown` 或删除 | 先用 Reference Viewer 确认模板 BP 是否仍被正式项目引用 |
+| Review | `/Game/TopDown/Cursor` + `/Game/Cursor` | `/Game/ProjectArcaneArena/UI/Cursor` | 两套存在同名资产，必须先确认实际引用后再合并，不能直接覆盖 |
+| Planned | `/Game/TopDown/MI_Colorway` | `/Game/ProjectArcaneArena/World/Materials/MI_Colorway` | 地图/环境材质 |
+| Planned | `/Game/Mass` | `/Game/ProjectArcaneArena/Dev/Experiments/Mass` | 当前 MassCluster 属学习/实验对照，不进入正式 Gameplay 根 |
+| Planned | `/Game/Tests` | `/Game/ProjectArcaneArena/Dev/Tests` | Overload / PCG / Projectile 测试资产 |
 
 ## 3. 后续硬编码路径替换基准
 
@@ -57,8 +76,23 @@
 /Game/Boss
     -> /Game/ProjectArcaneArena/Characters/Boss
 
-/Game/GAS
-    -> /Game/ProjectArcaneArena/Combat/GAS
+/Game/GAS/GameplayAbility
+    -> /Game/ProjectArcaneArena/Combat/GAS/Abilities
+
+/Game/GAS/GameplayEffect
+    -> /Game/ProjectArcaneArena/Combat/GAS/Effects
+
+/Game/GAS/GameplayCues
+    -> /Game/ProjectArcaneArena/Combat/GAS/Cues
+
+/Game/GAS/Area
+    -> /Game/ProjectArcaneArena/Combat/Areas
+
+/Game/GAS/DamageFeedback
+    -> /Game/ProjectArcaneArena/Combat/Feedback
+
+/Game/GAS/Projectile
+    -> /Game/ProjectArcaneArena/Combat/Projectiles/Actors
 
 /Game/Data/Upgrade
     -> /Game/ProjectArcaneArena/Systems/Upgrades/Data
@@ -75,9 +109,160 @@
 
 `/Game/Niagara` **不能做无脑全局字符串替换**，必须逐项确认资产所有权；第三方或历史模板引用保持原路径。
 
-## 4. P5 / Weapon 新资产固定目录
+## 4. GAS 与 Combat 详细规划
 
-### 4.1 Data Projectile
+旧 `/Game/GAS` 实际混合了 **GAS 配置资产、Gameplay Actor、Projectile Actor 和表现资产**。迁移时不再把整个目录原样塞进新的 `Combat/GAS`；只保留真正属于 GAS 的 Ability / Effect / Cue，其余按职责拆出。
+
+### 4.1 GAS 最终结构
+
+```text
+/Game/ProjectArcaneArena/Combat/GAS/
+├─ Abilities/
+│  ├─ Player/
+│  │  ├─ GA_BasicAttack
+│  │  ├─ GA_Dash
+│  │  ├─ GA_DashLightningTrail
+│  │  ├─ GA_Fireball
+│  │  ├─ GA_LightningStorm
+│  │  ├─ GA_Overload
+│  │  ├─ GA_Shield
+│  │  └─ GA_ShieldBreakBlast
+│  ├─ Enemy/
+│  │  ├─ GA_EnemyMeleeAttack
+│  │  └─ GA_EnemyRangedAttack
+│  └─ Triggers/
+│     ├─ GA_EnergyOnAbilityCast
+│     ├─ GA_EnergyOnCrit
+│     └─ GA_EnergyOnKill
+│
+├─ Effects/
+│  ├─ Core/
+│  │  ├─ GE_Damage
+│  │  ├─ GE_Shield
+│  │  └─ GE_Shield_Grant
+│  ├─ Init/
+│  │  ├─ GE_Init_PlayerAttributes
+│  │  └─ GE_Init_EnemyAttributes
+│  ├─ Cooldowns/
+│  │  ├─ GE_Cooldown_BasicAttack
+│  │  ├─ GE_Cooldown_Dash
+│  │  ├─ GE_Cooldown_Fireball
+│  │  ├─ GE_Cooldown_LightningStorm
+│  │  ├─ GE_Cooldown_Shield
+│  │  ├─ GE_Cooldown_EnemyMeleeAttack
+│  │  └─ GE_Cooldown_EnemyRangedAttack
+│  ├─ Costs/
+│  │  ├─ GE_Cost_Fireball
+│  │  ├─ GE_Cost_LightningStorm
+│  │  └─ GE_Cost_Shield
+│  ├─ Status/
+│  │  ├─ GE_Status_Stunned
+│  │  ├─ GE_Status_Burning
+│  │  ├─ GE_Status_Shocked
+│  │  └─ GE_Status_OverloadLockout
+│  ├─ Triggers/
+│  │  ├─ GE_Trigger_EnergyOnAbilityCast
+│  │  ├─ GE_Trigger_EnergyOnCrit
+│  │  └─ GE_Trigger_EnergyOnKill
+│  ├─ Upgrades/
+│  │  ├─ GE_Upgrade_AttackPower
+│  │  ├─ GE_Upgrade_CritChance
+│  │  ├─ GE_Upgrade_MaxHealth
+│  │  └─ GE_Upgrade_MoveSpeed
+│  └─ Enemy/
+│     └─ Elite/
+│        ├─ GE_Elite_BaseAttributes
+│        └─ GE_Elite_Frenzy
+│
+└─ Cues/
+   ├─ Instant/
+   │  ├─ GCN_BasicAttack_Activate
+   │  ├─ GCN_DamageCritical
+   │  ├─ GCN_DamageNumber
+   │  ├─ GCN_EnemyMelee_Activate
+   │  ├─ GCN_Fireball_Cast
+   │  ├─ GCN_HealthHit
+   │  ├─ GCN_Hit_Fire
+   │  ├─ GCN_Hit_Lightning
+   │  ├─ GCN_Hit_Physical
+   │  ├─ GCN_LightningStorm_Cast
+   │  ├─ GCN_Overload_Explosion
+   │  ├─ GCN_ShieldBreak
+   │  ├─ GCN_ShieldBreakHealthHit
+   │  ├─ GCN_ShieldBreak_Burst
+   │  └─ GCN_ShieldHit
+   ├─ Looping/
+   │  ├─ GCN_Burning_Active
+   │  ├─ GCN_DashLightningTrail_Active
+   │  ├─ GCN_Dash_Active
+   │  ├─ GCN_LightningStorm_Active
+   │  ├─ GCN_Shield_Active
+   │  └─ GCN_Shocked_Active
+   └─ Elite/
+      ├─ GCN_Elite_ArcaneWarden_Active
+      ├─ GCN_Elite_ArcaneWarden_Pulse
+      ├─ GCN_Elite_Frenzy_Active
+      ├─ GCN_Elite_Frenzy_Trigger
+      ├─ GCN_Elite_Volatile_Active
+      ├─ GCN_Elite_Volatile_Explode
+      └─ GCN_Elite_Volatile_Telegraph
+```
+
+说明：
+
+- 旧目录 `InstaneCue` 拼写错误，迁移时统一改成 `Cues/Instant`。
+- 旧 `DurationCue` 迁移为 `Cues/Looping`，更贴合项目中持续 GameplayCue 的实际用途。
+- Boss 的专属 Ability / Effect / Cue **继续归 `Characters/Boss/GAS`**，不重新塞回公共 `Combat/GAS`。公共 GAS 只放可复用或常规玩家/敌人战斗资产。
+- `Effects/Upgrades` 存放真正的 GameplayEffect；`Systems/Upgrades/Data` 存放 `UArenaUpgradeDataAsset`。两者不要混在同一个 Data 目录。
+
+### 4.2 从旧 GAS 拆出的非 GAS 资产
+
+```text
+/Game/GAS/Area/BP_ArenaDashTrailArea
+    -> /Game/ProjectArcaneArena/Combat/Areas/Dash/BP_ArenaDashTrailArea
+
+/Game/Blueprints/ArenaLightningStormArea/BP_ArenaLightningStormArea
+    -> /Game/ProjectArcaneArena/Combat/Areas/LightningStorm/BP_ArenaLightningStormArea
+
+/Game/GAS/Projectile/BP_ArenaFireballProjectile
+    -> /Game/ProjectArcaneArena/Combat/Projectiles/Actors/BP_ArenaFireballProjectile
+
+/Game/GAS/Projectile/BP_ArenaEnemyProjectile
+    -> /Game/ProjectArcaneArena/Combat/Projectiles/Actors/BP_ArenaEnemyProjectile
+```
+
+DamageFeedback 拆为：
+
+```text
+/Game/ProjectArcaneArena/Combat/Feedback/
+├─ Camera/
+│  ├─ CS_DamageLight
+│  ├─ CS_DamageMedium
+│  ├─ CS_DamageHeavy
+│  └─ CS_ShieldBreak
+├─ Materials/
+│  └─ M_ArenaHitFlashOverlay
+└─ Audio/
+   └─ SA_ArenaHitFeedback
+```
+
+这类资产虽然由 GAS Damage 流程触发，但本质是 Presentation，不应因为“由 GAS 调用”就继续放在 GAS 目录。
+
+### 4.3 GAS 路径迁移注意事项
+
+`/Game/GAS` 现在**不能再做一条简单的全局 Prefix 替换**，因为旧目录已经被拆成多个职责域。后续脚本修改要按第 2 节和本节的具体子路径匹配。
+
+特别需要修改：
+
+- `generate_gameplay_ability_blueprints.py` → `Combat/GAS/Abilities/...`
+- `generate_gameplay_effect_blueprints.py` → `Combat/GAS/Effects/...`
+- `generate_burst_gameplay_cues.py` / `generate_looping_gameplay_cues.py` → `Combat/GAS/Cues/...`
+- `configure_build_asset_links.py` 中 Ability / Effect / Area / Projectile 的路径分别指向对应新域。
+- `DefaultGame.ini` 的 `GameplayCueNotifyPaths` 最终只需要扫描 `/Game/ProjectArcaneArena/Combat/GAS/Cues` 与 Boss Cue 路径；Cook 路径则按最终资产依赖和动态发现需求更新。
+
+## 5. P5 / Weapon 新资产固定目录
+
+### 5.1 Data Projectile
 
 ```text
 /Game/ProjectArcaneArena/Combat/Projectiles/
@@ -105,7 +290,7 @@ P5 最终固定对象路径：
 
 当前 P5 C++ 若仍引用旧的 `/Game/Projectile/VFX/...`，必须在创建正式资产前同步到以上路径。
 
-### 4.2 Weapons
+### 5.2 Weapons
 
 ```text
 /Game/ProjectArcaneArena/Combat/Weapons/
@@ -125,33 +310,109 @@ P5 最终固定对象路径：
 └─ DA_Weapon_Shotgun
 ```
 
-## 5. 目标目录树
+## 6. 目标目录树
 
 ```text
 /Game/ProjectArcaneArena/
 ├─ Core/
-│  └─ GameMode/
+│  ├─ GameMode/
+│  └─ Controllers/
 ├─ Characters/
 │  ├─ Player/
 │  ├─ Enemies/
+│  │  └─ Data/
+│  │     └─ Affixes/
 │  └─ Boss/
+│     ├─ Character/
+│     ├─ AI/
+│     ├─ Animation/
+│     ├─ GAS/
+│     └─ VFX/
 ├─ Combat/
 │  ├─ GAS/
+│  │  ├─ Abilities/
+│  │  ├─ Effects/
+│  │  └─ Cues/
+│  ├─ Areas/
+│  ├─ Feedback/
 │  ├─ Weapons/
 │  └─ Projectiles/
+│     ├─ Actors/
+│     ├─ Data/
+│     └─ VFX/
 ├─ Systems/
 │  ├─ Waves/
 │  │  └─ Data/
-│  └─ Upgrades/
-│     └─ Data/
+│  ├─ Upgrades/
+│  │  └─ Data/
+│  ├─ Inventory/
+│  └─ Pickups/
+│     ├─ Blueprints/
+│     ├─ Data/
+│     └─ Art/
+├─ Input/
+│  ├─ Actions/
+│  └─ Contexts/
 ├─ UI/
+│  ├─ HUD/
+│  ├─ DamageNumbers/
+│  ├─ MainMenu/
+│  ├─ Upgrade/
+│  ├─ Inventory/
+│  └─ Cursor/
 ├─ World/
-│  └─ Maps/
-└─ VFX/
-   └─ Common/
+│  ├─ Maps/
+│  └─ Materials/
+├─ VFX/
+│  └─ Common/
+└─ Dev/
+   ├─ Tests/
+   ├─ Experiments/
+   │  └─ Mass/
+   └─ LegacyTemplate/
+      └─ TopDown/
 ```
 
-## 6. 迁移执行规则
+### 6.1 当前根目录的额外收敛建议
+
+除最初迁移表外，当前仓库还存在一些项目自有根目录，建议一起收敛：
+
+```text
+/Game/Core/BP_ArenaPlayerController
+    -> /Game/ProjectArcaneArena/Core/Controllers/
+
+/Game/Data/Weapon
+    -> /Game/ProjectArcaneArena/Combat/Weapons/Data/
+
+/Game/Data/EnemyAffix
+    -> /Game/ProjectArcaneArena/Characters/Enemies/Data/Affixes/
+
+/Game/Items/Inventory
+    -> /Game/ProjectArcaneArena/Systems/Inventory/
+
+/Game/Items/Pickups
+    -> /Game/ProjectArcaneArena/Systems/Pickups/Blueprints/
+
+/Game/Data/Pickup
+    -> /Game/ProjectArcaneArena/Systems/Pickups/Data/
+
+/Game/Assets/Pickups
+    -> /Game/ProjectArcaneArena/Systems/Pickups/Art/   （仅项目自有资产）
+
+/Game/Tests
+    -> /Game/ProjectArcaneArena/Dev/Tests/
+
+/Game/Mass
+    -> /Game/ProjectArcaneArena/Dev/Experiments/Mass/
+```
+
+`/Game/TopDown/Blueprints` 属模板遗留，先通过 Reference Viewer 判断是否仍被正式 GameMode/Character/Controller 引用。若无引用直接删除；若仍需保留用于对照，则迁入 `Dev/LegacyTemplate/TopDown`，不要继续作为正式 gameplay 路径。
+
+`/Game/TopDown/Cursor` 与 `/Game/Cursor` 存在同名 Cursor 资产。必须先确认正式引用，选择一套作为主资产后再迁到 `UI/Cursor`，不能简单合并覆盖。
+
+仓库根 `Content/3` 是约 100 MB 的非标准大文件，`Content/mcp-conversation-export.md` 也不是 Unreal Content 资产；迁移阶段单独确认用途，非必须文件应移出 `Content`，避免无意义进入资产目录/仓库体积管理。
+
+## 7. 迁移执行规则
 
 1. 资产只能通过 Unreal Editor Content Browser 的 **Move** 操作迁移，不使用 Windows Explorer 直接剪切 `.uasset`。
 2. 每次迁移前保存全部资产，并保留 Git checkpoint。
@@ -161,7 +422,7 @@ P5 最终固定对象路径：
 6. 不对第三方资源目录执行批量迁移或无脑字符串替换。
 7. 如果一个旧目录中同时存在项目自有资产和第三方资产，必须按资产逐个确认，不以文件夹整体迁移。
 
-## 7. 已知需要同步修改的硬编码来源
+## 8. 已知需要同步修改的硬编码来源
 
 迁移过程中至少检查以下类别：
 
@@ -193,9 +454,9 @@ P5 最终固定对象路径：
 /Game/Projectile/VFX/NS_ArenaProjectiles_Shared
 ```
 
-最终全部替换为第 4.1 节中的正式路径。
+最终全部替换为第 5.1 节中的正式路径。
 
-## 8. 迁移状态记录方式
+## 9. 迁移状态记录方式
 
 每完成一批迁移，直接更新第 2 节表格状态，并在本节追加一次记录：
 
