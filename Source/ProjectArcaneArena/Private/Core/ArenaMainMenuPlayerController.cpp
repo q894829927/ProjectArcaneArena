@@ -20,7 +20,7 @@ DEFINE_LOG_CATEGORY_STATIC(LogArenaMainMenu, Log, All);
 AArenaMainMenuPlayerController::AArenaMainMenuPlayerController()
 {
 	MainMenuWidgetClass = UArenaMainMenuWidget::StaticClass();
-	GameplayMapName = TEXT("/Game/TopDown/Lvl_TopDown");
+	GameplayMapName = TEXT("/Game/ProjectArcaneArena/World/Maps/Lvl_Arena");
 }
 
 // 菜单只属于本地表现；下一 Tick 刷新允许 GameState 与 PlayerState 完成初始复制。

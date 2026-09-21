@@ -55,7 +55,7 @@ private:
 	class AArenaLobbyPlayerState* FindLobbyHostPlayerState() const;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Lobby")
-	FName GameplayMapName = TEXT("/Game/TopDown/Lvl_TopDown");
+	FName GameplayMapName = TEXT("/Game/ProjectArcaneArena/World/Maps/Lvl_Arena");
 
 	int32 ConfiguredLobbyMaxPlayers = 2;
 	bool bConfiguredAsLobby = false;

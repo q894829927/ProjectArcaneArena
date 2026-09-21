@@ -33,7 +33,7 @@ import unreal
 # -----------------------------------------------------------------------------
 
 # 可选：dry_run / apply / rewrite / validate / all
-RUN_MODE = "dry_run"
+RUN_MODE = "validate"
 
 # apply / all 必须显式改为 True，避免误触发真实迁移。
 ALLOW_APPLY = False

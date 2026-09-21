@@ -97,7 +97,7 @@ private:
 		const FString& ErrorString);
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Network")
-	FName MainMenuMapName = TEXT("/Game/UI/MainMenu/Lvl_MainMenu");
+	FName MainMenuMapName = TEXT("/Game/ProjectArcaneArena/UI/MainMenu/Lvl_MainMenu");
 
 	UPROPERTY(Transient)
 	EArenaDirectConnectState ConnectionState = EArenaDirectConnectState::Idle;

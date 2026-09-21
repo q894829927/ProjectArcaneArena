@@ -99,7 +99,7 @@ private:
 	TSubclassOf<UArenaMainMenuWidget> MainMenuWidgetClass;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Arena|Main Menu")
-	FName GameplayMapName = TEXT("/Game/TopDown/Lvl_TopDown");
+	FName GameplayMapName = TEXT("/Game/ProjectArcaneArena/World/Maps/Lvl_Arena");
 
 	UPROPERTY(Transient)
 	TObjectPtr<UArenaMainMenuWidget> MainMenuWidget;

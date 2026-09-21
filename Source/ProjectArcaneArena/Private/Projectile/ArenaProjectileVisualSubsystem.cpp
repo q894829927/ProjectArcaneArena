@@ -39,11 +39,11 @@ namespace
 		ECVF_Default);
 
 	const TCHAR* ProjectileDataChannelPath =
-		TEXT("/Game/Projectile/VFX/NDC_ArenaProjectiles.NDC_ArenaProjectiles");
+		TEXT("/Game/ProjectArcaneArena/Combat/Projectiles/VFX/DataChannels/NDC_ArenaProjectiles.NDC_ArenaProjectiles");
 	const TCHAR* ImpactDataChannelPath =
-		TEXT("/Game/Projectile/VFX/NDC_ArenaProjectileImpacts.NDC_ArenaProjectileImpacts");
+		TEXT("/Game/ProjectArcaneArena/Combat/Projectiles/VFX/DataChannels/NDC_ArenaProjectileImpacts.NDC_ArenaProjectileImpacts");
 	const TCHAR* SharedProjectileSystemPath =
-		TEXT("/Game/Projectile/VFX/NS_ArenaProjectiles_Shared.NS_ArenaProjectiles_Shared");
+		TEXT("/Game/ProjectArcaneArena/Combat/Projectiles/VFX/Systems/NS_ArenaProjectiles_Shared.NS_ArenaProjectiles_Shared");
 
 	const FName PositionName(TEXT("Position"));
 	const FName VelocityName(TEXT("Velocity"));

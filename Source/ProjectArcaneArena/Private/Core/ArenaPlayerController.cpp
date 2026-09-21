@@ -340,7 +340,7 @@ void AArenaPlayerController::HandlePauseMenuReturnToMainMenuRequested()
 	}
 
 	// 自定义 GameInstance 未创建项目子系统时仍提供安全本地回退，不让按钮成为无响应状态。
-	ClientTravel(TEXT("/Game/UI/MainMenu/Lvl_MainMenu"), TRAVEL_Absolute);
+	ClientTravel(TEXT("/Game/ProjectArcaneArena/UI/MainMenu/Lvl_MainMenu"), TRAVEL_Absolute);
 }
 
 // 退出请求只结束当前本地进程，Dedicated Server 不创建该菜单也不会调用此入口。
