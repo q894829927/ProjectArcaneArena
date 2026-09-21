@@ -73,7 +73,7 @@ private:
 	TArray<int32> PierceRemaining;
 	TArray<int32> AttackInstanceIDs;
 	TArray<int32> WeaponRuntimeIDs;
-	TArray<uint32> Generations;
+	TArray<int32> Generations;
 
 	TArray<int32> ActiveSlots;
 	TArray<int32> ActiveListPositions;
