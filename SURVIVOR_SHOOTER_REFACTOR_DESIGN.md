@@ -521,7 +521,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 
 | 阶段 | 状态 | 交付 | 验收门槛 |
 |---|---|---|---|
-| G-A：单武器自动攻击 | Partial | `UArenaAutoAttackComponent` 服务器 Timer 选敌与调度，沿用现有波次并直接接入 Data Pool | 首次 PIE 已确认 Combat 自动发射、AttackID 连续和 Data Pool Handle 复用；待验证移动射击、死亡/Stun/升级及 Avatar 更换停火 |
+| G-A：单武器自动攻击 | Partial | `UArenaAutoAttackComponent` 服务器 Timer 选敌与调度，沿用现有波次并直接接入 Data Pool | 已验证移动射击、超范围停火、死亡目标切换、Upgrade 停火与下一波 Combat 恢复；待验证 Dead/Stun、Avatar 更换与 Listen Server |
 | G-B：独立装备槽 | Planned | 先两槽、容量可扩展至六槽 | 同类武器的时间、来源、参数与状态独立 |
 | G-C：三种攻击模式 | Planned | 单发、散射、穿透；稳定 AttackInstanceID | 穿透不重复命中，散射一轮只触发一次 WeaponFire |
 | G-D：限时生存 | Planned | 三波限时刷新、统一阶段收尾 | 时间结束无残留伤害、无假击杀和迟到回调覆盖阶段 |
@@ -534,7 +534,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 |---|---|---|---|
 | P0：独立基线压测 | Partial | StressTestActor；Legacy Actor Reference 与 Data 空载基线；100～5000 阶梯 | 能拆分传统 Actor/Movement/Collision/VFX/Network 成本，并建立新系统起点 |
 | P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、SoA、Free List、Handle、Generation、直线移动 | 普通 Projectile 不依赖每发 Actor/MovementComponent；复用无串状态 |
-| P2：Auto Weapon 接入 | Partial | 与 G-A 共用同一实现节点；`UArenaAutoAttackComponent` 直接向 Data Pool 发射并携带 AttackInstanceID | 首次 PIE 发射链路已通过；待验证移动射击、状态/阶段停火、Avatar 更换、Listen Server 和主动技能回归 |
+| P2：Auto Weapon 接入 | Partial | 与 G-A 共用同一实现节点；`UArenaAutoAttackComponent` 直接向 Data Pool 发射并携带 AttackInstanceID | 已验证移动射击、范围门控、死亡目标切换和 Upgrade/Combat 阶段门控；待验证 Dead/Stun、Avatar 更换、Listen Server 和主动技能回归 |
 | P3：Spatial Hash Collision | Planned | Target Grid、Swept Segment、HitCommand Buffer | 不全遍历全部敌人；高速弹不穿透；GAS 结算正确 |
 | P4：Spread / Pierce / 多武器 | Planned | 散射、穿透、多个独立 WeaponRuntime | 同类武器互不覆盖；AttackInstanceID 稳定；穿透去重正确 |
 | P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
