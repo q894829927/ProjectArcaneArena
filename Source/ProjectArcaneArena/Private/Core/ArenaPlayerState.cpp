@@ -8,8 +8,9 @@
 #include "GAS/ArenaAttributeSet.h"
 #include "Item/ArenaInventoryComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Weapon/ArenaWeaponLoadoutComponent.h"
 
-// 构造玩家状态，创建跨角色生命周期的 ASC、AttributeSet 和背包 Model。
+// 构造玩家状态，创建跨角色生命周期的 ASC、AttributeSet、背包与武器装备 Model。
 AArenaPlayerState::AArenaPlayerState()
 {
 	SetNetUpdateFrequency(100.0f);
@@ -25,6 +26,7 @@ AArenaPlayerState::AArenaPlayerState()
 	AbilitySystemComponent->AddAttributeSetSubobject(AttributeSet.Get());
 
 	InventoryComponent = CreateDefaultSubobject<UArenaInventoryComponent>(TEXT("InventoryComponent"));
+	WeaponLoadoutComponent = CreateDefaultSubobject<UArenaWeaponLoadoutComponent>(TEXT("WeaponLoadoutComponent"));
 }
 
 // 复制 OwnerOnly 升级数据、公共选择完成状态与 Victory Ready，UI 只观察这些数据。
@@ -73,6 +75,12 @@ UArenaAttributeSet* AArenaPlayerState::GetArenaAttributeSet() const
 UArenaInventoryComponent* AArenaPlayerState::GetInventoryComponent() const
 {
 	return InventoryComponent;
+}
+
+// 返回 PlayerState 持有的武器装备组件，Avatar 更换时 RuntimeID 与装备定义仍可继续存在。
+UArenaWeaponLoadoutComponent* AArenaPlayerState::GetWeaponLoadoutComponent() const
+{
+	return WeaponLoadoutComponent;
 }
 
 // 记录启动技能是否已经授予，避免 Possess/复制路径重复授予。
