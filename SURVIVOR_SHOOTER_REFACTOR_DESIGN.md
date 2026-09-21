@@ -537,7 +537,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 | P5：并行模拟 | Planned | 仅在 Insights 证明需要时按 Chunk 并行 | 线程安全，Projectile Simulation GameThread 成本进一步下降 |
 | P6：综合规模化验收 | Planned | 真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
 
-P0/P1 已进入源码实现：独立压力 Actor、Legacy Actor 参考和 Data Projectile Pool 已存在，但尚未通过编译、PIE 与 Insights 验收，故状态为 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
+P0/P1 已进入源码实现：独立压力 Actor、Legacy Actor 参考和 Data Projectile Pool 已存在，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接；尚未完成 PIE 与 Insights 验收，故状态为 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
 
 ### 12.3 合并顺序
 
