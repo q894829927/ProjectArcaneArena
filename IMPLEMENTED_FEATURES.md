@@ -512,7 +512,7 @@ Status meanings:
 * 新增 PlayerState 持有的 `UArenaWeaponLoadoutComponent` 与 `FArenaWeaponRuntime`。首版默认两槽、最多六槽；每次装备分配新的正数 `WeaponRuntimeID`，每个 Runtime 在服务器保存独立递增的 `AttackInstanceID` 计数，替换/卸下武器不会继承旧实例轮次。
 * `AArenaPlayerState` 现在创建并暴露 `WeaponLoadoutComponent`；装备 Model 跟随 PlayerState 生命周期而不是 Character，后续换 Pawn 不需要丢失本局装备。
 * `UArenaAutoAttackComponent` 已扩展为单 Timer、多 `WeaponRuntime` 独立调度：每个有效槽位维护自己的 `NextFireTime`，分别读取 WeaponDataAsset 的射速、范围、Projectile 与 Damage 参数，并分别申请该 Runtime 的 `AttackInstanceID`。旧 P3 Inline Config 仅在 Loadout 没有任何有效 Runtime 时回退。
-* 验证进展：双槽 PIE 已通过。日志确认 Slot 0 `ArcaneBolt` 使用 `WeaponRuntimeID=1`、AttackID 26～29；Slot 1 `ArcaneBoltFast` 使用 `WeaponRuntimeID=2`、AttackID 50～57，两组序列独立且发射交错，伤害分别保持 5 与 2，没有参数/计数器串线。敌人死亡后两把武器均正常切换目标。G-B 多槽调度因此达到 `Implemented`；P4 整体仍为 `Partial`，因为 Spread/Pierce 行为尚未实现。默认武器配置随后收敛为单一 `DefaultWeaponDefinitions` 数组，数组索引直接对应 SlotIndex。
+* 验证进展：双槽 PIE 已通过。日志确认 Slot 0 `ArcaneBolt` 使用 `WeaponRuntimeID=1`、AttackID 26～29；Slot 1 `ArcaneBoltFast` 使用 `WeaponRuntimeID=2`、AttackID 50～57，两组序列独立且发射交错，伤害分别保持 5 与 2，没有参数/计数器串线。敌人死亡后两把武器均正常切换目标。G-B 多槽调度因此达到 `Implemented`；默认武器配置已收敛为单一 `DefaultWeaponDefinitions` 数组，数组索引直接对应 SlotIndex。
 
 ### Projectile P4-C Spread / Shotgun — Implemented
 
@@ -521,7 +521,16 @@ Status meanings:
 * WeaponDataAsset 新增 `SameTargetPelletFalloff` 与 `MinPelletDamageMultiplier`。同一 Source + WeaponRuntimeID + AttackInstanceID 对同一 Target 的第 N 次有效 Pellet 命中使用 `max(MinMultiplier, pow(Falloff, N-1))`；倍率乘到 `SkillMultiplier`，因此会衰减 `BaseDamage + AttackPower` 的整段伤害，而不是只衰减固定 BaseDamage。
 * Projectile HitCommand 现在携带 PelletIndex/Count 与衰减快照；SimulationSubsystem 用短生命周期 `PelletHitStates` 跨帧保存同一轮对同一目标的已结算 Pellet 数，Key 包含 Source、Target、WeaponRuntimeID、AttackInstanceID，避免两把武器、两个玩家或相邻攻击互相串计数。
 * 命中日志增加 `Pellet=x/y / SameTargetHit / PelletMultiplier`，用于直接验收 1.0、0.75、0.5625… 等衰减序列。
-* 状态：`Implemented`。本地编译/PIE 验收已通过，霰弹式多 Pellet、同 AttackInstanceID、扇形散射与同目标 Pellet 衰减均按预期工作；现有 GAS 命中链路无回归。真正 Pierce 仍未接入，因此 P4 整体保持 `Partial`。
+* 状态：`Implemented`。本地编译/PIE 验收已通过，霰弹式多 Pellet、同 AttackInstanceID、扇形散射与同目标 Pellet 衰减均按预期工作；现有 GAS 命中链路无回归。
+
+### Projectile P4-D Straight Pierce — Partial
+
+* `UArenaAutoAttackComponent` 已把 WeaponDataAsset 的 `PierceCount` 写入每颗 Data Projectile；语义固定为“首个目标之后还能继续穿过的额外目标数”，因此总命中上限为 `PierceCount + 1`。
+* `UArenaProjectileSimulationSubsystem` 将单目标 `FindFirstProjectileHit` 升级为 `ResolveProjectileSweptHits`：同一帧先对 Previous→Current 直线 Sweep 的全部候选计算入口 Alpha，再按沿线顺序排序并连续生成 HitCommand。高速 Projectile 一帧跨过多个敌人时可以在同一 Tick 依次结算，不要求等下一帧。
+* 窄相入口时间由“二维扩张圆 + Z 高度区间”求交得到，替代旧的最近中心点 Alpha，仅用于当前 Character Capsule 近似；它不是范围伤害，也不会自动攻击弹道之外的敌人。
+* 每个发生过命中的 Active Projectile Slot 维护 `ProjectileHitTargets`，记录已经命中过的目标 ObjectKey。Projectile 继续飞行时会跳过历史目标，防止跨帧仍与同一 Capsule 重叠而重复伤害；Slot 回收/复用时立即清理历史。
+* HitCommand/日志新增 `ProjectileHitOrdinal` 与 `PierceRemainingAfterHit`，用于验证一颗 Projectile 的第 1/2/3 次沿线命中和穿透预算。
+* 状态：源码已实现，尚未本地 UBT/PIE。P4-D 通过后，P4 的多武器、Spread 与直线 Pierce 三个核心玩法节点即可达到 `Implemented`。
 
 ## Verification Notes
 
