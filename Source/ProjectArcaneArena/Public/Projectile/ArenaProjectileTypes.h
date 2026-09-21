@@ -1,7 +1,11 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GameplayTagContainer.h"
 #include "ArenaProjectileTypes.generated.h"
+
+class AActor;
+class UGameplayEffect;
 
 // Data Projectile 的稳定句柄；Slot 可以复用，但 Generation 必须匹配当前代次。
 USTRUCT(BlueprintType)
@@ -55,6 +59,23 @@ struct PROJECTARCANEARENA_API FArenaProjectileSpawnParams
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile")
 	int32 WeaponRuntimeID = INDEX_NONE;
+
+	// 发射者只在 SpawnParams 中短暂持有；SimulationSubsystem 内部转换为 WeakObjectPtr，避免 Projectile 延长 Avatar 生命周期。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Damage")
+	TObjectPtr<AActor> SourceActor = nullptr;
+
+	// P3 命中后沿现有 GAS Damage Pipeline 创建 Spec；为空时该 Data Projectile 只移动、不参与伤害碰撞。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Damage")
+	TSubclassOf<UGameplayEffect> DamageEffectClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Damage")
+	FGameplayTag DamageTypeTag;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Damage", meta = (ClampMin = "0.0"))
+	float BaseDamage = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Projectile|Damage", meta = (ClampMin = "0.0"))
+	float SkillMultiplier = 1.0f;
 };
 
 // P0/P1 性能与容量统计快照；只描述数据池运行状态，不承担玩法逻辑。
@@ -83,4 +104,19 @@ struct PROJECTARCANEARENA_API FArenaProjectileSimulationStats
 
 	UPROPERTY(BlueprintReadOnly, Category = "Arena|Projectile")
 	int64 TotalReleased = 0;
+};
+
+
+// P3 在集中模拟阶段生成的命中命令；复制完整结算快照后再回收 Projectile 槽位。
+struct PROJECTARCANEARENA_API FArenaProjectileHitCommand
+{
+	TWeakObjectPtr<AActor> SourceActor;
+	TWeakObjectPtr<AActor> TargetActor;
+	TSubclassOf<UGameplayEffect> DamageEffectClass;
+	FGameplayTag DamageTypeTag;
+	float BaseDamage = 0.0f;
+	float SkillMultiplier = 1.0f;
+	int32 AttackInstanceID = 0;
+	int32 WeaponRuntimeID = INDEX_NONE;
+	FHitResult HitResult;
 };
