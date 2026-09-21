@@ -620,3 +620,22 @@ AssetTools.rename_assets
 ```
 
 重新执行前先拉取脚本修正，并关闭可能正在打开的 `BP_ArenaGameMode` Blueprint Editor；建议打开一个不在迁移清单内的中立地图。脚本会把已经迁移成功的资产识别为 `ALREADY`，只继续剩余项。
+
+
+### 10.7 Source Art 与 Auto Reimport 修正（2026-09-22）
+
+第二次 Apply 已完成剩余 Unreal 资产迁移，包括 `BP_ArenaGameMode` 和全部待迁地图；其中部分 Blueprint/Map 通过 AssetTools fallback 成功。随后在普通辅助文件阶段，脚本把 Upgrade Icon 原始 PNG 搬进了 `Content/ProjectArcaneArena/UI/Upgrade/Icons`，触发 Unreal 的 Source Content Auto Reimport，并因某个目标 PNG 已存在而中断。
+
+现已修正：
+
+```text
+Imported Texture (.uasset)
+    -> /Game/ProjectArcaneArena/UI/Upgrade/Icons
+
+Raw Source PNG
+    -> <Project>/SourceArt/UI/UpgradeIcons
+```
+
+原始 PNG 不再放在 `Content`，避免 Auto Reimport 弹窗和 Cook/Asset Registry 噪音。脚本也支持中断续跑：如果目标普通文件已存在且与源文件二进制完全一致，会记录 `[FILE ALREADY]` 并删除重复源；内容不同才视为冲突并停止。
+
+本次中断发生在辅助文件阶段，因此 Unreal 资产迁移已经完成，但 Text Rewrite / Static Validation 尚未执行。拉取修正版后重新执行 `all` 即可继续，不需要回滚已完成的资产迁移。
