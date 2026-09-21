@@ -9,7 +9,7 @@
 class AActor;
 class UGameplayEffect;
 
-// P2/G-A 单武器自动攻击调度器；仅服务器选择目标并向 Data Projectile Pool 发射，不负责命中与伤害。
+// P2/G-A 单武器自动攻击调度器；服务器选择目标并向 Data Projectile Pool 发射，P3 伤害快照由 SimulationSubsystem 命中后结算。
 UCLASS(ClassGroup = (Arena), meta = (BlueprintSpawnableComponent))
 class PROJECTARCANEARENA_API UArenaAutoAttackComponent : public UActorComponent
 {
@@ -51,7 +51,7 @@ private:
 	// 检查阶段与 GAS 状态是否允许生成下一轮权威 Projectile。
 	bool CanAutoFire() const;
 
-	// P2 暂时低频遍历最近存活敌人；P3 将替换为共享 Target Grid / Spatial Hash 查询。
+	// 自动选敌仍以低频遍历实现；P3 Spatial Hash 专注高频 Projectile 碰撞，后续共享 TargetingSubsystem 再统一选敌查询。
 	AActor* FindNearestLivingEnemy() const;
 
 	// 将一发原型普通弹写入 Data Projectile Pool，并携带 Owner 局部递增的 AttackInstanceID。
