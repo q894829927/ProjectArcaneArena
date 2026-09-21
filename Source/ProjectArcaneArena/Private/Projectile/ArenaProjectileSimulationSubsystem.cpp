@@ -692,8 +692,8 @@ bool UArenaProjectileSimulationSubsystem::ResolveProjectileSweptHits(int32 Slot)
 			return Left.Alpha < Right.Alpha;
 		}
 
-		const int32 LeftID = IsValid(Left.Target) ? Left.Target->GetUniqueID() : MAX_int32;
-		const int32 RightID = IsValid(Right.Target) ? Right.Target->GetUniqueID() : MAX_int32;
+		const int32 LeftID = IsValid(Left.Target) ? Left.Target->GetUniqueID() : TNumericLimits<int32>::Max();
+		const int32 RightID = IsValid(Right.Target) ? Right.Target->GetUniqueID() : TNumericLimits<int32>::Max();
 		return LeftID < RightID;
 	});
 
