@@ -639,3 +639,31 @@ Raw Source PNG
 原始 PNG 不再放在 `Content`，避免 Auto Reimport 弹窗和 Cook/Asset Registry 噪音。脚本也支持中断续跑：如果目标普通文件已存在且与源文件二进制完全一致，会记录 `[FILE ALREADY]` 并删除重复源；内容不同才视为冲突并停止。
 
 本次中断发生在辅助文件阶段，因此 Unreal 资产迁移已经完成，但 Text Rewrite / Static Validation 尚未执行。拉取修正版后重新执行 `all` 即可继续，不需要回滚已完成的资产迁移。
+
+
+### 10.8 Final Rewrite Validation Cleanup（2026-09-22）
+
+第三次 `all` 已达到：
+
+```text
+move=0
+conflict=0
+review=0
+already_target=264
+Asset/file apply complete
+Text rewrite complete: changed_files=53
+Validation: no non-redirector Unreal assets remain under old roots
+```
+
+唯一残留是 `Config/DefaultEditorPerProjectUserSettings.ini` 的 Content Browser 选中路径：
+
+```text
+ContentBrowserTab1.SelectedPaths=/Game/TopDownBP
+```
+
+该字符串不是正式资产引用，而是 Editor UI 偏好；旧验证器因为用简单子串匹配，把 `/Game/TopDownBP` 误判成 `/Game/TopDown` 残留。现已：
+
+1. 将默认 Content Browser 路径改为 `/Game/ProjectArcaneArena`。
+2. 将旧路径验证改为带路径边界判断，避免 `/Game/TopDownBP` 这类前缀误报。
+
+完成一次 `RUN_MODE="rewrite"` 或直接同步上述配置后，再运行 `RUN_MODE="validate"`；通过后进入重启 Editor、窄目标编译、PIE 和 Redirector 清理阶段。
