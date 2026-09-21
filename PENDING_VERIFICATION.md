@@ -1306,12 +1306,12 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 ### 测试方法
 
-1. PIE 进入 Combat，确认启动日志从 `Weapon=LegacyInlineConfig RuntimeID=0` 变为 `Weapon=ArcaneBolt RuntimeID=1`（具体 RuntimeID 只要求为正数）。
-2. 开启成功发射日志，确认同一武器实例的 `WeaponRuntimeID` 稳定且 `AttackID=1,2,3...` 独立递增；命中仍进入 P3 Data Projectile + GAS Damage。
+1. [已完成] PIE 已确认运行时从旧 `WeaponRuntimeID=0` 迁移到正数 Runtime；本次日志中 Slot 0 使用 `WeaponRuntimeID=1`。
+2. [已完成] 成功发射日志确认同一武器实例的 `WeaponRuntimeID=1` 稳定，AttackID 至少从 51 连续递增到 62；命中仍进入 P3 Data Projectile + GAS Damage，敌人死亡和 Wave 清理正常。
 3. 只修改 DataAsset 的 `FireInterval` 或 `ProjectileSpeed` 后重新 PIE，确认实际射速/飞行速度随资产变化，而不是继续读取旧 AutoAttack Inline Config。
 4. 在服务器调用/Blueprint 测试 `EquipWeapon(0, NewDefinition)`，确认替换后获得新的 RuntimeID，AttackID 从 1 重新开始；旧已发射 Projectile 仍保留旧 RuntimeID，不串到新实例。
 5. 验证 Upgrade/死亡停火与 P3 命中、Generation 复用没有回归。
-6. Slot 1 当前只验证可以保存第二个不同 Runtime；本阶段不要求它自动发射，独立多槽 Scheduler 留到 P4-C/G-B 下一步。
+6. [源码已接入，待验证] AutoAttack 现在使用单 Timer 调度所有有效 WeaponRuntime，每个 Runtime 独立维护 `NextFireTime`。在 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Additional Weapon Definitions[0]` 配置第二把 WeaponDataAsset 后，Slot 1 应获得新的 RuntimeID 并与 Slot 0 同时独立开火。
 
 ### 通过标准
 
@@ -1320,3 +1320,14 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - AttackInstanceID 按 WeaponRuntime 独立递增，替换后不继承旧实例计数。
 - 当前单武器玩法、P3 Spatial Hash/Swept Collision/HitCommand/GAS 伤害无回归。
 - Slot 1 尚未自动攻击、Spread/Pierce 尚未产生玩法行为是当前预期。
+
+
+### 双槽独立调度追加验收
+
+1. 再创建一份 `UArenaWeaponDataAsset`，例如 `DA_Weapon_ArcaneBolt_Fast`，把 `WeaponID` 改为 `ArcaneBoltFast`，建议设置明显不同的 `FireInterval`（例如 0.25）和 `BaseDamage`，其余先保持与第一把接近。
+2. 在 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Additional Weapon Definitions` 增加一个元素并指向第二把资产；数组第 0 项对应 Slot 1。
+3. 编译后 PIE，确认启动日志同时出现 Slot 0 / Slot 1 两个正数且不同的 RuntimeID。
+4. 开启 `Log Successful Shots`，确认发射日志交错出现；Slot 0 与 Slot 1 的 RuntimeID 各自固定，两边各自拥有独立 `AttackID=1,2,3...` 序列。
+5. 两把武器使用明显不同的 `FireInterval`，确认快武器实际日志频率更高，慢武器不会被快武器的调度覆盖或重置。
+6. 两把武器可锁定同一最近敌人，也允许因 `TargetRange` 不同而出现某一把停火、另一把继续攻击；P3 命中/GAS/死亡流程保持正常。
+7. 当前仍保持 `ProjectilesPerAttack=1 / SpreadAngleDegrees=0 / PierceCount=0`；这次不验证真正散射与穿透。
