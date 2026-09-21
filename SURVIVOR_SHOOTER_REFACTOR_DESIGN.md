@@ -522,7 +522,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 | 阶段 | 状态 | 交付 | 验收门槛 |
 |---|---|---|---|
 | G-A：单武器自动攻击 | Implemented | `UArenaAutoAttackComponent` 服务器 Timer 选敌与调度，沿用现有波次并直接接入 Data Pool | 已验证移动射击、范围门控、死亡停火/目标切换、Upgrade/Combat 恢复及两人 Listen Server；Stun 与 Avatar 更换待补 |
-| G-B：独立装备槽 | Planned | 先两槽、容量可扩展至六槽 | 同类武器的时间、来源、参数与状态独立 |
+| G-B：独立装备槽 | Partial | PlayerState 已新增两槽（上限六槽） WeaponLoadout Model、稳定 RuntimeID 与 OwnerOnly Runtime 快照；Slot 0 已接入 AutoAttack | 待验证换装隔离并实现 Slot 1 独立 Scheduler |
 | G-C：三种攻击模式 | Planned | 单发、散射、穿透；稳定 AttackInstanceID | 穿透不重复命中，散射一轮只触发一次 WeaponFire |
 | G-D：限时生存 | Planned | 三波限时刷新、统一阶段收尾 | 时间结束无残留伤害、无假击杀和迟到回调覆盖阶段 |
 | G-E：武器构筑 | Planned | 适配现有三选一，明确作用域与触发频率 | 属性和实例修正不重复计算 |
@@ -536,7 +536,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 | P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、SoA、Free List、Handle、Generation、直线移动 | 普通 Projectile 不依赖每发 Actor/MovementComponent；复用无串状态 |
 | P2：Auto Weapon 接入 | Implemented | 与 G-A 共用同一实现节点；`UArenaAutoAttackComponent` 直接向 Data Pool 发射并携带 AttackInstanceID | 已验证移动射击、范围/阶段/死亡门控、死亡目标切换与两人 Listen Server 独立发射；Stun、Avatar 更换和完整回归待补 |
 | P3：Spatial Hash Collision | Implemented | Enemy 注册、Spatial Hash Cell 查询、Previous→Current Swept Collision、HitCommand Buffer 与现有 GAS Damage Pipeline | 已确认命中/GAS、击杀/目标切换、`ProjectileSpeed=10000` 高速 Swept Collision 与同一直线非穿透最早目标；多人 Source 归属专项验证后置 |
-| P4：Spread / Pierce / 多武器 | Planned | 散射、穿透、多个独立 WeaponRuntime | 同类武器互不覆盖；AttackInstanceID 稳定；穿透去重正确 |
+| P4：Spread / Pierce / 多武器 | Partial | WeaponDataAsset、WeaponLoadoutComponent、WeaponRuntimeID、按 Runtime 独立 AttackInstanceID 已接入；Slot 0 读取资产发射 | 待 UBT/PIE、Slot 1 独立调度、Spread 与真正 Pierce 去重 |
 | P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
 | P7：并行与综合验收 | Planned | 仅在 Insights 证明需要时 Chunk 并行；真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 线程安全；帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
@@ -572,7 +572,7 @@ P0
 - P7 的 Chunk 并行仅在 Unreal Insights 证明单线程 Projectile Simulation 成为主要瓶颈时启用；综合验收无论是否并行都必须完成。
 - 旧主动技能只做回归，不因新弹幕架构被强制重写。
 
-当前实现进度：P0/P1 为 `Partial`，已有源码、编译、PIE 与首轮 Unreal Insights 证据；P2 / G-A 为 `Implemented`；P3 已完成 Spatial Hash、Swept Collision、HitCommand 与 GAS 结算，并通过单人 PIE、高速不漏判和非穿透最早目标验收，状态为 `Implemented`；多人 P3 Source 归属专项验证后置。P4～P7 与 G-B～G-F 仍为 `Planned`。
+当前实现进度：P0/P1 为 `Partial`，已有源码、编译、PIE 与首轮 Unreal Insights 证据；P2 / G-A 为 `Implemented`；P3 已完成 Spatial Hash、Swept Collision、HitCommand 与 GAS 结算，并通过单人 PIE、高速不漏判和非穿透最早目标验收，状态为 `Implemented`；多人 P3 Source 归属专项验证后置。P4 / G-B 已进入 `Partial`；P5～P7 与 G-C～G-F 仍为 `Planned`。
 
 ## 13. 验证方案
 
