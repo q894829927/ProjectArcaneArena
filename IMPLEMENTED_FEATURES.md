@@ -523,14 +523,14 @@ Status meanings:
 * 命中日志增加 `Pellet=x/y / SameTargetHit / PelletMultiplier`，用于直接验收 1.0、0.75、0.5625… 等衰减序列。
 * 状态：`Implemented`。本地编译/PIE 验收已通过，霰弹式多 Pellet、同 AttackInstanceID、扇形散射与同目标 Pellet 衰减均按预期工作；现有 GAS 命中链路无回归。
 
-### Projectile P4-D Straight Pierce — Partial
+### Projectile P4-D Straight Pierce — Implemented
 
 * `UArenaAutoAttackComponent` 已把 WeaponDataAsset 的 `PierceCount` 写入每颗 Data Projectile；语义固定为“首个目标之后还能继续穿过的额外目标数”，因此总命中上限为 `PierceCount + 1`。
 * `UArenaProjectileSimulationSubsystem` 将单目标 `FindFirstProjectileHit` 升级为 `ResolveProjectileSweptHits`：同一帧先对 Previous→Current 直线 Sweep 的全部候选计算入口 Alpha，再按沿线顺序排序并连续生成 HitCommand。高速 Projectile 一帧跨过多个敌人时可以在同一 Tick 依次结算，不要求等下一帧。
 * 窄相入口时间由“二维扩张圆 + Z 高度区间”求交得到，替代旧的最近中心点 Alpha，仅用于当前 Character Capsule 近似；它不是范围伤害，也不会自动攻击弹道之外的敌人。
 * 每个发生过命中的 Active Projectile Slot 维护 `ProjectileHitTargets`，记录已经命中过的目标 ObjectKey。Projectile 继续飞行时会跳过历史目标，防止跨帧仍与同一 Capsule 重叠而重复伤害；Slot 回收/复用时立即清理历史。
 * HitCommand/日志新增 `ProjectileHitOrdinal` 与 `PierceRemainingAfterHit`，用于验证一颗 Projectile 的第 1/2/3 次沿线命中和穿透预算。
-* 状态：已完成单人 PIE 的直线穿透核心验收。开启 `arena.Projectile.LogHits 1` 后，`PierceCount=2` 的单 Pellet 日志明确出现 `ProjectileHit=1 PierceRemaining=1`、`ProjectileHit=2 PierceRemaining=0`、`ProjectileHit=3 PierceRemaining=0`；例如 AttackID 10 依次命中 Enemy 1 / Enemy 0 / Enemy 2，AttackID 12 依次命中 Enemy 2 / Enemy 1 / Enemy 0，且同一 AttackID 内目标不重复。说明 `N+1` 命中上限、沿线连续命中和基础目标去重均已生效。当前仍缺日志可直接证明的 `ProjectileSpeed=10000` 高速同帧专项与 Spread+Pierce 组合验收，因此 P4-D 仍保持 `Partial`。
+* 状态：`Implemented`。单人 PIE 已通过单 Pellet 直线穿透与 Spread+Pierce 组合验收。`PierceCount=2` 的单 Pellet 日志确认 `ProjectileHit=1/2/3` 与 `PierceRemaining=1/0/0`，同一 Projectile 不重复命中同一目标；组合测试中 `ProjectilesPerAttack=3`、角度 `-10/0/+10`、`PierceCount=1` 的三颗 Pellet 共享同一 AttackInstanceID，但各自独立穿透到第二个目标。对同一目标的 PelletFalloff 仍按同一次 Attack 独立累计，例如 5.00 → 3.75 → 2.81；穿透到新目标后该目标从 1.000 重新开始。`ProjectileSpeed=10000` 高速同帧多目标专项与多人回归保留到后续 `Verified` 验收，不阻塞 P4 核心实现完成。
 
 ## Verification Notes
 
