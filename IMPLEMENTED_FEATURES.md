@@ -532,6 +532,15 @@ Status meanings:
 * HitCommand/日志新增 `ProjectileHitOrdinal` 与 `PierceRemainingAfterHit`，用于验证一颗 Projectile 的第 1/2/3 次沿线命中和穿透预算。
 * 状态：`Implemented`。单人 PIE 已通过单 Pellet 直线穿透与 Spread+Pierce 组合验收。`PierceCount=2` 的单 Pellet 日志确认 `ProjectileHit=1/2/3` 与 `PierceRemaining=1/0/0`，同一 Projectile 不重复命中同一目标；组合测试中 `ProjectilesPerAttack=3`、角度 `-10/0/+10`、`PierceCount=1` 的三颗 Pellet 共享同一 AttackInstanceID，但各自独立穿透到第二个目标。对同一目标的 PelletFalloff 仍按同一次 Attack 独立累计，例如 5.00 → 3.75 → 2.81；穿透到新目标后该目标从 1.000 重新开始。`ProjectileSpeed=10000` 高速同帧多目标专项与多人回归保留到后续 `Verified` 验收，不阻塞 P4 核心实现完成。
 
+### Projectile P5-A Shared Niagara / NDC Bridge — Partial
+
+* 新增 `UArenaProjectileVisualSubsystem`。它依赖 `UArenaProjectileSimulationSubsystem` 的同帧完成委托，不参与 Projectile 生命周期、碰撞或伤害，只批量消费纯表现数据；Dedicated Server 不绑定表现回调、不创建 Niagara Component。
+* SimulationSubsystem 新增 Active Projectile 视觉快照与本帧 Impact Event 输出。Snapshot 携带 `Position / Velocity / Radius / RemainingLife / Slot + Generation / VisualTypeID / WeaponRuntimeID / AttackInstanceID / Pellet`；Impact 只在 GAS Spec 成功应用后记录，避免已经被前序命中杀死的 Target 产生迟到假 Impact。
+* `UArenaWeaponDataAsset` 新增 `ProjectileVisualTypeID`，在 Spawn 时快照到 Data Projectile。VisualType 只用于共享 Niagara 分支，不影响权威伤害、碰撞和穿透。
+* 表现桥把一帧全部 Active Projectile 一次写入 `NDC_ArenaProjectiles`，把本帧命中一次写入 `NDC_ArenaProjectileImpacts`，并只创建一个 `NS_ArenaProjectiles_Shared` Niagara Component；Projectile 数量不再要求同数量 Niagara Component。
+* C++ 约定资产路径与 NDC 变量协议已记录在 `Docs/PROJECTILE_NIAGARA_NDC_SETUP.md`。当前源码已接入但尚未本地 UBT/PIE，也尚未创建/配置三个 Niagara 资产，因此 P5 保持 `Partial`。
+* P6 尚未提供远端客户端 Launch Reconstruction；P5-A 先验收 Standalone / Listen Server Host，本阶段不宣称 Remote Client 已能看到 Data Projectile。
+
 ## Verification Notes
 
 * `git diff --check` passed after the Phase 3/4 source implementation.
