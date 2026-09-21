@@ -81,15 +81,15 @@ TStatId UArenaProjectileSimulationSubsystem::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UArenaProjectileSimulationSubsystem, STATGROUP_Tickables);
 }
 
-// P1 只进行数据导向的位置积分和寿命淘汰；碰撞会在 P2 复用 PreviousPositions 接入。
+// P1 只进行数据导向的位置积分和寿命淘汰；空池直接返回，Trace 仅统计真正执行 Active Projectile 模拟的 World。
 void UArenaProjectileSimulationSubsystem::Tick(float DeltaTime)
 {
-	TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileSimulation);
-
 	if (DeltaTime <= 0.0f || ActiveSlots.IsEmpty())
 	{
 		return;
 	}
+
+	TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileSimulation);
 
 	for (int32 ActiveIndex = ActiveSlots.Num() - 1; ActiveIndex >= 0; --ActiveIndex)
 	{
