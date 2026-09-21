@@ -11,7 +11,7 @@ class UGameplayEffect;
 class UArenaWeaponDataAsset;
 class UArenaWeaponLoadoutComponent;
 
-// P2/G-A 单武器自动攻击调度器；服务器选择目标并向 Data Projectile Pool 发射，P3 伤害快照由 SimulationSubsystem 命中后结算。
+// P4 多武器自动攻击调度器；Authority 用单个 Timer 驱动多个独立 WeaponRuntime，并向 Data Projectile Pool 发射。
 UCLASS(ClassGroup = (Arena), meta = (BlueprintSpawnableComponent))
 class PROJECTARCANEARENA_API UArenaAutoAttackComponent : public UActorComponent
 {
@@ -53,24 +53,21 @@ private:
 	// 检查阶段与 GAS 状态是否允许生成下一轮权威 Projectile。
 	bool CanAutoFire() const;
 
-	// 自动选敌仍以低频遍历实现；P3 Spatial Hash 专注高频 Projectile 碰撞，后续共享 TargetingSubsystem 再统一选敌查询。
-	AActor* FindNearestLivingEnemy() const;
+	// 按当前武器 TargetRange 查找最近存活敌人；多 Runtime 可以拥有不同索敌半径。
+	AActor* FindNearestLivingEnemy(float InTargetRange) const;
 
-	// 将一发普通弹写入 Data Projectile Pool；优先读取 PlayerState WeaponRuntime，未配置时保留 P3 旧参数回退。
-	bool FireAtTarget(AActor* TargetActor);
+	// 将一轮单发普通弹写入 Data Projectile Pool；WeaponDefinition 为空时使用 P3 Inline Config 回退。
+	bool FireAtTarget(
+		AActor* TargetActor,
+		int32 SlotIndex,
+		int32 ResolvedWeaponRuntimeID,
+		const UArenaWeaponDataAsset* WeaponDefinition);
 
-	// 如果 PlayerState Loadout 还没有主武器，则从 Character Blueprint 的默认武器资产初始化一次。
-	void TrySeedDefaultWeaponRuntime();
-
-	// P4-A/B 先读取 Slot 0 的武器定义；后续多槽调度会把每个 Runtime 作为独立调度单元。
-	const UArenaWeaponDataAsset* GetPrimaryWeaponDefinition(int32& OutWeaponRuntimeID) const;
+	// PlayerState 可晚于 Character BeginPlay 关联；找到 Loadout 后只执行一次默认武器播种，之后卸装不会被自动补回。
+	void TrySeedDefaultWeaponRuntimes();
 
 	// 获取 PlayerState 上的武器装备 Model；Avatar 更换后仍可读取同一装备状态。
 	UArenaWeaponLoadoutComponent* GetWeaponLoadoutComponent() const;
-
-	// 返回当前主武器射击间隔/索敌范围，未配置 WeaponDataAsset 时回退到旧组件字段。
-	float GetCurrentFireInterval() const;
-	float GetCurrentTargetRange() const;
 
 	// 使用 TimerManager 安排下一次攻击或无目标重试，避免每帧 Tick。
 	void ScheduleNextEvaluation(float DelaySeconds);
@@ -87,6 +84,10 @@ private:
 	// P4 迁移入口：在 BP_ArenaPlayerCharacter 上指定首把 WeaponDataAsset，运行时会写入 PlayerState Loadout Slot 0。
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Weapon", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaWeaponDataAsset> DefaultWeaponDefinition;
+
+	// 额外默认武器按数组顺序写入 Slot 1..N；首个元素就是第二把武器。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Weapon", meta = (AllowPrivateAccess = "true"))
+	TArray<TObjectPtr<UArenaWeaponDataAsset>> DefaultAdditionalWeaponDefinitions;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true", ClampMin = "0.05"))
 	float FireInterval = 0.5f;
@@ -125,7 +126,7 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Damage", meta = (AllowPrivateAccess = "true", ClampMin = "0.0"))
 	float SkillMultiplier = 1.0f;
 
-	// P2 单武器原型固定为 0；P4 多武器阶段由装备实例分配独立 RuntimeID。
+	// 旧 Inline Config 的兼容 RuntimeID；正常 P4 WeaponRuntime 使用 PlayerState Loadout 分配的正数 ID。
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true"))
 	int32 WeaponRuntimeID = 0;
 
@@ -135,6 +136,11 @@ private:
 
 	FTimerHandle EvaluationTimerHandle;
 	TWeakObjectPtr<AActor> LastFiredTarget;
+
+	// 单个 Timer 调度多个武器；Key 为稳定 WeaponRuntimeID，Value 为 World TimeSeconds 下次可开火时间。
+	TMap<int32, double> NextFireTimeByRuntime;
+	bool bDefaultWeaponSeedAttempted = false;
+
 	int32 NextAttackInstanceID = 1;
 	int32 LastAttackInstanceID = 0;
 	int32 TotalShotsFired = 0;
