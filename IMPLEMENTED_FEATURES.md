@@ -508,11 +508,20 @@ Status meanings:
 
 ### Projectile P4-A/B — Implemented
 
-* 新增 `UArenaWeaponDataAsset`，把 `FireInterval / TargetRange / ProjectileSpeed / Lifetime / Radius / SpawnHeight / ForwardOffset / DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 从单个 AutoAttack 逻辑中抽成可在 Editor 配置的武器静态定义，并预留 `ProjectilesPerAttack / SpreadAngleDegrees / PierceCount` 给后续攻击模式。
+* 新增 `UArenaWeaponDataAsset`，把 `FireInterval / TargetRange / ProjectileSpeed / Lifetime / Radius / SpawnHeight / ForwardOffset / DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 从单个 AutoAttack 逻辑中抽成可在 Editor 配置的武器静态定义；`ProjectilesPerAttack / SpreadAngleDegrees` 已进入 P4-C 散射实现，`PierceCount` 继续留给后续穿透阶段。
 * 新增 PlayerState 持有的 `UArenaWeaponLoadoutComponent` 与 `FArenaWeaponRuntime`。首版默认两槽、最多六槽；每次装备分配新的正数 `WeaponRuntimeID`，每个 Runtime 在服务器保存独立递增的 `AttackInstanceID` 计数，替换/卸下武器不会继承旧实例轮次。
 * `AArenaPlayerState` 现在创建并暴露 `WeaponLoadoutComponent`；装备 Model 跟随 PlayerState 生命周期而不是 Character，后续换 Pawn 不需要丢失本局装备。
 * `UArenaAutoAttackComponent` 已扩展为单 Timer、多 `WeaponRuntime` 独立调度：每个有效槽位维护自己的 `NextFireTime`，分别读取 WeaponDataAsset 的射速、范围、Projectile 与 Damage 参数，并分别申请该 Runtime 的 `AttackInstanceID`。旧 P3 Inline Config 仅在 Loadout 没有任何有效 Runtime 时回退。
 * 验证进展：双槽 PIE 已通过。日志确认 Slot 0 `ArcaneBolt` 使用 `WeaponRuntimeID=1`、AttackID 26～29；Slot 1 `ArcaneBoltFast` 使用 `WeaponRuntimeID=2`、AttackID 50～57，两组序列独立且发射交错，伤害分别保持 5 与 2，没有参数/计数器串线。敌人死亡后两把武器均正常切换目标。G-B 多槽调度因此达到 `Implemented`；P4 整体仍为 `Partial`，因为 Spread/Pierce 行为尚未实现。默认武器配置随后收敛为单一 `DefaultWeaponDefinitions` 数组，数组索引直接对应 SlotIndex。
+
+### Projectile P4-C Spread / Shotgun — Partial
+
+* `UArenaAutoAttackComponent` 现在一次攻击只分配一个 `AttackInstanceID`，然后按 `ProjectilesPerAttack` 生成多颗 Data Projectile；所有 Pellet 共享 `WeaponRuntimeID + AttackInstanceID`，但各自拥有独立 Projectile Handle。
+* `SpreadAngleDegrees` 作为水平扇形总夹角，Pellet 在 `[-Spread/2,+Spread/2]` 内确定性均匀展开。单发保持 0 度；多发可形成霰弹枪式覆盖范围。
+* WeaponDataAsset 新增 `SameTargetPelletFalloff` 与 `MinPelletDamageMultiplier`。同一 Source + WeaponRuntimeID + AttackInstanceID 对同一 Target 的第 N 次有效 Pellet 命中使用 `max(MinMultiplier, pow(Falloff, N-1))`；倍率乘到 `SkillMultiplier`，因此会衰减 `BaseDamage + AttackPower` 的整段伤害，而不是只衰减固定 BaseDamage。
+* Projectile HitCommand 现在携带 PelletIndex/Count 与衰减快照；SimulationSubsystem 用短生命周期 `PelletHitStates` 跨帧保存同一轮对同一目标的已结算 Pellet 数，Key 包含 Source、Target、WeaponRuntimeID、AttackInstanceID，避免两把武器、两个玩家或相邻攻击互相串计数。
+* 命中日志增加 `Pellet=x/y / SameTargetHit / PelletMultiplier`，用于直接验收 1.0、0.75、0.5625… 等衰减序列。
+* 状态：源码已实现，尚未本地 UBT/PIE；真正 Pierce 仍未接入，P4 整体保持 `Partial`。
 
 ## Verification Notes
 
