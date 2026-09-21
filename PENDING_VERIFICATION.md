@@ -1207,8 +1207,8 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 ### 测试方法
 
-1. 关闭 Live Coding 或在 Editor 内使用项目既有 Compile 流程；若走命令行，仅使用 AGENTS.md 规定的 ProjectArcaneArenaEditor 窄目标。
-2. 确认以下新增类完成 UHT/UBT：`UArenaProjectileSimulationSubsystem`、`AArenaProjectileStressTestActor`、`AArenaProjectileLegacyBenchmarkActor`。
+1. 编译验证已完成：`ProjectArcaneArenaEditor Win64 Development` 实际重新编译项目模块并成功链接 `UnrealEditor-ProjectArcaneArena.dll`。
+2. 后续若修改 P0/P1 源码，继续只使用 AGENTS.md 规定的 ProjectArcaneArenaEditor 窄目标；不要触发全解决方案或引擎重建。
 3. 在空白或独立测试地图放置 `AArenaProjectileStressTestActor`，先选择 `DataPool`，保持 `RandomSeed=1337`、固定 Lifetime/Speed。
 4. 分别设置 `TargetActiveProjectiles=100/250/500/1000/2000/5000`，每档稳定运行至少 10 秒，并保存日志与 Unreal Insights Capture。
 5. 重复同样阶梯切换到 `LegacyActor`；先关闭 Collision/Replication，之后分别开启 Movement、Collision、Replication 做分项对照。
@@ -1218,7 +1218,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 ### 通过标准
 
-- 项目编译通过，无 UHT、反射、TickableWorldSubsystem 或日志分类错误。
+- [已完成] 项目编译通过，无 UHT、反射、TickableWorldSubsystem 或日志分类错误。
 - DataPool 在正常容量内 `TotalSpawned - TotalReleased` 与 ActiveCount 长时间保持一致，不出现负数、越界或无界增长。
 - 槽位释放后旧 Handle 的 Generation 失效，旧 Handle 不能读取或释放下一代 Projectile。
 - 5000 档在容量允许时不出现非预期 Overflow；主动降低容量时 Overflow 可见且已有 Projectile 不被抢占。
