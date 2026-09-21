@@ -1237,4 +1237,4 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 ### 通过标准
 
 - [已完成] PIE 启动并连续运行 DataPool 1000 档未再出现 TickableWorldSubsystem PURE_VIRTUAL 崩溃。
-- [部分完成] 压力日志已持续正常输出；`ArenaProjectileSimulation` CPU Scope 仍待 Unreal Insights Capture 确认。
+- [已完成] 修正 Trace early-return 后，5000 DataPool 的 5 秒稳定区间中 `ArenaProjectileSimulation` Count=539、Total=22.1 ms，约 0.041 ms/frame；Count 与选区帧数一致，不再混入空 World Tick。
