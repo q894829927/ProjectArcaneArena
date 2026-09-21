@@ -1,5 +1,12 @@
 #include "Projectile/ArenaProjectileSimulationSubsystem.h"
 
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystemComponent.h"
+#include "Character/ArenaEnemyCharacter.h"
+#include "Components/CapsuleComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "GAS/ArenaGameplayTags.h"
+#include "GameplayEffect.h"
 #include "Core/ArenaLogCategories.h"
 #include "HAL/IConsoleManager.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
@@ -23,6 +30,18 @@ namespace
 		TEXT("arena.Projectile.GrowChunkSize"),
 		1024,
 		TEXT("Number of slots added when the Arena Data Projectile pool grows."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarArenaProjectileSpatialCellSize(
+		TEXT("arena.Projectile.SpatialCellSize"),
+		300.0f,
+		TEXT("2D spatial hash cell size used by Arena Data Projectile collision."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarArenaProjectileLogHits(
+		TEXT("arena.Projectile.LogHits"),
+		0,
+		TEXT("Log authoritative Data Projectile hit commands when non-zero."),
 		ECVF_Default);
 }
 
@@ -61,10 +80,18 @@ void UArenaProjectileSimulationSubsystem::Deinitialize()
 	PierceRemaining.Empty();
 	AttackInstanceIDs.Empty();
 	WeaponRuntimeIDs.Empty();
+	SourceActors.Empty();
+	DamageEffectClasses.Empty();
+	DamageTypeTags.Empty();
+	BaseDamages.Empty();
+	SkillMultipliers.Empty();
 	Generations.Empty();
 	ActiveSlots.Empty();
 	ActiveListPositions.Empty();
 	FreeSlots.Empty();
+	PendingHitCommands.Empty();
+	CollisionCandidates.Empty();
+	SpatialGrid = FArenaProjectileSpatialGrid();
 
 	Super::Deinitialize();
 }
@@ -81,7 +108,7 @@ TStatId UArenaProjectileSimulationSubsystem::GetStatId() const
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UArenaProjectileSimulationSubsystem, STATGROUP_Tickables);
 }
 
-// P1 只进行数据导向的位置积分和寿命淘汰；空池直接返回，Trace 仅统计真正执行 Active Projectile 模拟的 World。
+// P3 集中推进 Data Projectile，并在 Authority World 通过 Spatial Hash + Swept Collision 生成命中命令。
 void UArenaProjectileSimulationSubsystem::Tick(float DeltaTime)
 {
 	if (DeltaTime <= 0.0f || ActiveSlots.IsEmpty())
@@ -91,6 +118,16 @@ void UArenaProjectileSimulationSubsystem::Tick(float DeltaTime)
 
 	TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileSimulation);
 
+	UWorld* World = GetWorld();
+	const bool bResolveAuthoritativeHits = World && World->GetNetMode() != NM_Client;
+	PendingHitCommands.Reset();
+
+	if (bResolveAuthoritativeHits)
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileSpatialGridBuild);
+		SpatialGrid.Rebuild(CVarArenaProjectileSpatialCellSize.GetValueOnGameThread());
+	}
+
 	for (int32 ActiveIndex = ActiveSlots.Num() - 1; ActiveIndex >= 0; --ActiveIndex)
 	{
 		const int32 Slot = ActiveSlots[ActiveIndex];
@@ -98,10 +135,30 @@ void UArenaProjectileSimulationSubsystem::Tick(float DeltaTime)
 		Positions[Slot] += Velocities[Slot] * DeltaTime;
 		RemainingLife[Slot] -= DeltaTime;
 
+		if (bResolveAuthoritativeHits
+			&& SourceActors[Slot].IsValid()
+			&& DamageEffectClasses[Slot])
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileSweptCollision);
+			FArenaProjectileHitCommand HitCommand;
+			if (FindFirstProjectileHit(Slot, HitCommand))
+			{
+				PendingHitCommands.Add(MoveTemp(HitCommand));
+				ReleaseSlotAtActiveIndex(ActiveIndex);
+				continue;
+			}
+		}
+
 		if (RemainingLife[Slot] <= 0.0f)
 		{
 			ReleaseSlotAtActiveIndex(ActiveIndex);
 		}
+	}
+
+	if (!PendingHitCommands.IsEmpty())
+	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileHitCommands);
+		ApplyPendingHitCommands();
 	}
 }
 
@@ -141,6 +198,11 @@ bool UArenaProjectileSimulationSubsystem::SpawnProjectile(
 	PierceRemaining[Slot] = FMath::Max(Params.PierceRemaining, 0);
 	AttackInstanceIDs[Slot] = Params.AttackInstanceID;
 	WeaponRuntimeIDs[Slot] = Params.WeaponRuntimeID;
+	SourceActors[Slot] = Params.SourceActor;
+	DamageEffectClasses[Slot] = Params.DamageEffectClass;
+	DamageTypeTags[Slot] = Params.DamageTypeTag;
+	BaseDamages[Slot] = FMath::Max(Params.BaseDamage, 0.0f);
+	SkillMultipliers[Slot] = FMath::Max(Params.SkillMultiplier, 0.0f);
 
 	ActiveListPositions[Slot] = ActiveSlots.Add(Slot);
 
@@ -215,6 +277,11 @@ void UArenaProjectileSimulationSubsystem::ResetAllProjectiles()
 		PierceRemaining[Slot] = 0;
 		AttackInstanceIDs[Slot] = 0;
 		WeaponRuntimeIDs[Slot] = INDEX_NONE;
+		SourceActors[Slot].Reset();
+		DamageEffectClasses[Slot] = nullptr;
+		DamageTypeTags[Slot] = FGameplayTag();
+		BaseDamages[Slot] = 0.0f;
+		SkillMultipliers[Slot] = 1.0f;
 	}
 
 	for (int32 Slot = Positions.Num() - 1; Slot >= 0; --Slot)
@@ -284,6 +351,11 @@ void UArenaProjectileSimulationSubsystem::GrowStorage(int32 NewCapacity)
 	PierceRemaining.SetNum(NewCapacity);
 	AttackInstanceIDs.SetNum(NewCapacity);
 	WeaponRuntimeIDs.SetNum(NewCapacity);
+	SourceActors.SetNum(NewCapacity);
+	DamageEffectClasses.SetNum(NewCapacity);
+	DamageTypeTags.SetNum(NewCapacity);
+	BaseDamages.SetNum(NewCapacity);
+	SkillMultipliers.SetNum(NewCapacity);
 	Generations.SetNum(NewCapacity);
 	ActiveListPositions.SetNum(NewCapacity);
 
@@ -300,6 +372,11 @@ void UArenaProjectileSimulationSubsystem::GrowStorage(int32 NewCapacity)
 		PierceRemaining[Slot] = 0;
 		AttackInstanceIDs[Slot] = 0;
 		WeaponRuntimeIDs[Slot] = INDEX_NONE;
+		SourceActors[Slot].Reset();
+		DamageEffectClasses[Slot] = nullptr;
+		DamageTypeTags[Slot] = FGameplayTag();
+		BaseDamages[Slot] = 0.0f;
+		SkillMultipliers[Slot] = 1.0f;
 		Generations[Slot] = 1;
 		ActiveListPositions[Slot] = INDEX_NONE;
 	}
@@ -335,6 +412,11 @@ void UArenaProjectileSimulationSubsystem::ReleaseSlotAtActiveIndex(int32 ActiveI
 	PierceRemaining[Slot] = 0;
 	AttackInstanceIDs[Slot] = 0;
 	WeaponRuntimeIDs[Slot] = INDEX_NONE;
+	SourceActors[Slot].Reset();
+	DamageEffectClasses[Slot] = nullptr;
+	DamageTypeTags[Slot] = FGameplayTag();
+	BaseDamages[Slot] = 0.0f;
+	SkillMultipliers[Slot] = 1.0f;
 
 	++Generations[Slot];
 	if (Generations[Slot] <= 0)
@@ -359,4 +441,209 @@ bool UArenaProjectileSimulationSubsystem::IsSlotGenerationValid(int32 Slot, int3
 
 	const int32 ActiveIndex = ActiveListPositions[Slot];
 	return ActiveSlots.IsValidIndex(ActiveIndex) && ActiveSlots[ActiveIndex] == Slot;
+}
+
+
+// Enemy 仅在服务器生命周期内注册一次，Projectile Tick 不再为每颗弹扫描 World Actor。
+void UArenaProjectileSimulationSubsystem::RegisterCollisionTarget(AArenaEnemyCharacter* Target)
+{
+	if (Target && Target->HasAuthority())
+	{
+		SpatialGrid.RegisterTarget(Target);
+	}
+}
+
+// Enemy EndPlay 主动注销，避免空间索引持有已经离场的弱引用直到下一帧。
+void UArenaProjectileSimulationSubsystem::UnregisterCollisionTarget(AArenaEnemyCharacter* Target)
+{
+	SpatialGrid.UnregisterTarget(Target);
+}
+
+// 宽相候选来自 Spatial Hash；窄相用 Previous→Current 的二维扫掠和 Capsule 高度检查，选择本帧最早命中。
+bool UArenaProjectileSimulationSubsystem::FindFirstProjectileHit(
+	int32 Slot,
+	FArenaProjectileHitCommand& OutCommand) const
+{
+	if (!Positions.IsValidIndex(Slot)
+		|| !PreviousPositions.IsValidIndex(Slot)
+		|| !Radii.IsValidIndex(Slot)
+		|| !SourceActors.IsValidIndex(Slot)
+		|| !DamageEffectClasses.IsValidIndex(Slot)
+		|| !SourceActors[Slot].IsValid()
+		|| !DamageEffectClasses[Slot])
+	{
+		return false;
+	}
+
+	const FVector Start = PreviousPositions[Slot];
+	const FVector End = Positions[Slot];
+	const float ProjectileRadius = FMath::Max(Radii[Slot], 0.0f);
+	SpatialGrid.QuerySegment(Start, End, ProjectileRadius, CollisionCandidates);
+	if (CollisionCandidates.IsEmpty())
+	{
+		return false;
+	}
+
+	const FVector Start2D(Start.X, Start.Y, 0.0f);
+	const FVector End2D(End.X, End.Y, 0.0f);
+	const FVector Segment2D = End2D - Start2D;
+	const float SegmentLengthSquared2D = Segment2D.SizeSquared();
+
+	float BestAlpha = TNumericLimits<float>::Max();
+	AArenaEnemyCharacter* BestTarget = nullptr;
+	FVector BestImpactPoint = FVector::ZeroVector;
+	FVector BestImpactNormal = FVector::ZeroVector;
+
+	for (AArenaEnemyCharacter* Target : CollisionCandidates)
+	{
+		if (!IsValid(Target))
+		{
+			continue;
+		}
+
+		const UAbilitySystemComponent* TargetASC = Target->GetAbilitySystemComponent();
+		if (!TargetASC || TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+		{
+			continue;
+		}
+
+		float CapsuleRadius = 50.0f;
+		float CapsuleHalfHeight = 90.0f;
+		if (const UCapsuleComponent* Capsule = Target->GetCapsuleComponent())
+		{
+			CapsuleRadius = FMath::Max(Capsule->GetScaledCapsuleRadius(), 1.0f);
+			CapsuleHalfHeight = FMath::Max(Capsule->GetScaledCapsuleHalfHeight(), CapsuleRadius);
+		}
+
+		const FVector TargetLocation = Target->GetActorLocation();
+		const FVector Target2D(TargetLocation.X, TargetLocation.Y, 0.0f);
+
+		float Alpha = 0.0f;
+		if (SegmentLengthSquared2D > KINDA_SMALL_NUMBER)
+		{
+			Alpha = FMath::Clamp(
+				FVector::DotProduct(Target2D - Start2D, Segment2D) / SegmentLengthSquared2D,
+				0.0f,
+				1.0f);
+		}
+
+		const FVector Closest2D = FMath::Lerp(Start2D, End2D, Alpha);
+		const float CombinedRadius = CapsuleRadius + ProjectileRadius;
+		if (FVector::DistSquared(Closest2D, Target2D) > FMath::Square(CombinedRadius))
+		{
+			continue;
+		}
+
+		const FVector Closest3D = FMath::Lerp(Start, End, Alpha);
+		if (FMath::Abs(Closest3D.Z - TargetLocation.Z) > CapsuleHalfHeight + ProjectileRadius)
+		{
+			continue;
+		}
+
+		if (Alpha >= BestAlpha)
+		{
+			continue;
+		}
+
+		BestAlpha = Alpha;
+		BestTarget = Target;
+		BestImpactPoint = Closest3D;
+		BestImpactNormal = BestImpactPoint - TargetLocation;
+		BestImpactNormal.Z = 0.0f;
+		BestImpactNormal = BestImpactNormal.GetSafeNormal();
+		if (BestImpactNormal.IsNearlyZero())
+		{
+			BestImpactNormal = -Velocities[Slot].GetSafeNormal();
+		}
+	}
+
+	if (!BestTarget)
+	{
+		return false;
+	}
+
+	UPrimitiveComponent* HitComponent = Cast<UPrimitiveComponent>(BestTarget->GetRootComponent());
+	FHitResult HitResult(BestTarget, HitComponent, BestImpactPoint, BestImpactNormal);
+	HitResult.TraceStart = Start;
+	HitResult.TraceEnd = End;
+	HitResult.Time = BestAlpha;
+	HitResult.Distance = FVector::Distance(Start, BestImpactPoint);
+	HitResult.bBlockingHit = true;
+
+	OutCommand.SourceActor = SourceActors[Slot];
+	OutCommand.TargetActor = BestTarget;
+	OutCommand.DamageEffectClass = DamageEffectClasses[Slot];
+	OutCommand.DamageTypeTag = DamageTypeTags[Slot];
+	OutCommand.BaseDamage = BaseDamages[Slot];
+	OutCommand.SkillMultiplier = SkillMultipliers[Slot];
+	OutCommand.AttackInstanceID = AttackInstanceIDs[Slot];
+	OutCommand.WeaponRuntimeID = WeaponRuntimeIDs[Slot];
+	OutCommand.HitResult = HitResult;
+	return true;
+}
+
+// HitCommand 在模拟循环结束后统一消费；伤害仍走 GE_Damage -> ExecCalc_Damage -> AttributeSet，不直接写属性。
+void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
+{
+	for (const FArenaProjectileHitCommand& Command : PendingHitCommands)
+	{
+		AActor* SourceActor = Command.SourceActor.Get();
+		AActor* TargetActor = Command.TargetActor.Get();
+		if (!IsValid(SourceActor) || !IsValid(TargetActor) || !Command.DamageEffectClass)
+		{
+			continue;
+		}
+
+		UAbilitySystemComponent* SourceASC =
+			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(SourceActor);
+		UAbilitySystemComponent* TargetASC =
+			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
+		if (!SourceASC
+			|| !TargetASC
+			|| !SourceASC->IsOwnerActorAuthoritative()
+			|| TargetASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Dead))
+		{
+			continue;
+		}
+
+		FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
+		EffectContext.AddSourceObject(SourceActor);
+		EffectContext.AddHitResult(Command.HitResult, true);
+
+		FGameplayEffectSpecHandle DamageSpecHandle =
+			SourceASC->MakeOutgoingSpec(Command.DamageEffectClass, 1.0f, EffectContext);
+		if (!DamageSpecHandle.IsValid())
+		{
+			continue;
+		}
+
+		FGameplayEffectSpec* DamageSpec = DamageSpecHandle.Data.Get();
+		DamageSpec->SetSetByCallerMagnitude(
+			ArenaGameplayTags::SetByCaller_Damage_Base,
+			FMath::Max(Command.BaseDamage, 0.0f));
+		DamageSpec->SetSetByCallerMagnitude(
+			ArenaGameplayTags::SetByCaller_Damage_SkillMultiplier,
+			FMath::Max(Command.SkillMultiplier, 0.0f));
+		if (Command.DamageTypeTag.IsValid())
+		{
+			DamageSpec->AddDynamicAssetTag(Command.DamageTypeTag);
+		}
+
+		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec);
+
+		if (CVarArenaProjectileLogHits.GetValueOnGameThread() != 0)
+		{
+			UE_LOG(
+				LogArenaProjectile,
+				Log,
+				TEXT("DataProjectile hit. Source=%s Target=%s AttackID=%d WeaponRuntimeID=%d BaseDamage=%.2f."),
+				*GetNameSafe(SourceActor),
+				*GetNameSafe(TargetActor),
+				Command.AttackInstanceID,
+				Command.WeaponRuntimeID,
+				Command.BaseDamage);
+		}
+	}
+
+	PendingHitCommands.Reset();
 }
