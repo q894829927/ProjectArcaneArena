@@ -31,6 +31,10 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Arena|Auto Attack")
 	AActor* GetLastFiredTarget() const { return LastFiredTarget.Get(); }
 
+	// 返回最近一次成功写入 Data Pool 的 AttackInstanceID，供 PIE 验证攻击轮次递增。
+	UFUNCTION(BlueprintPure, Category = "Arena|Auto Attack")
+	int32 GetLastAttackInstanceID() const { return LastAttackInstanceID; }
+
 protected:
 	// 仅在 Authority Avatar 上启动定时调度；客户端组件不创建玩法 Projectile。
 	virtual void BeginPlay() override;
@@ -91,5 +95,6 @@ private:
 	FTimerHandle EvaluationTimerHandle;
 	TWeakObjectPtr<AActor> LastFiredTarget;
 	int32 NextAttackInstanceID = 1;
+	int32 LastAttackInstanceID = 0;
 	int32 TotalShotsFired = 0;
 };
