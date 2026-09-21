@@ -128,6 +128,9 @@ private:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Inventory", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UArenaInventoryComponent> InventoryComponent;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Weapon", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UArenaWeaponLoadoutComponent> WeaponLoadoutComponent;
+
 	bool bGrantedStartupAbilities = false;
 	bool bAppliedDefaultAttributes = false;
 
