@@ -2,10 +2,11 @@
 
 #include "CoreMinimal.h"
 #include "Projectile/ArenaProjectileTypes.h"
+#include "Projectile/ArenaProjectileSpatialGrid.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "ArenaProjectileSimulationSubsystem.generated.h"
 
-// World 级高密度 Data Projectile 数据池与集中模拟器；P1 只负责槽位生命周期、直线运动和寿命。
+// World 级高密度 Data Projectile 数据池与集中模拟器；P3 已加入 Spatial Hash、Swept Collision 与 HitCommand GAS 结算。
 UCLASS()
 class PROJECTARCANEARENA_API UArenaProjectileSimulationSubsystem : public UTickableWorldSubsystem
 {
@@ -18,7 +19,7 @@ public:
 	// 世界释放前使全部 Handle 失效并清空数据池。
 	virtual void Deinitialize() override;
 
-	// 批量推进所有 Active Projectile 的位置与寿命；P3 再接入空间哈希和命中命令。
+	// 批量推进所有 Active Projectile 的位置与寿命，并在服务器通过 Spatial Hash 做 Swept Collision。
 	virtual void Tick(float DeltaTime) override;
 
 	// 为 TickableWorldSubsystem 提供独立性能统计 ID，避免运行时落入基类 PURE_VIRTUAL。
@@ -51,6 +52,12 @@ public:
 		return ActiveSlots.Num();
 	}
 
+	// 敌人 BeginPlay 在服务器注册为 Data Projectile 可命中目标，避免每颗 Projectile 遍历全世界 Actor。
+	void RegisterCollisionTarget(class AArenaEnemyCharacter* Target);
+
+	// 敌人 EndPlay 在服务器注销目标；SpatialGrid 也会清理失效 WeakObjectPtr。
+	void UnregisterCollisionTarget(class AArenaEnemyCharacter* Target);
+
 protected:
 	// 仅为 Game/PIE World 创建模拟器，编辑器预览世界不参与弹幕 Tick。
 	virtual bool DoesSupportWorldType(EWorldType::Type WorldType) const override;
@@ -68,6 +75,12 @@ private:
 	// 校验 Slot、Generation 和 ActiveListPosition，统一隔离迟到回调。
 	bool IsSlotGenerationValid(int32 Slot, int32 Generation) const;
 
+	// 对单颗 Projectile 的 PreviousPosition→Position 做 Swept Narrow Phase，并返回沿线最早命中的目标。
+	bool FindFirstProjectileHit(int32 Slot, FArenaProjectileHitCommand& OutCommand) const;
+
+	// 模拟阶段结束后统一在 GameThread 消费命中命令，所有属性修改继续通过 GE_Damage / ExecCalc。
+	void ApplyPendingHitCommands();
+
 	TArray<FVector> Positions;
 	TArray<FVector> PreviousPositions;
 	TArray<FVector> Velocities;
@@ -76,11 +89,20 @@ private:
 	TArray<int32> PierceRemaining;
 	TArray<int32> AttackInstanceIDs;
 	TArray<int32> WeaponRuntimeIDs;
+	TArray<TWeakObjectPtr<AActor>> SourceActors;
+	TArray<TSubclassOf<UGameplayEffect>> DamageEffectClasses;
+	TArray<FGameplayTag> DamageTypeTags;
+	TArray<float> BaseDamages;
+	TArray<float> SkillMultipliers;
 	TArray<int32> Generations;
 
 	TArray<int32> ActiveSlots;
 	TArray<int32> ActiveListPositions;
 	TArray<int32> FreeSlots;
+
+	FArenaProjectileSpatialGrid SpatialGrid;
+	TArray<FArenaProjectileHitCommand> PendingHitCommands;
+	mutable TArray<class AArenaEnemyCharacter*> CollisionCandidates;
 
 	int32 PeakActiveCount = 0;
 	int32 OverflowCount = 0;
