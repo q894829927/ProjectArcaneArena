@@ -138,7 +138,7 @@ bool UArenaProjectileSimulationSubsystem::SpawnProjectile(
 	ActiveListPositions[Slot] = ActiveSlots.Add(Slot);
 
 	OutHandle.Slot = Slot;
-	OutHandle.Generation = static_cast<int32>(Generations[Slot]);
+	OutHandle.Generation = Generations[Slot];
 
 	++TotalSpawned;
 	PeakActiveCount = FMath::Max(PeakActiveCount, ActiveSlots.Num());
@@ -180,12 +180,14 @@ bool UArenaProjectileSimulationSubsystem::GetProjectilePosition(
 // 压力测试切档或世界收尾时一次性回收全部槽位，并递增 Generation 使旧 Handle 失效。
 void UArenaProjectileSimulationSubsystem::ResetAllProjectiles()
 {
+	TotalReleased += ActiveSlots.Num();
+
 	for (const int32 Slot : ActiveSlots)
 	{
 		if (Generations.IsValidIndex(Slot))
 		{
 			++Generations[Slot];
-			if (Generations[Slot] == 0)
+			if (Generations[Slot] <= 0)
 			{
 				Generations[Slot] = 1;
 			}
@@ -328,7 +330,7 @@ void UArenaProjectileSimulationSubsystem::ReleaseSlotAtActiveIndex(int32 ActiveI
 	WeaponRuntimeIDs[Slot] = INDEX_NONE;
 
 	++Generations[Slot];
-	if (Generations[Slot] == 0)
+	if (Generations[Slot] <= 0)
 	{
 		Generations[Slot] = 1;
 	}
@@ -342,7 +344,7 @@ bool UArenaProjectileSimulationSubsystem::IsSlotGenerationValid(int32 Slot, int3
 {
 	if (!Generations.IsValidIndex(Slot)
 		|| Generation <= 0
-		|| Generations[Slot] != static_cast<uint32>(Generation)
+		|| Generations[Slot] != Generation
 		|| !ActiveListPositions.IsValidIndex(Slot))
 	{
 		return false;
