@@ -511,8 +511,8 @@ Status meanings:
 * 新增 `UArenaWeaponDataAsset`，把 `FireInterval / TargetRange / ProjectileSpeed / Lifetime / Radius / SpawnHeight / ForwardOffset / DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 从单个 AutoAttack 逻辑中抽成可在 Editor 配置的武器静态定义，并预留 `ProjectilesPerAttack / SpreadAngleDegrees / PierceCount` 给后续攻击模式。
 * 新增 PlayerState 持有的 `UArenaWeaponLoadoutComponent` 与 `FArenaWeaponRuntime`。首版默认两槽、最多六槽；每次装备分配新的正数 `WeaponRuntimeID`，每个 Runtime 在服务器保存独立递增的 `AttackInstanceID` 计数，替换/卸下武器不会继承旧实例轮次。
 * `AArenaPlayerState` 现在创建并暴露 `WeaponLoadoutComponent`；装备 Model 跟随 PlayerState 生命周期而不是 Character，后续换 Pawn 不需要丢失本局装备。
-* 当前 `UArenaAutoAttackComponent` 只把 Slot 0 接入原有单 Timer 调度：优先读取 WeaponDataAsset 参数与 RuntimeID；未配置新资产时继续使用 P3 的 Inline Config，保持旧关卡兼容。Character Blueprint 可通过 `DefaultWeaponDefinition` 幂等初始化 PlayerState Slot 0。
-* 状态：源码已接入，尚未本地 UBT/PIE。Slot 1 虽已有独立 Runtime Model，但还没有独立发射调度；Spread/Pierce 也仅有 DataAsset 字段，尚未实现行为，因此 P4 保持 `Partial`。
+* `UArenaAutoAttackComponent` 已扩展为单 Timer、多 `WeaponRuntime` 独立调度：每个有效槽位维护自己的 `NextFireTime`，分别读取 WeaponDataAsset 的射速、范围、Projectile 与 Damage 参数，并分别申请该 Runtime 的 `AttackInstanceID`。旧 P3 Inline Config 仅在 Loadout 没有任何有效 Runtime 时回退。
+* 验证进展：Slot 0 已通过 PIE，日志确认 `WeaponRuntimeID=1` 在 AttackID 51～62 间保持稳定，P3 命中/GAS 伤害/死亡/Wave 清理无回归。随后已接入 Slot 0～N 独立调度源码，并新增 `DefaultAdditionalWeaponDefinitions` 用于从 Character Blueprint 播种 Slot 1..N。多槽源码尚未 UBT/PIE；Spread/Pierce 仍只有 DataAsset 字段，尚未实现行为，因此 P4 保持 `Partial`。
 
 ## Verification Notes
 
