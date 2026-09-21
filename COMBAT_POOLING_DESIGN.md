@@ -543,8 +543,8 @@ ServerLaunchTime
 
 | 阶段 | 状态 | 工作内容 | 完成标准 |
 |---|---|---|---|
-| P0：独立压力基线 | Planned | 新增 ProjectileStressTest；保留 Legacy Actor 模式用于成本参考，同时建立空逻辑／Data 模式基线 | 100/250/500/1000/2000/5000 可重复运行，保存 Average/P95/P99 与线程证据 |
-| P1：Data Projectile Pool | Planned | SimulationSubsystem、预分配槽位、Free List、Handle、Generation、直线运动和寿命 | 普通 Projectile 不创建每发 Actor/Component；槽位复用无串状态 |
+| P0：独立压力基线 | Partial | 新增 ProjectileStressTest；保留 Legacy Actor 模式用于成本参考，同时建立空逻辑／Data 模式基线 | 100/250/500/1000/2000/5000 可重复运行，保存 Average/P95/P99 与线程证据 |
+| P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、Free List、Handle、Generation、直线运动和寿命 | 普通 Projectile 不创建每发 Actor/Component；槽位复用无串状态 |
 | P2：Auto Weapon 接入 | Planned | 一把基础自动武器直接向 Data Pool 发射，使用 AttackInstanceID | 移动中持续自动射击；现有 Fireball/Dash/Shield 行为不变 |
 | P3：Spatial Hash Collision | Planned | Target 注册、Cell 查询、Swept Segment、HitCommand Buffer | 不全遍历全部敌人；高速弹不穿透；GAS 结算正确 |
 | P4：Spread / Pierce / 多武器 | Planned | 散射、穿透、多个独立 WeaponRuntime | 同类武器互不覆盖；穿透去重正确 |
@@ -552,7 +552,7 @@ ServerLaunchTime
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 客户端重建 | 高密度普通弹不使用逐弹 ReplicateMovement |
 | P7：并行与综合验收 | Planned | 仅在采样需要时 Chunk 并行；真实敌群/GAS/VFX/网络长时间压力 | 帧时间、带宽、内存和数据池容量稳定，形成真实优化对照 |
 
-旧 Fireball／EnemyProjectile Actor Pool 不属于 P0～P7 前置阶段。若未来另做，单独记录为 Legacy Projectile Optimization。
+P0/P1 当前源码进度：StressTestActor、LegacyActor 参考、Data Projectile Pool、Free List、Generation、直线集中模拟与基础统计已写入；尚未完成编译、PIE 和 Unreal Insights 验收，因此两阶段保持 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于 P0～P7 前置阶段。若未来另做，单独记录为 Legacy Projectile Optimization。
 
 ## 12. 验证计划与证据
 
