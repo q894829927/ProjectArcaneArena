@@ -20,6 +20,7 @@
 from __future__ import annotations
 
 import datetime
+import filecmp
 import pathlib
 import shutil
 import traceback
@@ -765,9 +766,17 @@ def map_support_file(relative_path: str) -> str | None:
         return None
 
     if rel.startswith("UI/UpgradeIcons/"):
+        # 原始 PNG 属 Source Art，不应继续留在 Content 触发 Auto Reimport。
         return (
-            "ProjectArcaneArena/UI/Upgrade/Icons/"
+            "../SourceArt/UI/UpgradeIcons/"
             + rel[len("UI/UpgradeIcons/"):]
+        )
+
+    if rel.startswith("ProjectArcaneArena/UI/Upgrade/Icons/"):
+        # 修复早期迁移脚本已经把部分 PNG 搬进新 Content 目录的中间状态。
+        return (
+            "../SourceArt/UI/UpgradeIcons/"
+            + rel[len("ProjectArcaneArena/UI/Upgrade/Icons/"):]
         )
 
     if rel.startswith("Assets/Pickups/"):
@@ -879,8 +888,20 @@ def apply_support_file_moves(
         if target.exists():
             if source.resolve() == target.resolve():
                 continue
+
+            # 中断续跑时可能已经有同内容目标文件。相同则删除重复源并继续；
+            # 内容不同才是真冲突，避免无提示覆盖用户文件。
+            if filecmp.cmp(source, target, shallow=False):
+                _log(
+                    f"[FILE ALREADY] identical target exists; "
+                    f"remove duplicate source: {source} -> {target}"
+                )
+                source.unlink()
+                continue
+
             raise RuntimeError(
-                f"Support-file target already exists: {source} -> {target}"
+                f"Support-file target conflict with different content: "
+                f"{source} -> {target}"
             )
 
         target.parent.mkdir(parents=True, exist_ok=True)
