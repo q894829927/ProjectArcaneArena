@@ -523,7 +523,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 |---|---|---|---|
 | G-A：单武器自动攻击 | Implemented | `UArenaAutoAttackComponent` 服务器 Timer 选敌与调度，沿用现有波次并直接接入 Data Pool | 已验证移动射击、范围门控、死亡停火/目标切换、Upgrade/Combat 恢复及两人 Listen Server；Stun 与 Avatar 更换待补 |
 | G-B：独立装备槽 | Implemented | PlayerState 两槽（上限六槽） WeaponLoadout、稳定 RuntimeID、OwnerOnly Runtime 快照；单 Timer 多 Runtime 独立 NextFireTime 调度 | 双槽 PIE 已确认 RuntimeID、AttackID、射速与伤害参数互不覆盖；换装/卸装与多人专项回归后置 |
-| G-C：三种攻击模式 | Partial | 单发已存在；散射已实现同 AttackInstanceID 多 Pellet、确定性扇形和同目标 Pellet 伤害递减；穿透未实现 | 待 UBT/PIE 验证散射与衰减；之后实现 Pierce 同 Projectile 目标去重 |
+| G-C：三种攻击模式 | Partial | 单发与散射已实现；散射的同 AttackInstanceID 多 Pellet、确定性扇形和同目标 Pellet 伤害递减已通过 PIE；穿透未实现 | 下一步实现 Pierce、同 Projectile 目标去重与继续飞行 |
 | G-D：限时生存 | Planned | 三波限时刷新、统一阶段收尾 | 时间结束无残留伤害、无假击杀和迟到回调覆盖阶段 |
 | G-E：武器构筑 | Planned | 适配现有三选一，明确作用域与触发频率 | 属性和实例修正不重复计算 |
 | G-F：经济与商店 | Planned | 材料、经验及商店分步接入 | 权威交易完整，多人准备与异常退出正确 |
@@ -536,7 +536,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 | P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、SoA、Free List、Handle、Generation、直线移动 | 普通 Projectile 不依赖每发 Actor/MovementComponent；复用无串状态 |
 | P2：Auto Weapon 接入 | Implemented | 与 G-A 共用同一实现节点；`UArenaAutoAttackComponent` 直接向 Data Pool 发射并携带 AttackInstanceID | 已验证移动射击、范围/阶段/死亡门控、死亡目标切换与两人 Listen Server 独立发射；Stun、Avatar 更换和完整回归待补 |
 | P3：Spatial Hash Collision | Implemented | Enemy 注册、Spatial Hash Cell 查询、Previous→Current Swept Collision、HitCommand Buffer 与现有 GAS Damage Pipeline | 已确认命中/GAS、击杀/目标切换、`ProjectileSpeed=10000` 高速 Swept Collision 与同一直线非穿透最早目标；多人 Source 归属专项验证后置 |
-| P4：Spread / Pierce / 多武器 | Partial | 多武器基础已通过双槽 PIE；Spread 源码已实现同 AttackID 多 Pellet、扇形方向与同目标衰减 | 待 Spread UBT/PIE；Pierce 与穿透去重仍待实现 |
+| P4：Spread / Pierce / 多武器 | Partial | 多武器与 Spread/PelletFalloff 已通过 PIE | 仅剩 Pierce 与穿透目标去重/继续飞行未实现 |
 | P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
 | P7：并行与综合验收 | Planned | 仅在 Insights 证明需要时 Chunk 并行；真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 线程安全；帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
@@ -572,7 +572,7 @@ P0
 - P7 的 Chunk 并行仅在 Unreal Insights 证明单线程 Projectile Simulation 成为主要瓶颈时启用；综合验收无论是否并行都必须完成。
 - 旧主动技能只做回归，不因新弹幕架构被强制重写。
 
-当前实现进度：P0/P1 为 `Partial`；P2 / G-A 与 P3 为 `Implemented`；G-B 多槽 WeaponRuntime 为 `Implemented`。G-C / P4 已进入 Spread 源码实现，状态为 `Partial`；Pierce 尚未实现。P5～P7 与 G-D～G-F 仍为 `Planned`。
+当前实现进度：P0/P1 为 `Partial`；P2 / G-A、P3、G-B 与 P4-C Spread 为 `Implemented`。G-C / P4 整体仍为 `Partial`，当前仅剩 Pierce 行为未完成。P5～P7 与 G-D～G-F 仍为 `Planned`。
 
 ## 13. 验证方案
 
