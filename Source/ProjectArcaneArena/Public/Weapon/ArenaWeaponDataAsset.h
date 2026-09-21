@@ -48,11 +48,19 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Pattern", meta = (ClampMin = "1", ClampMax = "64"))
 	int32 ProjectilesPerAttack = 1;
 
-	// 总散射角；单发时保持 0。真正方向展开在 P4-C 实现。
+	// 水平扇形总夹角；多 Pellet 在 [-Spread/2,+Spread/2] 内确定性均匀展开，便于复现与测试。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Pattern", meta = (ClampMin = "0.0", ClampMax = "360.0"))
 	float SpreadAngleDegrees = 0.0f;
 
-	// 可额外穿过的目标数量；0 表示命中第一个目标后回收。真正 Pierce 去重在 P4-C 实现。
+	// 同一 AttackInstanceID 对同一目标的后续 Pellet 伤害倍率按 Pow(Falloff, HitIndex) 递减；1 表示不衰减。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Pattern", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float SameTargetPelletFalloff = 0.75f;
+
+	// 同一轮霰弹多次命中同一目标时的最低伤害倍率，防止后续 Pellet 无限衰减到接近零。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Pattern", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float MinPelletDamageMultiplier = 0.25f;
+
+	// 可额外穿过的目标数量；0 表示命中第一个目标后回收。真正 Pierce 去重在 P4-D 实现。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Pattern", meta = (ClampMin = "0", ClampMax = "64"))
 	int32 PierceCount = 0;
 
