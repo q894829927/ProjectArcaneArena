@@ -238,6 +238,19 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 	}
 
 	LastAttackInstanceID = AttackInstanceID;
+	if (bLogSuccessfulShots)
+	{
+		UE_LOG(
+			LogArenaProjectile,
+			Log,
+			TEXT("AutoAttack fired. Owner=%s Target=%s AttackID=%d WeaponRuntimeID=%d Handle=%d:%d."),
+			*GetNameSafe(OwnerActor),
+			*GetNameSafe(TargetActor),
+			AttackInstanceID,
+			WeaponRuntimeID,
+			Handle.Slot,
+			Handle.Generation);
+	}
 	return true;
 }
 
