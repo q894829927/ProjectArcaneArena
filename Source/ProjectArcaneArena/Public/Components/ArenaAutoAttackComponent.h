@@ -81,13 +81,9 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true"))
 	bool bAutoAttackEnabled = true;
 
-	// P4 迁移入口：在 BP_ArenaPlayerCharacter 上指定首把 WeaponDataAsset，运行时会写入 PlayerState Loadout Slot 0。
+	// 默认武器数组索引直接对应 Loadout SlotIndex：[0]→Slot 0、[1]→Slot 1；超过 MaxWeaponSlots 的元素忽略。
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Weapon", meta = (AllowPrivateAccess = "true"))
-	TObjectPtr<UArenaWeaponDataAsset> DefaultWeaponDefinition;
-
-	// 额外默认武器按数组顺序写入 Slot 1..N；首个元素就是第二把武器。
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Weapon", meta = (AllowPrivateAccess = "true"))
-	TArray<TObjectPtr<UArenaWeaponDataAsset>> DefaultAdditionalWeaponDefinitions;
+	TArray<TObjectPtr<UArenaWeaponDataAsset>> DefaultWeaponDefinitions;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true", ClampMin = "0.05"))
 	float FireInterval = 0.5f;
