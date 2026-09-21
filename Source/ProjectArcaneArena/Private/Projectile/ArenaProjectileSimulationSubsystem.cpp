@@ -808,21 +808,13 @@ bool UArenaProjectileSimulationSubsystem::ResolveProjectileSweptHits(int32 Slot)
 		HitCommand.PelletTrackingLifetime = FMath::Max(RemainingLife[Slot], 0.1f);
 		HitCommand.AttackInstanceID = AttackInstanceIDs[Slot];
 		HitCommand.WeaponRuntimeID = WeaponRuntimeIDs[Slot];
+		HitCommand.VisualTypeID = VisualTypeIDs[Slot];
 		HitCommand.PelletIndex = PelletIndices[Slot];
 		HitCommand.PelletCount = PelletCounts[Slot];
 		HitCommand.ProjectileHitOrdinal = ProjectileHitOrdinal;
 		HitCommand.PierceRemainingAfterHit = PierceRemaining[Slot];
 		HitCommand.HitResult = HitResult;
 		PendingHitCommands.Add(MoveTemp(HitCommand));
-
-		FArenaProjectileImpactVisualEvent& ImpactEvent = FrameImpactVisualEvents.AddDefaulted_GetRef();
-		ImpactEvent.Position = Candidate.ImpactPoint;
-		ImpactEvent.Normal = Candidate.ImpactNormal;
-		ImpactEvent.VisualTypeID = VisualTypeIDs[Slot];
-		ImpactEvent.WeaponRuntimeID = WeaponRuntimeIDs[Slot];
-		ImpactEvent.AttackInstanceID = AttackInstanceIDs[Slot];
-		ImpactEvent.PelletIndex = PelletIndices[Slot];
-		ImpactEvent.ProjectileHitOrdinal = ProjectileHitOrdinal;
 
 		HitTargets.Add(TargetKey);
 
@@ -932,6 +924,15 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 		}
 
 		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpec);
+
+		FArenaProjectileImpactVisualEvent& ImpactEvent = FrameImpactVisualEvents.AddDefaulted_GetRef();
+		ImpactEvent.Position = Command.HitResult.ImpactPoint;
+		ImpactEvent.Normal = Command.HitResult.ImpactNormal;
+		ImpactEvent.VisualTypeID = Command.VisualTypeID;
+		ImpactEvent.WeaponRuntimeID = Command.WeaponRuntimeID;
+		ImpactEvent.AttackInstanceID = Command.AttackInstanceID;
+		ImpactEvent.PelletIndex = Command.PelletIndex;
+		ImpactEvent.ProjectileHitOrdinal = Command.ProjectileHitOrdinal;
 
 		if (CVarArenaProjectileLogHits.GetValueOnGameThread() != 0)
 		{
