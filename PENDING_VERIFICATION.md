@@ -1311,7 +1311,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 3. 只修改 DataAsset 的 `FireInterval` 或 `ProjectileSpeed` 后重新 PIE，确认实际射速/飞行速度随资产变化，而不是继续读取旧 AutoAttack Inline Config。
 4. 在服务器调用/Blueprint 测试 `EquipWeapon(0, NewDefinition)`，确认替换后获得新的 RuntimeID，AttackID 从 1 重新开始；旧已发射 Projectile 仍保留旧 RuntimeID，不串到新实例。
 5. 验证 Upgrade/死亡停火与 P3 命中、Generation 复用没有回归。
-6. [源码已接入，待验证] AutoAttack 现在使用单 Timer 调度所有有效 WeaponRuntime，每个 Runtime 独立维护 `NextFireTime`。在 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Additional Weapon Definitions[0]` 配置第二把 WeaponDataAsset 后，Slot 1 应获得新的 RuntimeID 并与 Slot 0 同时独立开火。
+6. [已完成] AutoAttack 使用单 Timer 调度所有有效 WeaponRuntime，每个 Runtime 独立维护 `NextFireTime`；双槽 PIE 已确认 Slot 0/1 同时独立开火。
 
 ### 通过标准
 
@@ -1325,9 +1325,9 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 ### 双槽独立调度追加验收
 
 1. 再创建一份 `UArenaWeaponDataAsset`，例如 `DA_Weapon_ArcaneBolt_Fast`，把 `WeaponID` 改为 `ArcaneBoltFast`，建议设置明显不同的 `FireInterval`（例如 0.25）和 `BaseDamage`，其余先保持与第一把接近。
-2. 在 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Additional Weapon Definitions` 增加一个元素并指向第二把资产；数组第 0 项对应 Slot 1。
-3. 编译后 PIE，确认启动日志同时出现 Slot 0 / Slot 1 两个正数且不同的 RuntimeID。
-4. 开启 `Log Successful Shots`，确认发射日志交错出现；Slot 0 与 Slot 1 的 RuntimeID 各自固定，两边各自拥有独立 `AttackID=1,2,3...` 序列。
-5. 两把武器使用明显不同的 `FireInterval`，确认快武器实际日志频率更高，慢武器不会被快武器的调度覆盖或重置。
-6. 两把武器可锁定同一最近敌人，也允许因 `TargetRange` 不同而出现某一把停火、另一把继续攻击；P3 命中/GAS/死亡流程保持正常。
+2. 默认武器配置已统一为 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Weapon Definitions` 数组；`[0]` 对应 Slot 0，`[1]` 对应 Slot 1。
+3. [已完成] PIE 已出现两个不同正数 RuntimeID：Slot 0=`1`、Slot 1=`2`。
+4. [已完成] 发射日志交错出现；Slot 0 的 RuntimeID=1、AttackID 26～29，Slot 1 的 RuntimeID=2、AttackID 50～57，各自独立递增。
+5. [已完成] `ArcaneBoltFast` 的发射频率明显高于 `ArcaneBolt`，慢武器未被快武器的调度覆盖或重置。
+6. [基础通过] 两把武器可同时锁定同一最近敌人并保持各自伤害配置；敌人死亡后共同切换到下一存活目标，P3 命中/GAS/死亡流程正常。不同 TargetRange 的专项分离测试可后置。
 7. 当前仍保持 `ProjectilesPerAttack=1 / SpreadAngleDegrees=0 / PierceCount=0`；这次不验证真正散射与穿透。
