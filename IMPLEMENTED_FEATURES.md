@@ -504,7 +504,7 @@ Status meanings:
 * 命中后先生成 `FArenaProjectileHitCommand` 再释放 Data Projectile Slot；模拟循环结束后在 GameThread 统一消费命令，通过现有 `GE_Damage → ExecCalc_Damage → AttributeSet` 权威路径结算，不直接写 Health/Shield。
 * 新增 CVar `arena.Projectile.SpatialCellSize`（默认 300）与 `arena.Projectile.LogHits`；Unreal Insights 增加 `ArenaProjectileSpatialGridBuild`、`ArenaProjectileSweptCollision`、`ArenaProjectileHitCommands` Scope。
 * Auto Weapon 新增 `DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 配置并写入 SpawnParams；默认 DamageType 为 Physical。当前需要在 `BP_ArenaPlayerCharacter -> AutoAttackComponent` 上把 `DamageEffectClass` 配为现有 `/Game/GAS/GameplayEffect/GE_Damage`。
-* 状态：源码已实现，尚未完成 UBT/PIE 命中、GAS 伤害与高速度不穿透验证，因此保持 `Partial`。P4 的 Pierce/Spread/多武器尚未实现。
+* 状态：源码已实现并完成基础 PIE 命中/GAS 验证。日志确认 AttackID 6～13 均由 Data Projectile 命中后通过现有 Damage Pipeline 对目标造成 25 点实际伤害；`BaseDamage=10` 经过 ExecCalc 后得到最终伤害，说明未绕过 GAS。敌人死亡后自动切换目标，最后一名敌人死亡后 Wave 1 正常清空进入 Upgrade。高速 6000～10000 Swept Collision、单发沿线最早目标和两人 Listen Server Source/Target 归属仍待专项验证，因此保持 `Partial`。P4 的 Pierce/Spread/多武器尚未实现。
 
 ## Verification Notes
 
