@@ -60,7 +60,7 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Pattern", meta = (ClampMin = "0.0", ClampMax = "1.0"))
 	float MinPelletDamageMultiplier = 0.25f;
 
-	// 可额外穿过的目标数量；0 表示命中第一个目标后回收。真正 Pierce 去重在 P4-D 实现。
+	// 可额外穿过的目标数量；0 表示命中第一个目标后回收，N 表示总计最多命中 N+1 个沿直线目标。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Pattern", meta = (ClampMin = "0", ClampMax = "64"))
 	int32 PierceCount = 0;
 
