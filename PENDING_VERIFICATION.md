@@ -1222,7 +1222,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - [1000/5000 档已通过] DataPool 在正常容量内 Active 长时间稳定在目标附近；1000 档为 Active=1000/1001、Failed=0、Overflow=0；5000 档为 Active≈5000、Failed=0、Overflow=0，容量从 5000 自动扩到 6024，PeakActive 约 5021～5048。解除 60 FPS 限制后（`t.MaxFPS=240`），5000 档稳态窗口约 9.1~9.2ms/frame，PIE `stat unit` 约 Frame=9.43ms、Game=9.44ms、GPU=7.74ms。100/250/500/2000 档和完整 Insights 对照仍待验证。
 - 槽位释放后旧 Handle 的 Generation 失效，旧 Handle 不能读取或释放下一代 Projectile。
 - 5000 档在容量允许时不出现非预期 Overflow；主动降低容量时 Overflow 可见且已有 Projectile 不被抢占。
-- [部分完成] P0 已获得 5000 DataPool 与首个 LegacyActor M0（Movement/Collision/Replication 全关闭）对照：DataPool 稳态约 9.1~9.2 ms/frame；Legacy M0 稳态约 15.27~15.31 ms/frame，Active≈5030、Failed=0。Movement=true、Collision=true 与 Replication/listen-server 分项仍待验证。
+- [部分完成] P0 已获得 5000 DataPool 与首个 LegacyActor M0（Movement/Collision/Replication 全关闭）对照：DataPool 稳态约 9.1~9.2 ms/frame；Legacy M0 稳态约 15.27~15.31 ms/frame，Active≈5030、Failed=0。Movement=true 已验证：Legacy M1 稳态约 26.5~26.7 ms/frame（约 37~38 FPS），5 秒 Insights 中 `ProjectileMovement` 约 1.1 s CPU 累计；Collision=true 与 Replication/listen-server 分项仍待验证。
 - Fireball、EnemyProjectile、Dash、Shield 等既有技能行为不因 P0/P1 新系统发生变化。
 
 
