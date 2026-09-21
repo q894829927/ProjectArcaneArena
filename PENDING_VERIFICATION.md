@@ -1368,3 +1368,32 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 
 状态：P4-C 已完成本地编译/PIE 验收，保留多人、极端 Pellet 数与性能压力回归到后续综合验证；下一步进入 P4-D Pierce。
+
+
+## P4-D 直线 Pierce
+
+### 测试前配置
+
+1. 关闭 Live Coding，使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译。
+2. 建议先用单发武器测试，配置：`ProjectilesPerAttack=1`、`SpreadAngleDegrees=0`、`PierceCount=2`、较低 `FireInterval`，并开启 `Log Successful Shots` 与 `arena.Projectile.LogHits 1`。
+3. 将 3 名血量足够的敌人大致排在同一直线上：Player → Enemy A → Enemy B → Enemy C。不要先用霰弹，避免多个 Pellet 干扰日志阅读。
+
+### 测试方法
+
+1. `PierceCount=0` 回归：一颗 Projectile 只允许出现 `ProjectileHit=1 PierceRemaining=0`，命中第一个目标后立即回收，后方目标不能被同一 Handle 命中。
+2. `PierceCount=1`：同一颗 Projectile 最多命中两个不同目标。日志应按同一个 AttackID/Handle 对应的逻辑弹依次出现 `ProjectileHit=1`、`ProjectileHit=2`，之后回收。
+3. `PierceCount=2`：同一颗 Projectile 最多命中 A、B、C 三个不同目标；预期命中序号为 1/2/3，预算依次下降，第三次命中后回收。
+4. 把 `ProjectileSpeed` 提高到 10000，并保持三名敌人在同一帧可跨越的直线上；确认同一个 Projectile 能在同一 Tick 按 A→B→C 顺序产生多个 HitCommand，不会只打 A 后直接越过 B/C。
+5. 让 Projectile 命中 Enemy A 后继续飞行数帧，并让它仍与 A Capsule 有重叠；确认该 Projectile 不会再次对 A 结算，后续只允许命中新目标。
+6. 将 B 移出弹道，只保留 A 与 C 在直线上；确认不会因为“PierceCount=2”而自动搜索范围里的 B，Pierce 只沿实际 Sweep 路径命中。
+7. 与 P4-C 组合回归：设置 `ProjectilesPerAttack=3`、小角度 Spread、`PierceCount=1`，确认每颗 Pellet 都拥有自己的穿透历史，而同一次攻击仍共享 AttackInstanceID；PelletFalloff 仍按“同 Attack + 同 Target”工作。
+8. 敌人死亡、Wave 清理与 Upgrade 阶段回归，确认已排队 HitCommand 不造成重复死亡/Wave 清理，且 Projectile Slot/Generation 继续正常复用。
+
+### 通过标准
+
+- Pierce 只沿每颗 Projectile 自己的直线 Previous→Current Sweep 生效，不形成 AoE 或范围自动选敌。
+- `PierceCount=N` 时单颗 Projectile 最多命中 `N+1` 个不同目标。
+- 同一 Projectile 对同一目标最多结算一次，即使跨帧持续重叠也不重复命中。
+- 高速 Projectile 同一帧跨过多个目标时按沿线入口顺序生成多个 HitCommand。
+- Spread + Pierce 组合时，每颗 Pellet 独立维护 Pierce 历史；AttackInstanceID 与 PelletFalloff 语义保持不变。
+- 所有伤害仍通过 HitCommand → GE_Damage → ExecCalc → AttributeSet。
