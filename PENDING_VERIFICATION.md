@@ -1302,7 +1302,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 1. 关闭 Live Coding，使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译。
 2. Content Browser 新建 Data Asset，Class 选择 `ArenaWeaponDataAsset`，建议保存为 `/Game/Data/Weapon/DA_Weapon_ArcaneBolt`。
 3. 首轮把资产配置为当前已验证单武器参数：`WeaponID=ArcaneBolt`、`FireInterval=0.5`、`TargetRange=1400`、`ProjectileSpeed=1800`、`Lifetime=3`、`Radius=8`、`DamageEffectClass=GE_Damage`、`DamageTypeTag=Damage.Physical`、`BaseDamage` 使用当前测试值、`SkillMultiplier=1`、`ProjectilesPerAttack=1`、`SpreadAngleDegrees=0`、`PierceCount=0`。
-4. 打开 `BP_ArenaPlayerCharacter -> AutoAttackComponent`，把 `Default Weapon Definition` 指向 `DA_Weapon_ArcaneBolt`。旧 Inline Config 暂时保留，仅作为未配置资产时的回退。
+4. 打开 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Weapon Definitions`，把 `[0]` 指向 `DA_Weapon_ArcaneBolt`。旧 Inline Config 暂时保留，仅作为未配置资产时的回退。
 
 ### 测试方法
 
@@ -1319,7 +1319,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 装备 Model 位于 PlayerState，Slot 0 的 RuntimeID 为正且在实例存续期稳定；替换武器会生成新的 RuntimeID。
 - AttackInstanceID 按 WeaponRuntime 独立递增，替换后不继承旧实例计数。
 - 当前单武器玩法、P3 Spatial Hash/Swept Collision/HitCommand/GAS 伤害无回归。
-- 双槽独立自动攻击已通过；Spread 已进入 P4-C 源码实现待验证，Pierce 尚未产生玩法行为。
+- 双槽独立自动攻击与 P4-C Spread/PelletFalloff 均已通过；Pierce 尚未产生玩法行为。
 
 
 ### 双槽独立调度追加验收
@@ -1337,8 +1337,8 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 ### 测试前配置
 
-1. 关闭 Live Coding 后使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译。
-2. 选一把测试 WeaponDataAsset，建议复制为 `DA_Weapon_Shotgun`，配置：
+1. [已完成] 关闭 Live Coding 后使用 AGENTS.md 规定的 `ProjectArcaneArenaEditor Win64 Development` 窄目标编译。
+2. [已完成] 选一把测试 WeaponDataAsset，建议复制为 `DA_Weapon_Shotgun`，配置：
    - `WeaponID=Shotgun`
    - `ProjectilesPerAttack=5`
    - `SpreadAngleDegrees=30`
@@ -1346,22 +1346,25 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
    - `MinPelletDamageMultiplier=0.25`
    - `PierceCount=0`
    - `FireInterval=1.0` 便于观察单轮日志。
-3. 把 `DA_Weapon_Shotgun` 放入 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Weapon Definitions` 的任一槽，并开启 `Log Successful Shots` 与控制台 `arena.Projectile.LogHits 1`。
+3. [已完成] 把 `DA_Weapon_Shotgun` 放入 `BP_ArenaPlayerCharacter -> AutoAttackComponent -> Default Weapon Definitions` 的任一槽，并开启 `Log Successful Shots` 与控制台 `arena.Projectile.LogHits 1`。
 
-### 测试方法
+### 测试方法（已完成）
 
 1. 单人 PIE 找到一名较近敌人。每轮攻击应出现 5 条发射日志，五条拥有同一个 `AttackID` 与 `WeaponRuntimeID`，但 `Pellet=1/5...5/5`、Handle 各不相同。
 2. `SpreadAngleDegrees=30` 时预期角度为 `-15 / -7.5 / 0 / +7.5 / +15`；把 Spread 改为 0 时五颗应沿同一路径重合，方便强制测试同目标多 Pellet。
 3. Spread=0 且敌人足够存活时，命中日志的同目标序列应显示 `PelletMultiplier≈1.000 / 0.750 / 0.563 / 0.422 / 0.316`；若继续增加 Pellet，最低不低于 0.25。
-4. 保持同一轮部分 Pellet 打中 Enemy A、部分打中 Enemy B，确认两个目标各自从 1.0 开始计数；下一轮新的 AttackID 也必须重新从 1.0 开始。
-5. 保留另一把普通单发武器同时开火，确认它的 RuntimeID/AttackID 不参与 Shotgun 的衰减计数。
-6. 把 Shotgun BaseDamage/AttackPower 固定并关闭暴击干扰，核对实际 GAS 伤害随 `PelletMultiplier` 递减；衰减通过 SkillMultiplier 缩放整段伤害，而非绕过 ExecCalc 直接扣血。
-7. 敌人死亡、Wave 切换与 Upgrade 阶段回归，确认多 Pellet 不产生迟到伤害或重复 Wave 清理。
+4. [已完成] 保持同一轮部分 Pellet 打中 Enemy A、部分打中 Enemy B，确认两个目标各自从 1.0 开始计数；下一轮新的 AttackID 也必须重新从 1.0 开始。
+5. [已完成] 保留另一把普通单发武器同时开火，确认它的 RuntimeID/AttackID 不参与 Shotgun 的衰减计数。
+6. [已完成] 把 Shotgun BaseDamage/AttackPower 固定并关闭暴击干扰，核对实际 GAS 伤害随 `PelletMultiplier` 递减；衰减通过 SkillMultiplier 缩放整段伤害，而非绕过 ExecCalc 直接扣血。
+7. [已完成] 敌人死亡、Wave 切换与 Upgrade 阶段回归，确认多 Pellet 不产生迟到伤害或重复 Wave 清理。
 
-### 通过标准
+### 通过标准（已完成）
 
 - 一次武器攻击只产生一个 AttackInstanceID；N 个 Pellet 共用该 AttackID，但有 N 个独立 Data Projectile Handle。
 - 散射方向在配置扇形内确定性均匀展开；单发或 Spread=0 行为可预测。
 - 同一轮、同一目标的后续 Pellet 伤害按配置递减并受最低倍率保护；不同目标、不同 AttackID、不同 Runtime、不同玩家互不串计数。
 - 所有伤害仍经过 HitCommand -> GE_Damage -> ExecCalc -> AttributeSet。
 - `PierceCount=0` 时每颗 Pellet 仍只结算最早目标；真正穿透留到 P4-D。
+
+
+状态：P4-C 已完成本地编译/PIE 验收，保留多人、极端 Pellet 数与性能压力回归到后续综合验证；下一步进入 P4-D Pierce。
