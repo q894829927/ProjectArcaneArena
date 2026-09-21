@@ -18,7 +18,7 @@ public:
 	// 世界释放前使全部 Handle 失效并清空数据池。
 	virtual void Deinitialize() override;
 
-	// 批量推进所有 Active Projectile 的位置与寿命；P2 再接入空间哈希和命中命令。
+	// 批量推进所有 Active Projectile 的位置与寿命；P3 再接入空间哈希和命中命令。
 	virtual void Tick(float DeltaTime) override;
 
 	// 为 TickableWorldSubsystem 提供独立性能统计 ID，避免运行时落入基类 PURE_VIRTUAL。
