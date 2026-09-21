@@ -548,8 +548,8 @@ ServerLaunchTime
 | P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、Free List、Handle、Generation、直线运动和寿命 | 普通 Projectile 不创建每发 Actor/Component；槽位复用无串状态 |
 | P2：Auto Weapon 接入 | Implemented | `UArenaAutoAttackComponent` 已挂入 PlayerCharacter；Authority Timer 选最近存活敌人并直接向 Data Pool 发射，使用 AttackInstanceID | 已验证移动射击、超范围停火、死亡停火/目标切换、Upgrade/Combat 阶段门控、Handle/Generation 复用及两人 Listen Server 独立发射；Stun/Avatar 更换和完整回归待补 |
 | P3：Spatial Hash Collision | Implemented | Enemy 生命周期注册、Spatial Hash Cell 查询、Previous→Current Swept Collision 与 HitCommand Buffer；命令通过现有 GE_Damage/ExecCalc 结算 | 已确认基础命中/GAS、击杀/目标切换、`ProjectileSpeed=10000` 高速不漏判及同一直线非穿透最早目标；多人 Source 归属专项验证后置 |
-| P4：Spread / Pierce / 多武器 | Planned | 散射、穿透、多个独立 WeaponRuntime | 同类武器互不覆盖；穿透去重正确 |
-| P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量 Projectile 不创建同数量 Niagara Component |
+| P4：Spread / Pierce / 多武器 | Implemented | 多武器、Spread/PelletFalloff 与直线 Pierce 核心玩法均已通过 PIE | 高速同帧、多人与规模化性能回归后置到 Verified |
+| P5：批量表现 | Partial | `UArenaProjectileVisualSubsystem`、Active Snapshot NDC、Impact NDC、单 Shared Niagara Component 源码已接入；VisualTypeID 已从 WeaponDataAsset 快照到 Projectile | 待 UBT/PIE 与三个 Niagara 资产配置；大量 Projectile 不得创建同数量 Niagara Component |
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 客户端重建 | 高密度普通弹不使用逐弹 ReplicateMovement |
 | P7：并行与综合验收 | Planned | 仅在采样需要时 Chunk 并行；真实敌群/GAS/VFX/网络长时间压力 | 帧时间、带宽、内存和数据池容量稳定，形成真实优化对照 |
 
