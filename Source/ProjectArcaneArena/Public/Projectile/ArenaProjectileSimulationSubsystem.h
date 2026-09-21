@@ -173,6 +173,7 @@ private:
 
 	FArenaProjectileSpatialGrid SpatialGrid;
 	TArray<FArenaProjectileHitCommand> PendingHitCommands;
+	TArray<FArenaProjectileImpactVisualEvent> FrameImpactVisualEvents;
 	TArray<AArenaEnemyCharacter*> CollisionCandidates;
 	TArray<FArenaProjectileSweepCandidate> SweepHitCandidates;
 
