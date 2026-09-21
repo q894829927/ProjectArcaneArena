@@ -521,7 +521,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 
 | 阶段 | 状态 | 交付 | 验收门槛 |
 |---|---|---|---|
-| G-A：单武器自动攻击 | Planned | 一把武器、服务器选敌与调度，沿用现有波次 | 可移动射击；死亡、Stun、升级及 Avatar 更换正确停火 |
+| G-A：单武器自动攻击 | Partial | `UArenaAutoAttackComponent` 服务器 Timer 选敌与调度，沿用现有波次并直接接入 Data Pool | 源码已接入；待验证可移动射击、死亡/Stun/升级及 Avatar 更换停火 |
 | G-B：独立装备槽 | Planned | 先两槽、容量可扩展至六槽 | 同类武器的时间、来源、参数与状态独立 |
 | G-C：三种攻击模式 | Planned | 单发、散射、穿透；稳定 AttackInstanceID | 穿透不重复命中，散射一轮只触发一次 WeaponFire |
 | G-D：限时生存 | Planned | 三波限时刷新、统一阶段收尾 | 时间结束无残留伤害、无假击杀和迟到回调覆盖阶段 |
@@ -534,14 +534,14 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 |---|---|---|---|
 | P0：独立基线压测 | Partial | StressTestActor；Legacy Actor Reference 与 Data 空载基线；100～5000 阶梯 | 能拆分传统 Actor/Movement/Collision/VFX/Network 成本，并建立新系统起点 |
 | P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、SoA、Free List、Handle、Generation、直线移动 | 普通 Projectile 不依赖每发 Actor/MovementComponent；复用无串状态 |
-| P2：Auto Weapon 接入 | Planned | 与 G-A 共用同一实现节点；一把基础自动武器直接向 Data Pool 发射，携带 AttackInstanceID | 移动中持续自动射击；死亡/Stun/非 Combat 正确停火；现有主动技能不回归 |
+| P2：Auto Weapon 接入 | Partial | 与 G-A 共用同一实现节点；`UArenaAutoAttackComponent` 直接向 Data Pool 发射并携带 AttackInstanceID | 源码已接入；待编译/PIE 验证移动射击、状态/阶段停火和主动技能回归 |
 | P3：Spatial Hash Collision | Planned | Target Grid、Swept Segment、HitCommand Buffer | 不全遍历全部敌人；高速弹不穿透；GAS 结算正确 |
 | P4：Spread / Pierce / 多武器 | Planned | 散射、穿透、多个独立 WeaponRuntime | 同类武器互不覆盖；AttackInstanceID 稳定；穿透去重正确 |
 | P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
 | P7：并行与综合验收 | Planned | 仅在 Insights 证明需要时 Chunk 并行；真实自动武器、敌群、GAS、数字、VFX、网络和长时间运行 | 线程安全；帧时间、带宽、内存、槽位容量稳定；形成真实前后对照 |
 
-P0/P1 已进入源码实现：独立压力 Actor、Legacy Actor 参考和 Data Projectile Pool 已存在，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接。5000 Active 的 DataPool 已取得稳定 PIE/Insights 基线（`ArenaProjectileSimulation` 约 0.041 ms/frame），LegacyActor M0/M1 已完成首轮对照；完整阶梯、Collision/Replication、Generation 专项与 Listen Server 验收仍待补，因此 P0/P1 保持 `Partial`。P2 Auto Weapon 为下一实施阶段，当前仍为 `Planned`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
+P0/P1 已进入源码实现：独立压力 Actor、Legacy Actor 参考和 Data Projectile Pool 已存在，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接。5000 Active 的 DataPool 已取得稳定 PIE/Insights 基线（`ArenaProjectileSimulation` 约 0.041 ms/frame），LegacyActor M0/M1 已完成首轮对照；完整阶梯、Collision/Replication、Generation 专项与 Listen Server 验收仍待补，因此 P0/P1 保持 `Partial`。P2 / G-A 已进入源码实现：`UArenaAutoAttackComponent` 已挂入 `AArenaPlayerCharacter`，仅 Authority 使用 Timer 在 Combat 中寻找最近存活敌人并向 Data Pool 发射；当前不含碰撞/伤害/表现，且尚未完成 UBT/PIE，因此保持 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于性能轨前置阶段；未来若确有必要，单独作为 Legacy Projectile Optimization。
 
 ### 12.3 合并顺序
 
@@ -572,7 +572,7 @@ P0
 - P7 的 Chunk 并行仅在 Unreal Insights 证明单线程 Projectile Simulation 成为主要瓶颈时启用；综合验收无论是否并行都必须完成。
 - 旧主动技能只做回归，不因新弹幕架构被强制重写。
 
-当前实现进度：P0/P1 为 `Partial`，已有源码、编译、PIE 与首轮 Unreal Insights 证据；P2～P7 仍为 `Planned`。玩法轨 G-A 尚未开始，因此下一实现节点统一记为 `P2 / G-A 单武器自动攻击`。
+当前实现进度：P0/P1 为 `Partial`，已有源码、编译、PIE 与首轮 Unreal Insights 证据；P2 / G-A 已进入源码实现但未编译/PIE，状态为 `Partial`；P3～P7 与 G-B～G-F 仍为 `Planned`。
 
 ## 13. 验证方案
 
