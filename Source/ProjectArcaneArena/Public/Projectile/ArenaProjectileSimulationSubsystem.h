@@ -4,7 +4,48 @@
 #include "Projectile/ArenaProjectileTypes.h"
 #include "Projectile/ArenaProjectileSpatialGrid.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "UObject/ObjectKey.h"
 #include "ArenaProjectileSimulationSubsystem.generated.h"
+
+class AActor;
+
+// 同一轮霰弹对同一目标的命中计数 Key；FObjectKey 不持有 UObject 强引用，避免伤害衰减状态延长 Actor 生命周期。
+struct FArenaPelletHitKey
+{
+	FObjectKey SourceActor;
+	FObjectKey TargetActor;
+	int32 WeaponRuntimeID = INDEX_NONE;
+	int32 AttackInstanceID = 0;
+
+	FArenaPelletHitKey(AActor* InSourceActor, AActor* InTargetActor, int32 InWeaponRuntimeID, int32 InAttackInstanceID)
+		: SourceActor(InSourceActor)
+		, TargetActor(InTargetActor)
+		, WeaponRuntimeID(InWeaponRuntimeID)
+		, AttackInstanceID(InAttackInstanceID)
+	{
+	}
+
+	bool operator==(const FArenaPelletHitKey& Other) const
+	{
+		return SourceActor == Other.SourceActor
+			&& TargetActor == Other.TargetActor
+			&& WeaponRuntimeID == Other.WeaponRuntimeID
+			&& AttackInstanceID == Other.AttackInstanceID;
+	}
+
+	friend uint32 GetTypeHash(const FArenaPelletHitKey& Key)
+	{
+		uint32 Hash = HashCombine(GetTypeHash(Key.SourceActor), GetTypeHash(Key.TargetActor));
+		Hash = HashCombine(Hash, GetTypeHash(Key.WeaponRuntimeID));
+		return HashCombine(Hash, GetTypeHash(Key.AttackInstanceID));
+	}
+};
+
+struct FArenaPelletHitState
+{
+	int32 AppliedHitCount = 0;
+	double ExpireWorldTime = 0.0;
+};
 
 // World 级高密度 Data Projectile 数据池与集中模拟器；P3 已加入 Spatial Hash、Swept Collision 与 HitCommand GAS 结算。
 UCLASS()
@@ -89,6 +130,10 @@ private:
 	TArray<int32> PierceRemaining;
 	TArray<int32> AttackInstanceIDs;
 	TArray<int32> WeaponRuntimeIDs;
+	TArray<int32> PelletIndices;
+	TArray<int32> PelletCounts;
+	TArray<float> SameTargetPelletFalloffs;
+	TArray<float> MinPelletDamageMultipliers;
 	TArray<TWeakObjectPtr<AActor>> SourceActors;
 	TArray<TSubclassOf<UGameplayEffect>> DamageEffectClasses;
 	TArray<FGameplayTag> DamageTypeTags;
@@ -103,6 +148,10 @@ private:
 	FArenaProjectileSpatialGrid SpatialGrid;
 	TArray<FArenaProjectileHitCommand> PendingHitCommands;
 	mutable TArray<class AArenaEnemyCharacter*> CollisionCandidates;
+
+	// 仅为同一 AttackInstanceID 的霰弹跨帧命中保存短生命周期计数；到期后延迟清理，避免每颗 Pellet 永久留状态。
+	TMap<FArenaPelletHitKey, FArenaPelletHitState> PelletHitStates;
+	double LastPelletHitStateCleanupTime = 0.0;
 
 	int32 PeakActiveCount = 0;
 	int32 OverflowCount = 0;
