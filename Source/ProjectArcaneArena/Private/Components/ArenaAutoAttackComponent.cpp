@@ -33,6 +33,7 @@ void UArenaAutoAttackComponent::BeginPlay()
 	}
 
 	TotalShotsFired = 0;
+	LastAttackInstanceID = 0;
 	NextAttackInstanceID = 1;
 	ScheduleNextEvaluation(RetryInterval);
 
@@ -213,7 +214,8 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 	Params.Radius = FMath::Max(ProjectileRadius, 0.0f);
 	Params.Lifetime = FMath::Max(ProjectileLifetime, 0.05f);
 	Params.PierceRemaining = 0;
-	Params.AttackInstanceID = AllocateAttackInstanceID();
+	const int32 AttackInstanceID = AllocateAttackInstanceID();
+	Params.AttackInstanceID = AttackInstanceID;
 	Params.WeaponRuntimeID = WeaponRuntimeID;
 
 	FArenaProjectileHandle Handle;
@@ -228,6 +230,7 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 		return false;
 	}
 
+	LastAttackInstanceID = AttackInstanceID;
 	return true;
 }
 
