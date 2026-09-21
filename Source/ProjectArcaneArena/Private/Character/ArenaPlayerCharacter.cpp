@@ -1,6 +1,7 @@
 #include "Character/ArenaPlayerCharacter.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/ArenaAutoAttackComponent.h"
 #include "Core/ArenaBalanceTelemetryComponent.h"
 #include "Core/ArenaGameMode.h"
 #include "Core/ArenaGameState.h"
@@ -53,6 +54,9 @@ AArenaPlayerCharacter::AArenaPlayerCharacter()
 	TopDownCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("TopDownCamera"));
 	TopDownCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	TopDownCamera->bUsePawnControlRotation = false;
+
+	// P2/G-A 原型自动武器直接挂在 Avatar；仅 Authority 调度，后续装备 Model 再迁移到 PlayerState。
+	AutoAttackComponent = CreateDefaultSubobject<UArenaAutoAttackComponent>(TEXT("AutoAttackComponent"));
 
 	CreateDefaultInputMappings();
 }
