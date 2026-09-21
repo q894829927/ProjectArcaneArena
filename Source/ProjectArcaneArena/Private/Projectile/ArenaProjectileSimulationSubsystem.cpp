@@ -662,6 +662,7 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 
 		float PelletDamageMultiplier = 1.0f;
 		int32 SameTargetHitIndex = 0;
+		FArenaPelletHitState* PelletHitStateToCommit = nullptr;
 		if (Command.PelletCount > 1
 			&& Command.AttackInstanceID > 0
 			&& Command.WeaponRuntimeID > 0)
@@ -673,6 +674,7 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 				Command.AttackInstanceID);
 			FArenaPelletHitState& PelletHitState = PelletHitStates.FindOrAdd(PelletHitKey);
 			SameTargetHitIndex = FMath::Max(PelletHitState.AppliedHitCount, 0);
+			PelletHitStateToCommit = &PelletHitState;
 
 			const float Falloff = FMath::Clamp(Command.SameTargetPelletFalloff, 0.0f, 1.0f);
 			const float MinimumMultiplier = FMath::Clamp(Command.MinPelletDamageMultiplier, 0.0f, 1.0f);
@@ -680,10 +682,6 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 				MinimumMultiplier,
 				FMath::Pow(Falloff, static_cast<float>(SameTargetHitIndex)));
 
-			++PelletHitState.AppliedHitCount;
-			PelletHitState.ExpireWorldTime = FMath::Max(
-				PelletHitState.ExpireWorldTime,
-				NowSeconds + FMath::Max(static_cast<double>(Command.PelletTrackingLifetime), 0.1));
 		}
 
 		FGameplayEffectContextHandle EffectContext = SourceASC->MakeEffectContext();
@@ -695,6 +693,14 @@ void UArenaProjectileSimulationSubsystem::ApplyPendingHitCommands()
 		if (!DamageSpecHandle.IsValid())
 		{
 			continue;
+		}
+
+		if (PelletHitStateToCommit)
+		{
+			++PelletHitStateToCommit->AppliedHitCount;
+			PelletHitStateToCommit->ExpireWorldTime = FMath::Max(
+				PelletHitStateToCommit->ExpireWorldTime,
+				NowSeconds + FMath::Max(static_cast<double>(Command.PelletTrackingLifetime), 0.1));
 		}
 
 		FGameplayEffectSpec* DamageSpec = DamageSpecHandle.Data.Get();
