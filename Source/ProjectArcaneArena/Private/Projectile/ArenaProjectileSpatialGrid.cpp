@@ -37,12 +37,19 @@ void FArenaProjectileSpatialGrid::Rebuild(float InCellSize)
 	Cells.Reset();
 	MaxTargetRadius = 0.0f;
 
-	for (int32 Index = RegisteredTargets.Num() - 1; Index >= 0; --Index)
+	// 先完成失效引用压缩，再建立 Cell→RegisteredIndex 映射，避免 RemoveAtSwap 让本帧已写入的索引失效。
+	RegisteredTargets.RemoveAllSwap(
+		[](const TWeakObjectPtr<AArenaEnemyCharacter>& Entry)
+		{
+			return !Entry.IsValid();
+		},
+		EAllowShrinking::No);
+
+	for (int32 Index = 0; Index < RegisteredTargets.Num(); ++Index)
 	{
 		AArenaEnemyCharacter* Target = RegisteredTargets[Index].Get();
-		if (!IsValid(Target))
+		if (!Target)
 		{
-			RegisteredTargets.RemoveAtSwap(Index, 1, EAllowShrinking::No);
 			continue;
 		}
 
