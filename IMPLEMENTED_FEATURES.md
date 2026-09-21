@@ -506,6 +506,14 @@ Status meanings:
 * Auto Weapon 新增 `DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 配置并写入 SpawnParams；默认 DamageType 为 Physical。当前需要在 `BP_ArenaPlayerCharacter -> AutoAttackComponent` 上把 `DamageEffectClass` 配为现有 `/Game/GAS/GameplayEffect/GE_Damage`。
 * 状态：`Implemented`。源码已完成 Spatial Hash、Previous→Current Swept Collision、HitCommand 与现有 GAS Damage Pipeline 接线，并通过基础 PIE、高速 `ProjectileSpeed=10000`、死亡目标切换与同一直线非穿透/最早目标验证；非穿透 Projectile 只结算沿线最早目标并立即回收。两人 Listen Server 的 P3 Source/Target/击杀归属专项验证暂缓，保留为后续回归，因此尚未标记为 `Verified`。P4 的真正 Pierce/Spread/多武器仍未实现。
 
+### Projectile P4-A/B — Partial
+
+* 新增 `UArenaWeaponDataAsset`，把 `FireInterval / TargetRange / ProjectileSpeed / Lifetime / Radius / SpawnHeight / ForwardOffset / DamageEffectClass / DamageTypeTag / BaseDamage / SkillMultiplier` 从单个 AutoAttack 逻辑中抽成可在 Editor 配置的武器静态定义，并预留 `ProjectilesPerAttack / SpreadAngleDegrees / PierceCount` 给后续攻击模式。
+* 新增 PlayerState 持有的 `UArenaWeaponLoadoutComponent` 与 `FArenaWeaponRuntime`。首版默认两槽、最多六槽；每次装备分配新的正数 `WeaponRuntimeID`，每个 Runtime 在服务器保存独立递增的 `AttackInstanceID` 计数，替换/卸下武器不会继承旧实例轮次。
+* `AArenaPlayerState` 现在创建并暴露 `WeaponLoadoutComponent`；装备 Model 跟随 PlayerState 生命周期而不是 Character，后续换 Pawn 不需要丢失本局装备。
+* 当前 `UArenaAutoAttackComponent` 只把 Slot 0 接入原有单 Timer 调度：优先读取 WeaponDataAsset 参数与 RuntimeID；未配置新资产时继续使用 P3 的 Inline Config，保持旧关卡兼容。Character Blueprint 可通过 `DefaultWeaponDefinition` 幂等初始化 PlayerState Slot 0。
+* 状态：源码已接入，尚未本地 UBT/PIE。Slot 1 虽已有独立 Runtime Model，但还没有独立发射调度；Spread/Pierce 也仅有 DataAsset 字段，尚未实现行为，因此 P4 保持 `Partial`。
+
 ## Verification Notes
 
 * `git diff --check` passed after the Phase 3/4 source implementation.
