@@ -59,6 +59,9 @@ private:
 	// 将一发普通弹写入 Data Projectile Pool；优先读取 PlayerState WeaponRuntime，未配置时保留 P3 旧参数回退。
 	bool FireAtTarget(AActor* TargetActor);
 
+	// 如果 PlayerState Loadout 还没有主武器，则从 Character Blueprint 的默认武器资产初始化一次。
+	void TrySeedDefaultWeaponRuntime();
+
 	// P4-A/B 先读取 Slot 0 的武器定义；后续多槽调度会把每个 Runtime 作为独立调度单元。
 	const UArenaWeaponDataAsset* GetPrimaryWeaponDefinition(int32& OutWeaponRuntimeID) const;
 
@@ -80,6 +83,10 @@ private:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true"))
 	bool bAutoAttackEnabled = true;
+
+	// P4 迁移入口：在 BP_ArenaPlayerCharacter 上指定首把 WeaponDataAsset，运行时会写入 PlayerState Loadout Slot 0。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Weapon", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UArenaWeaponDataAsset> DefaultWeaponDefinition;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true", ClampMin = "0.05"))
 	float FireInterval = 0.5f;
