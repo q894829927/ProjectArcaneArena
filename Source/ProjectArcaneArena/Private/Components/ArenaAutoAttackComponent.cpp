@@ -19,6 +19,7 @@ UArenaAutoAttackComponent::UArenaAutoAttackComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 	SetIsReplicatedByDefault(false);
+	DamageTypeTag = ArenaGameplayTags::Damage_Physical;
 }
 
 // Authority Avatar 进入世界后开始评估；客户端仅保留组件供调试/资产结构一致性。
@@ -224,6 +225,11 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 	const int32 AttackInstanceID = AllocateAttackInstanceID();
 	Params.AttackInstanceID = AttackInstanceID;
 	Params.WeaponRuntimeID = WeaponRuntimeID;
+	Params.SourceActor = OwnerActor;
+	Params.DamageEffectClass = DamageEffectClass;
+	Params.DamageTypeTag = DamageTypeTag;
+	Params.BaseDamage = BaseDamage;
+	Params.SkillMultiplier = SkillMultiplier;
 
 	FArenaProjectileHandle Handle;
 	if (!ProjectileSubsystem->SpawnProjectile(Params, Handle))
