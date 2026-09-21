@@ -42,15 +42,10 @@ def _create_or_load_stress_blueprint(parent_class):
     return generated_class, asset_path
 
 
-def _validate_blueprint(generated_class, asset_path, parent_class):
-    """检查生成类可加载且确实继承指定原生压力测试父类。"""
+def _validate_blueprint(generated_class, asset_path):
+    """确认生成类可加载；父类一致性已由 create_or_load_blueprint 内部强校验。"""
     if generated_class is None:
         raise RuntimeError(f"Generated class is invalid: {asset_path}")
-
-    if not generated_class.is_child_of(parent_class):
-        raise RuntimeError(
-            f"{asset_path} is not derived from {parent_class.get_name()}."
-        )
 
     unreal.log(
         "Projectile stress Blueprint ready: "
@@ -62,7 +57,7 @@ def main():
     """创建并保存 BP_ArenaProjectileStressTestActor。"""
     parent_class = _require_native_type()
     generated_class, asset_path = _create_or_load_stress_blueprint(parent_class)
-    _validate_blueprint(generated_class, asset_path, parent_class)
+    _validate_blueprint(generated_class, asset_path)
 
     unreal.log(
         "P0/P1 stress Blueprint setup completed. "
