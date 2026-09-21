@@ -1224,3 +1224,17 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 5000 档在容量允许时不出现非预期 Overflow；主动降低容量时 Overflow 可见且已有 Projectile 不被抢占。
 - P0 每档获得可重复的 Average/P95/P99/Max 与 Unreal Insights 线程数据；Legacy/Data 使用相同 Seed、速度、寿命和发射率。
 - Fireball、EnemyProjectile、Dash、Shield 等既有技能行为不因 P0/P1 新系统发生变化。
+
+
+## Projectile Tickable GetStatId 修复后回归
+
+### 测试方法
+
+1. 重新编译 `ProjectArcaneArenaEditor Win64 Development` 窄目标，确认包含 `UArenaProjectileSimulationSubsystem::GetStatId()`。
+2. 启动 PIE，确认不再出现 `Pure virtual not implemented (UTickableWorldSubsystem::GetStatId)`。
+3. 在 `BP_ArenaProjectileStressTestActor` 的 DataPool 1000 档运行至少 20 秒，确认 Subsystem 正常 Tick 并持续输出 `LogArenaProjectile` 统计。
+
+### 通过标准
+
+- PIE 启动与退出均无 TickableWorldSubsystem PURE_VIRTUAL 崩溃。
+- `ArenaProjectileSimulation` CPU Scope 和压力日志正常出现。
