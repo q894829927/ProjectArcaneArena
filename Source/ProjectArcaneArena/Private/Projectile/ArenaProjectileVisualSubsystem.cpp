@@ -102,7 +102,7 @@ void UArenaProjectileVisualSubsystem::Deinitialize()
 
 	if (IsValid(SharedProjectileComponent))
 	{
-		SharedProjectileComponent->DeactivateImmediate();
+		SharedProjectileComponent->Deactivate();
 		SharedProjectileComponent->DestroyComponent();
 	}
 	SharedProjectileComponent = nullptr;
