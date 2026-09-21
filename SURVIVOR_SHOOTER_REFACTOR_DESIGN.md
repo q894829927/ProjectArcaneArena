@@ -535,7 +535,7 @@ Legacy Actor Reference 可以使用独立 Benchmark 模式，不要求修改正�
 | P0：独立基线压测 | Partial | StressTestActor；Legacy Actor Reference 与 Data 空载基线；100～5000 阶梯 | 能拆分传统 Actor/Movement/Collision/VFX/Network 成本，并建立新系统起点 |
 | P1：Data Projectile Pool | Partial | SimulationSubsystem、预分配槽位、SoA、Free List、Handle、Generation、直线移动 | 普通 Projectile 不依赖每发 Actor/MovementComponent；复用无串状态 |
 | P2：Auto Weapon 接入 | Implemented | 与 G-A 共用同一实现节点；`UArenaAutoAttackComponent` 直接向 Data Pool 发射并携带 AttackInstanceID | 已验证移动射击、范围/阶段/死亡门控、死亡目标切换与两人 Listen Server 独立发射；Stun、Avatar 更换和完整回归待补 |
-| P3：Spatial Hash Collision | Partial | Enemy 注册、Spatial Hash Cell 查询、Previous→Current Swept Collision、HitCommand Buffer 与现有 GAS Damage Pipeline | 基础 PIE 已确认命中、实际 GAS 伤害、击杀和目标切换；待高速不穿透、沿线最早目标和多人 Source 归属 |
+| P3：Spatial Hash Collision | Partial | Enemy 注册、Spatial Hash Cell 查询、Previous→Current Swept Collision、HitCommand Buffer 与现有 GAS Damage Pipeline | 已确认命中/GAS、击杀/目标切换与 `ProjectileSpeed=10000` 高速 Swept Collision；待沿线最早目标和多人 Source 归属 |
 | P4：Spread / Pierce / 多武器 | Planned | 散射、穿透、多个独立 WeaponRuntime | 同类武器互不覆盖；AttackInstanceID 稳定；穿透去重正确 |
 | P5：批量表现 | Planned | VisualSubsystem、Shared Niagara、NDC Impact | 大量弹体不创建同数量 Niagara Component |
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 重建 | 高密度普通弹不逐弹 ReplicateMovement |
