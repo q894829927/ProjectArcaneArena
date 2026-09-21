@@ -40,6 +40,7 @@ void UArenaAutoAttackComponent::BeginPlay()
 	TotalShotsFired = 0;
 	LastAttackInstanceID = 0;
 	NextAttackInstanceID = 1;
+	TrySeedDefaultWeaponRuntime();
 	ScheduleNextEvaluation(RetryInterval);
 
 	int32 ResolvedRuntimeID = WeaponRuntimeID;
@@ -109,6 +110,7 @@ void UArenaAutoAttackComponent::SetAutoAttackEnabled(bool bEnabled)
 void UArenaAutoAttackComponent::EvaluateAutoAttack()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(ArenaAutoAttackEvaluate);
+	TrySeedDefaultWeaponRuntime();
 
 	if (!bAutoAttackEnabled || !CanAutoFire())
 	{
@@ -294,6 +296,28 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 			Handle.Generation);
 	}
 	return true;
+}
+
+// PlayerState 可能在 Character BeginPlay 之后才完成关联，因此每次低频评估都允许幂等补一次默认武器。
+void UArenaAutoAttackComponent::TrySeedDefaultWeaponRuntime()
+{
+	AActor* OwnerActor = GetOwner();
+	if (!OwnerActor || !OwnerActor->HasAuthority() || !DefaultWeaponDefinition)
+	{
+		return;
+	}
+
+	UArenaWeaponLoadoutComponent* Loadout = GetWeaponLoadoutComponent();
+	if (!Loadout)
+	{
+		return;
+	}
+
+	const FArenaWeaponRuntime* ExistingRuntime = Loadout->FindWeaponRuntimeAtSlot(0);
+	if (!ExistingRuntime || !ExistingRuntime->IsValid())
+	{
+		Loadout->EquipWeapon(0, DefaultWeaponDefinition);
+	}
 }
 
 // P4-A/B 当前只把 Slot 0 作为主武器接入现有单 Timer 调度；多槽独立调度在下一子阶段扩展。
