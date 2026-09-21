@@ -198,7 +198,7 @@ bool UArenaProjectileSimulationSubsystem::SpawnProjectile(
 	PierceRemaining[Slot] = FMath::Max(Params.PierceRemaining, 0);
 	AttackInstanceIDs[Slot] = Params.AttackInstanceID;
 	WeaponRuntimeIDs[Slot] = Params.WeaponRuntimeID;
-	SourceActors[Slot] = Params.SourceActor;
+	SourceActors[Slot] = Params.SourceActor.Get();
 	DamageEffectClasses[Slot] = Params.DamageEffectClass;
 	DamageTypeTags[Slot] = Params.DamageTypeTag;
 	BaseDamages[Slot] = FMath::Max(Params.BaseDamage, 0.0f);
