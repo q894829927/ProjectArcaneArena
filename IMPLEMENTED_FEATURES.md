@@ -479,6 +479,16 @@ Status meanings:
 * Verification: in two-player PIE, each player receives an independent candidate set and the next wave starts only after both players complete their selections.
 * Missing: Blueprint visual pass, broader ability variants and trigger upgrades, additional build synergies, statistical rarity tuning, and explicit hostile/forged selection RPC testing.
 
+## High-Density Projectile Foundation
+
+### Projectile P0/P1 — Partial
+
+* 新增 `UArenaProjectileSimulationSubsystem`，以预分配 Data Projectile 槽位、Free List、`ProjectileID/Slot + Generation` 句柄和稠密 ActiveSlots 管理普通高密度 Projectile；P1 当前实现直线位置积分、寿命淘汰、槽位扩容、Overflow/Peak/Spawn/Release 统计，不创建每发 Actor、CollisionComponent 或 ProjectileMovementComponent。
+* 新增 `AArenaProjectileStressTestActor`，支持 `DataPool` 与 `LegacyActor` 两种独立压力模式，共享固定随机种子、速度、寿命和发射率；每个统计窗口输出 Average/P95/P99/Max 帧时间、Active/Target、提交失败和 Data Pool 容量信息。
+* 新增 `AArenaProjectileLegacyBenchmarkActor` 作为 P0 传统 `AActor + USphereComponent + UProjectileMovementComponent` 成本参考，可分别开关 Movement、Collision 与 Replication，不接入正式 Fireball、EnemyProjectile 或 GAS。
+* 新系统与现有主动技能解耦；`AArenaFireballProjectile`、`AArenaEnemyProjectile` 保持原实现，后续只有 Profiling 证明其生命周期成本值得优化时才考虑独立 Actor Pool。
+* 状态：源码已实现，尚未完成 UBT 编译、PIE 100/250/500/1000/2000/5000 阶梯、Unreal Insights Capture、Generation 复用回归和 Listen Server 压力验证，因此当前记为 `Partial`。
+
 ## Verification Notes
 
 * `git diff --check` passed after the Phase 3/4 source implementation.
