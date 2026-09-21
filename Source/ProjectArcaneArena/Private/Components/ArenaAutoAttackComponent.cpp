@@ -15,10 +15,10 @@
 #include "Projectile/ArenaProjectileTypes.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 #include "TimerManager.h"
-#include "Weapon/ArenaWeaponLoadoutComponent.h"
 #include "Weapon/ArenaWeaponDataAsset.h"
+#include "Weapon/ArenaWeaponLoadoutComponent.h"
 
-// 创建不 Tick 的服务器自动攻击组件，实际调度由 TimerManager 驱动。
+// 创建不 Tick 的服务器自动攻击组件；P4 仍只使用一个 Timer，但可调度多个独立 WeaponRuntime。
 UArenaAutoAttackComponent::UArenaAutoAttackComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -26,7 +26,7 @@ UArenaAutoAttackComponent::UArenaAutoAttackComponent()
 	DamageTypeTag = ArenaGameplayTags::Damage_Physical;
 }
 
-// Authority Avatar 进入世界后开始评估；客户端仅保留组件供调试/资产结构一致性。
+// Authority Avatar 进入世界后开始评估；默认武器会在 PlayerState Loadout 可用后幂等播种一次。
 void UArenaAutoAttackComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -40,36 +40,73 @@ void UArenaAutoAttackComponent::BeginPlay()
 	TotalShotsFired = 0;
 	LastAttackInstanceID = 0;
 	NextAttackInstanceID = 1;
-	TrySeedDefaultWeaponRuntime();
+	NextFireTimeByRuntime.Reset();
+	bDefaultWeaponSeedAttempted = false;
+
+	TrySeedDefaultWeaponRuntimes();
 	ScheduleNextEvaluation(RetryInterval);
 
-	int32 ResolvedRuntimeID = WeaponRuntimeID;
-	const UArenaWeaponDataAsset* WeaponDefinition = GetPrimaryWeaponDefinition(ResolvedRuntimeID);
-	const TSubclassOf<UGameplayEffect> ResolvedDamageEffect =
-		WeaponDefinition ? WeaponDefinition->DamageEffectClass : DamageEffectClass;
-	if (!ResolvedDamageEffect)
+	UArenaWeaponLoadoutComponent* Loadout = GetWeaponLoadoutComponent();
+	const TArray<FArenaWeaponRuntime> Runtimes = Loadout ? Loadout->GetWeaponRuntimes() : TArray<FArenaWeaponRuntime>();
+	bool bLoggedRuntime = false;
+	for (const FArenaWeaponRuntime& Runtime : Runtimes)
 	{
+		const UArenaWeaponDataAsset* WeaponDefinition = Runtime.WeaponDefinition;
+		if (!Runtime.IsValid() || !WeaponDefinition)
+		{
+			continue;
+		}
+
+		bLoggedRuntime = true;
+		if (!WeaponDefinition->DamageEffectClass)
+		{
+			UE_LOG(
+				LogArenaProjectile,
+				Warning,
+				TEXT("AutoAttack weapon %s RuntimeID=%d has no DamageEffectClass; projectiles can move but cannot resolve GAS damage."),
+				*WeaponDefinition->WeaponID.ToString(),
+				Runtime.WeaponRuntimeID);
+		}
+
 		UE_LOG(
 			LogArenaProjectile,
-			Warning,
-			TEXT("AutoAttack DamageEffectClass is not configured on %s; Data Projectiles will move but cannot resolve P3 damage hits."),
-			*GetNameSafe(OwnerActor));
+			Log,
+			TEXT("AutoAttack weapon ready. Owner=%s Slot=%d Weapon=%s RuntimeID=%d FireInterval=%.2f Range=%.1f Speed=%.1f Lifetime=%.2f."),
+			*GetNameSafe(OwnerActor),
+			Runtime.SlotIndex,
+			*WeaponDefinition->WeaponID.ToString(),
+			Runtime.WeaponRuntimeID,
+			WeaponDefinition->FireInterval,
+			WeaponDefinition->TargetRange,
+			WeaponDefinition->ProjectileSpeed,
+			WeaponDefinition->ProjectileLifetime);
 	}
 
-	UE_LOG(
-		LogArenaProjectile,
-		Log,
-		TEXT("AutoAttack ready. Owner=%s Weapon=%s RuntimeID=%d FireInterval=%.2f Range=%.1f Speed=%.1f Lifetime=%.2f."),
-		*GetNameSafe(OwnerActor),
-		WeaponDefinition ? *WeaponDefinition->WeaponID.ToString() : TEXT("LegacyInlineConfig"),
-		ResolvedRuntimeID,
-		GetCurrentFireInterval(),
-		GetCurrentTargetRange(),
-		WeaponDefinition ? WeaponDefinition->ProjectileSpeed : ProjectileSpeed,
-		WeaponDefinition ? WeaponDefinition->ProjectileLifetime : ProjectileLifetime);
+	if (!bLoggedRuntime)
+	{
+		if (!DamageEffectClass)
+		{
+			UE_LOG(
+				LogArenaProjectile,
+				Warning,
+				TEXT("AutoAttack legacy DamageEffectClass is not configured on %s; Data Projectiles will move but cannot resolve GAS damage."),
+				*GetNameSafe(OwnerActor));
+		}
+
+		UE_LOG(
+			LogArenaProjectile,
+			Log,
+			TEXT("AutoAttack legacy config ready. Owner=%s RuntimeID=%d FireInterval=%.2f Range=%.1f Speed=%.1f Lifetime=%.2f."),
+			*GetNameSafe(OwnerActor),
+			WeaponRuntimeID,
+			FireInterval,
+			TargetRange,
+			ProjectileSpeed,
+			ProjectileLifetime);
+	}
 }
 
-// Avatar 离开世界时终止定时器，保证重生/换 Pawn 后旧实例不会继续发射。
+// Avatar 离开世界时终止唯一调度 Timer，并丢弃 Avatar 本地的 Runtime 时间表。
 void UArenaAutoAttackComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	if (UWorld* World = GetWorld())
@@ -77,11 +114,12 @@ void UArenaAutoAttackComponent::EndPlay(const EEndPlayReason::Type EndPlayReason
 		World->GetTimerManager().ClearTimer(EvaluationTimerHandle);
 	}
 
+	NextFireTimeByRuntime.Reset();
 	LastFiredTarget.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 
-// 显式切换原型武器；重新开启时从下一次短重试开始，不在调用栈内立即 Spawn。
+// 显式启停自动武器；重新开启时重新建立 Runtime 调度时间，不立即在当前调用栈 Spawn。
 void UArenaAutoAttackComponent::SetAutoAttackEnabled(bool bEnabled)
 {
 	if (bAutoAttackEnabled == bEnabled)
@@ -98,6 +136,7 @@ void UArenaAutoAttackComponent::SetAutoAttackEnabled(bool bEnabled)
 	}
 
 	World->GetTimerManager().ClearTimer(EvaluationTimerHandle);
+	NextFireTimeByRuntime.Reset();
 	LastFiredTarget.Reset();
 
 	if (bAutoAttackEnabled)
@@ -106,36 +145,109 @@ void UArenaAutoAttackComponent::SetAutoAttackEnabled(bool bEnabled)
 	}
 }
 
-// 服务器每次只评估一轮攻击；失败条件采用 RetryInterval，成功发射后按 FireInterval 调度。
+// 单个 Timer 评估全部 WeaponRuntime；每把武器拥有自己的 NextFireTime、TargetRange、FireInterval 与 AttackInstanceID。
 void UArenaAutoAttackComponent::EvaluateAutoAttack()
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(ArenaAutoAttackEvaluate);
-	TrySeedDefaultWeaponRuntime();
+	TrySeedDefaultWeaponRuntimes();
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
 
 	if (!bAutoAttackEnabled || !CanAutoFire())
 	{
+		NextFireTimeByRuntime.Reset();
 		LastFiredTarget.Reset();
 		ScheduleNextEvaluation(RetryInterval);
 		return;
 	}
 
-	AActor* TargetActor = FindNearestLivingEnemy();
-	if (!TargetActor)
+	UArenaWeaponLoadoutComponent* Loadout = GetWeaponLoadoutComponent();
+	const TArray<FArenaWeaponRuntime> Runtimes = Loadout ? Loadout->GetWeaponRuntimes() : TArray<FArenaWeaponRuntime>();
+	const double NowSeconds = static_cast<double>(World->GetTimeSeconds());
+	double EarliestNextFireTime = TNumericLimits<double>::Max();
+	TSet<int32> LiveRuntimeIDs;
+	bool bHasValidRuntime = false;
+
+	for (const FArenaWeaponRuntime& Runtime : Runtimes)
+	{
+		const UArenaWeaponDataAsset* WeaponDefinition = Runtime.WeaponDefinition;
+		if (!Runtime.IsValid() || !WeaponDefinition)
+		{
+			continue;
+		}
+
+		bHasValidRuntime = true;
+		LiveRuntimeIDs.Add(Runtime.WeaponRuntimeID);
+
+		double* NextFireTime = NextFireTimeByRuntime.Find(Runtime.WeaponRuntimeID);
+		if (!NextFireTime)
+		{
+			NextFireTime = &NextFireTimeByRuntime.Add(Runtime.WeaponRuntimeID, NowSeconds);
+		}
+
+		if (*NextFireTime <= NowSeconds + KINDA_SMALL_NUMBER)
+		{
+			AActor* TargetActor = FindNearestLivingEnemy(WeaponDefinition->TargetRange);
+			if (TargetActor && FireAtTarget(
+				TargetActor,
+				Runtime.SlotIndex,
+				Runtime.WeaponRuntimeID,
+				WeaponDefinition))
+			{
+				LastFiredTarget = TargetActor;
+				++TotalShotsFired;
+				*NextFireTime = NowSeconds + FMath::Max(
+					static_cast<double>(WeaponDefinition->FireInterval),
+					0.05);
+			}
+			else
+			{
+				// 无目标时快速重试；有目标但 Spawn 失败时也保持有界重试，不在同帧忙循环。
+				*NextFireTime = NowSeconds + FMath::Max(static_cast<double>(RetryInterval), 0.01);
+			}
+		}
+
+		EarliestNextFireTime = FMath::Min(EarliestNextFireTime, *NextFireTime);
+	}
+
+	// 换装或卸装后移除旧 Runtime 的 Avatar 本地调度状态，新的 RuntimeID 会独立从“可立即开火”开始。
+	for (auto It = NextFireTimeByRuntime.CreateIterator(); It; ++It)
+	{
+		if (!LiveRuntimeIDs.Contains(It.Key()))
+		{
+			It.RemoveCurrent();
+		}
+	}
+
+	if (bHasValidRuntime)
+	{
+		const double DelaySeconds = EarliestNextFireTime == TNumericLimits<double>::Max()
+			? static_cast<double>(RetryInterval)
+			: FMath::Max(EarliestNextFireTime - NowSeconds, 0.01);
+		ScheduleNextEvaluation(static_cast<float>(DelaySeconds));
+		return;
+	}
+
+	// 未迁移 WeaponDataAsset 的旧关卡继续使用 P3 Inline Config，避免 P4 迁移阻塞现有测试内容。
+	AActor* LegacyTarget = FindNearestLivingEnemy(TargetRange);
+	if (!LegacyTarget)
 	{
 		LastFiredTarget.Reset();
 		ScheduleNextEvaluation(RetryInterval);
 		return;
 	}
 
-	if (FireAtTarget(TargetActor))
+	if (FireAtTarget(LegacyTarget, INDEX_NONE, WeaponRuntimeID, nullptr))
 	{
-		LastFiredTarget = TargetActor;
+		LastFiredTarget = LegacyTarget;
 		++TotalShotsFired;
-		ScheduleNextEvaluation(GetCurrentFireInterval());
-		return;
 	}
 
-	ScheduleNextEvaluation(GetCurrentFireInterval());
+	ScheduleNextEvaluation(FMath::Max(FireInterval, 0.05f));
 }
 
 // 自动武器只在服务器 Combat 阶段且玩家未死亡/眩晕时拥有发射权限。
@@ -165,12 +277,12 @@ bool UArenaAutoAttackComponent::CanAutoFire() const
 		&& !OwnerASC->HasMatchingGameplayTag(ArenaGameplayTags::State_Stunned);
 }
 
-// 自动选敌保持低频最近敌人遍历；P3 的 Spatial Hash 优先解决高频 Projectile×Enemy 碰撞路径。
-AActor* UArenaAutoAttackComponent::FindNearestLivingEnemy() const
+// 每个 WeaponRuntime 用自己的 TargetRange 做低频最近敌人查询；高频 Projectile 碰撞仍由 P3 Spatial Hash 承担。
+AActor* UArenaAutoAttackComponent::FindNearestLivingEnemy(float InTargetRange) const
 {
 	const AActor* OwnerActor = GetOwner();
 	UWorld* World = GetWorld();
-	const float ResolvedTargetRange = GetCurrentTargetRange();
+	const float ResolvedTargetRange = FMath::Max(InTargetRange, 0.0f);
 	if (!OwnerActor || !World || ResolvedTargetRange <= KINDA_SMALL_NUMBER)
 	{
 		return nullptr;
@@ -206,8 +318,12 @@ AActor* UArenaAutoAttackComponent::FindNearestLivingEnemy() const
 	return BestTarget;
 }
 
-// 计算当前目标方向并写入 Data Pool；P3 同时快照伤害配置，由 SimulationSubsystem 命中后统一结算。
-bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
+// 根据指定 WeaponRuntime 的静态定义生成一轮单发 Data Projectile；Spread/Pierce 行为仍留在后续 P4-C。
+bool UArenaAutoAttackComponent::FireAtTarget(
+	AActor* TargetActor,
+	int32 SlotIndex,
+	int32 ResolvedWeaponRuntimeID,
+	const UArenaWeaponDataAsset* WeaponDefinition)
 {
 	AActor* OwnerActor = GetOwner();
 	UWorld* World = GetWorld();
@@ -223,8 +339,6 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 		return false;
 	}
 
-	int32 ResolvedWeaponRuntimeID = WeaponRuntimeID;
-	const UArenaWeaponDataAsset* WeaponDefinition = GetPrimaryWeaponDefinition(ResolvedWeaponRuntimeID);
 	const float ResolvedSpawnHeight = WeaponDefinition ? WeaponDefinition->ProjectileSpawnHeight : ProjectileSpawnHeight;
 	const float ResolvedForwardOffset = WeaponDefinition ? WeaponDefinition->ProjectileForwardOffset : ProjectileForwardOffset;
 	const float ResolvedProjectileSpeed = WeaponDefinition ? WeaponDefinition->ProjectileSpeed : ProjectileSpeed;
@@ -255,12 +369,15 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 	Params.Velocity = Direction * FMath::Max(ResolvedProjectileSpeed, 0.0f);
 	Params.Radius = FMath::Max(ResolvedProjectileRadius, 0.0f);
 	Params.Lifetime = FMath::Max(ResolvedProjectileLifetime, 0.05f);
+	// P4-C 才把 WeaponDataAsset::PierceCount 接入真实命中继续飞行与命中去重。
 	Params.PierceRemaining = 0;
+
 	const int32 AttackInstanceID = AllocateAttackInstanceIDForRuntime(ResolvedWeaponRuntimeID);
 	if (AttackInstanceID <= 0)
 	{
 		return false;
 	}
+
 	Params.AttackInstanceID = AttackInstanceID;
 	Params.WeaponRuntimeID = ResolvedWeaponRuntimeID;
 	Params.SourceActor = OwnerActor;
@@ -275,8 +392,10 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 		UE_LOG(
 			LogArenaProjectile,
 			Warning,
-			TEXT("AutoAttack Data Projectile spawn failed. Owner=%s Target=%s."),
+			TEXT("AutoAttack Data Projectile spawn failed. Owner=%s Slot=%d RuntimeID=%d Target=%s."),
 			*GetNameSafe(OwnerActor),
+			SlotIndex,
+			ResolvedWeaponRuntimeID,
 			*GetNameSafe(TargetActor));
 		return false;
 	}
@@ -284,11 +403,16 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 	LastAttackInstanceID = AttackInstanceID;
 	if (bLogSuccessfulShots)
 	{
+		const FString WeaponLabel = WeaponDefinition
+			? WeaponDefinition->WeaponID.ToString()
+			: TEXT("LegacyInlineConfig");
 		UE_LOG(
 			LogArenaProjectile,
 			Log,
-			TEXT("AutoAttack fired. Owner=%s Target=%s AttackID=%d WeaponRuntimeID=%d Handle=%d:%d."),
+			TEXT("AutoAttack fired. Owner=%s Slot=%d Weapon=%s Target=%s AttackID=%d WeaponRuntimeID=%d Handle=%d:%d."),
 			*GetNameSafe(OwnerActor),
+			SlotIndex,
+			*WeaponLabel,
 			*GetNameSafe(TargetActor),
 			AttackInstanceID,
 			ResolvedWeaponRuntimeID,
@@ -298,11 +422,16 @@ bool UArenaAutoAttackComponent::FireAtTarget(AActor* TargetActor)
 	return true;
 }
 
-// PlayerState 可能在 Character BeginPlay 之后才完成关联，因此每次低频评估都允许幂等补一次默认武器。
-void UArenaAutoAttackComponent::TrySeedDefaultWeaponRuntime()
+// 默认武器只在首次拿到 PlayerState Loadout 时播种；之后玩家主动卸装不会被下一次 Evaluate 自动补回。
+void UArenaAutoAttackComponent::TrySeedDefaultWeaponRuntimes()
 {
+	if (bDefaultWeaponSeedAttempted)
+	{
+		return;
+	}
+
 	AActor* OwnerActor = GetOwner();
-	if (!OwnerActor || !OwnerActor->HasAuthority() || !DefaultWeaponDefinition)
+	if (!OwnerActor || !OwnerActor->HasAuthority())
 	{
 		return;
 	}
@@ -313,26 +442,34 @@ void UArenaAutoAttackComponent::TrySeedDefaultWeaponRuntime()
 		return;
 	}
 
-	const FArenaWeaponRuntime* ExistingRuntime = Loadout->FindWeaponRuntimeAtSlot(0);
-	if (!ExistingRuntime || !ExistingRuntime->IsValid())
-	{
-		Loadout->EquipWeapon(0, DefaultWeaponDefinition);
-	}
-}
+	bDefaultWeaponSeedAttempted = true;
+	const int32 MaxSlots = Loadout->GetMaxWeaponSlots();
 
-// P4-A/B 当前只把 Slot 0 作为主武器接入现有单 Timer 调度；多槽独立调度在下一子阶段扩展。
-const UArenaWeaponDataAsset* UArenaAutoAttackComponent::GetPrimaryWeaponDefinition(int32& OutWeaponRuntimeID) const
-{
-	OutWeaponRuntimeID = WeaponRuntimeID;
-	const UArenaWeaponLoadoutComponent* Loadout = GetWeaponLoadoutComponent();
-	const FArenaWeaponRuntime* Runtime = Loadout ? Loadout->FindWeaponRuntimeAtSlot(0) : nullptr;
-	if (!Runtime || !Runtime->IsValid())
+	if (MaxSlots > 0 && DefaultWeaponDefinition)
 	{
-		return nullptr;
+		const FArenaWeaponRuntime* ExistingRuntime = Loadout->FindWeaponRuntimeAtSlot(0);
+		if (!ExistingRuntime || !ExistingRuntime->IsValid())
+		{
+			Loadout->EquipWeapon(0, DefaultWeaponDefinition);
+		}
 	}
 
-	OutWeaponRuntimeID = Runtime->WeaponRuntimeID;
-	return Runtime->WeaponDefinition;
+	const int32 AdditionalCount = FMath::Min(DefaultAdditionalWeaponDefinitions.Num(), FMath::Max(MaxSlots - 1, 0));
+	for (int32 AdditionalIndex = 0; AdditionalIndex < AdditionalCount; ++AdditionalIndex)
+	{
+		UArenaWeaponDataAsset* WeaponDefinition = DefaultAdditionalWeaponDefinitions[AdditionalIndex];
+		if (!WeaponDefinition)
+		{
+			continue;
+		}
+
+		const int32 SlotIndex = AdditionalIndex + 1;
+		const FArenaWeaponRuntime* ExistingRuntime = Loadout->FindWeaponRuntimeAtSlot(SlotIndex);
+		if (!ExistingRuntime || !ExistingRuntime->IsValid())
+		{
+			Loadout->EquipWeapon(SlotIndex, WeaponDefinition);
+		}
+	}
 }
 
 // Avatar 只负责调度，装备 Model 始终从 PlayerState 获取，保证未来重生不会丢失本局武器状态。
@@ -341,22 +478,6 @@ UArenaWeaponLoadoutComponent* UArenaAutoAttackComponent::GetWeaponLoadoutCompone
 	const APawn* OwnerPawn = Cast<APawn>(GetOwner());
 	const AArenaPlayerState* PlayerState = OwnerPawn ? OwnerPawn->GetPlayerState<AArenaPlayerState>() : nullptr;
 	return PlayerState ? PlayerState->GetWeaponLoadoutComponent() : nullptr;
-}
-
-// 调度间隔优先读取 WeaponDataAsset；没有配置新武器资产时保留当前 P3 Blueprint 参数，避免迁移期间中断玩法。
-float UArenaAutoAttackComponent::GetCurrentFireInterval() const
-{
-	int32 ResolvedRuntimeID = WeaponRuntimeID;
-	const UArenaWeaponDataAsset* WeaponDefinition = GetPrimaryWeaponDefinition(ResolvedRuntimeID);
-	return FMath::Max(WeaponDefinition ? WeaponDefinition->FireInterval : FireInterval, 0.05f);
-}
-
-// 索敌半径与武器定义保持同一数据源，后续不同槽位可以拥有独立范围。
-float UArenaAutoAttackComponent::GetCurrentTargetRange() const
-{
-	int32 ResolvedRuntimeID = WeaponRuntimeID;
-	const UArenaWeaponDataAsset* WeaponDefinition = GetPrimaryWeaponDefinition(ResolvedRuntimeID);
-	return FMath::Max(WeaponDefinition ? WeaponDefinition->TargetRange : TargetRange, 0.0f);
 }
 
 // 有有效 WeaponRuntime 时使用 PlayerState Model 中独立计数器；旧关卡未迁移武器资产时继续使用 P2 局部计数器。
@@ -395,7 +516,7 @@ void UArenaAutoAttackComponent::ScheduleNextEvaluation(float DelaySeconds)
 		false);
 }
 
-// AttackInstanceID 在单个 AutoAttackComponent/WeaponRuntime 内单调递增，0 不作为有效攻击轮次。
+// 兼容旧 Inline Config 的局部 AttackInstanceID；正常 P4 Runtime 不再共享该计数器。
 int32 UArenaAutoAttackComponent::AllocateAttackInstanceID()
 {
 	const int32 AllocatedID = NextAttackInstanceID;
