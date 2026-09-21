@@ -44,6 +44,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Projectile", meta = (ClampMin = "0.0"))
 	float ProjectileForwardOffset = 60.0f;
 
+	// P5 共享 Niagara 的静态外观类型；只决定表现分支，不参与伤害与碰撞。
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Visual", meta = (ClampMin = "0"))
+	int32 ProjectileVisualTypeID = 0;
+
 	// P4-C 起用于一轮散射；P4-A/B 只读取默认值 1，不提前生成多颗 Projectile。
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Arena|Weapon|Pattern", meta = (ClampMin = "1", ClampMax = "64"))
 	int32 ProjectilesPerAttack = 1;
