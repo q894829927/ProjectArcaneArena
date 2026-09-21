@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Projectile/ArenaProjectileTypes.h"
 #include "Subsystems/WorldSubsystem.h"
 #include "ArenaProjectileVisualSubsystem.generated.h"
 
@@ -58,8 +59,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UNiagaraComponent> SharedProjectileComponent = nullptr;
 
-	TArray<struct FArenaProjectileVisualSample> VisualSamples;
-	TArray<struct FArenaProjectileImpactVisualEvent> ImpactEvents;
+	TArray<FArenaProjectileVisualSample> VisualSamples;
+	TArray<FArenaProjectileImpactVisualEvent> ImpactEvents;
 
 	bool bAttemptedAssetLoad = false;
 	bool bLoggedMissingAssets = false;
