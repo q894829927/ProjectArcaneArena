@@ -8,6 +8,8 @@
 
 class AActor;
 class UGameplayEffect;
+class UArenaWeaponDataAsset;
+class UArenaWeaponLoadoutComponent;
 
 // P2/G-A 单武器自动攻击调度器；服务器选择目标并向 Data Projectile Pool 发射，P3 伤害快照由 SimulationSubsystem 命中后结算。
 UCLASS(ClassGroup = (Arena), meta = (BlueprintSpawnableComponent))
@@ -54,13 +56,26 @@ private:
 	// 自动选敌仍以低频遍历实现；P3 Spatial Hash 专注高频 Projectile 碰撞，后续共享 TargetingSubsystem 再统一选敌查询。
 	AActor* FindNearestLivingEnemy() const;
 
-	// 将一发原型普通弹写入 Data Projectile Pool，并携带 Owner 局部递增的 AttackInstanceID。
+	// 将一发普通弹写入 Data Projectile Pool；优先读取 PlayerState WeaponRuntime，未配置时保留 P3 旧参数回退。
 	bool FireAtTarget(AActor* TargetActor);
+
+	// P4-A/B 先读取 Slot 0 的武器定义；后续多槽调度会把每个 Runtime 作为独立调度单元。
+	const UArenaWeaponDataAsset* GetPrimaryWeaponDefinition(int32& OutWeaponRuntimeID) const;
+
+	// 获取 PlayerState 上的武器装备 Model；Avatar 更换后仍可读取同一装备状态。
+	UArenaWeaponLoadoutComponent* GetWeaponLoadoutComponent() const;
+
+	// 返回当前主武器射击间隔/索敌范围，未配置 WeaponDataAsset 时回退到旧组件字段。
+	float GetCurrentFireInterval() const;
+	float GetCurrentTargetRange() const;
 
 	// 使用 TimerManager 安排下一次攻击或无目标重试，避免每帧 Tick。
 	void ScheduleNextEvaluation(float DelaySeconds);
 
-	// 生成正整数 AttackInstanceID；回绕后从 1 重新开始，0 保留为“未设置”。
+	// 优先从 WeaponRuntime 分配独立攻击轮次；没有 Runtime 时回退到 P2 单武器局部计数器。
+	int32 AllocateAttackInstanceIDForRuntime(int32 ResolvedWeaponRuntimeID);
+
+	// P2 兼容回退计数器；只有尚未配置 WeaponDataAsset/WeaponRuntime 时使用。
 	int32 AllocateAttackInstanceID();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true"))
