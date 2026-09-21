@@ -1386,7 +1386,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 4. 把 `ProjectileSpeed` 提高到 10000，并保持三名敌人在同一帧可跨越的直线上；确认同一个 Projectile 能在同一 Tick 按 A→B→C 顺序产生多个 HitCommand，不会只打 A 后直接越过 B/C。
 5. 让 Projectile 命中 Enemy A 后继续飞行数帧，并让它仍与 A Capsule 有重叠；确认该 Projectile 不会再次对 A 结算，后续只允许命中新目标。
 6. 将 B 移出弹道，只保留 A 与 C 在直线上；确认不会因为“PierceCount=2”而自动搜索范围里的 B，Pierce 只沿实际 Sweep 路径命中。
-7. 与 P4-C 组合回归：设置 `ProjectilesPerAttack=3`、小角度 Spread、`PierceCount=1`，确认每颗 Pellet 都拥有自己的穿透历史，而同一次攻击仍共享 AttackInstanceID；PelletFalloff 仍按“同 Attack + 同 Target”工作。
+7. [已完成] Spread+Pierce 组合回归通过：`ProjectilesPerAttack=3`、角度 `-10/0/+10`、`PierceCount=1` 时，三颗 Pellet 共享同一 AttackID；例如 AttackID 12 的 Pellet 2/3 均可各自从 Enemy 1 穿透到不同第二目标，说明每颗 Pellet 的穿透历史独立。对 Enemy 1 的同次攻击伤害按 5.00 → 3.75 → 2.81 衰减，而穿透到 Enemy 0/2 后分别从 `PelletMultiplier=1.000` 重新计数。
 8. 敌人死亡、Wave 清理与 Upgrade 阶段回归，确认已排队 HitCommand 不造成重复死亡/Wave 清理，且 Projectile Slot/Generation 继续正常复用。
 
 ### 通过标准
@@ -1399,4 +1399,4 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 - 所有伤害仍通过 HitCommand → GE_Damage → ExecCalc → AttributeSet。
 
 
-当前状态：`PierceCount=2` 的命中序号/预算与单轮目标去重已通过；仍需高速 `ProjectileSpeed=10000` 同帧多目标专项，以及 Spread+Pierce 组合验收。
+当前状态：P4-D 核心验收已通过，包含 `PierceCount=2` 单 Pellet 命中序号/预算/目标去重，以及 Spread+Pierce 独立穿透历史与 PelletFalloff 组合。`ProjectileSpeed=10000` 同帧多目标、高速边界、多人 Source 归属与长时间压力测试后置到 `Verified`。
