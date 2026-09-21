@@ -92,6 +92,10 @@ private:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true"))
 	int32 WeaponRuntimeID = 0;
 
+	// 调试时输出成功发射的 AttackInstanceID/Handle/Target；默认关闭，避免正常战斗刷日志。
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Arena|Auto Attack|Debug", meta = (AllowPrivateAccess = "true"))
+	bool bLogSuccessfulShots = false;
+
 	FTimerHandle EvaluationTimerHandle;
 	TWeakObjectPtr<AActor> LastFiredTarget;
 	int32 NextAttackInstanceID = 1;
