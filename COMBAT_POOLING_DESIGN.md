@@ -552,7 +552,7 @@ ServerLaunchTime
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 客户端重建 | 高密度普通弹不使用逐弹 ReplicateMovement |
 | P7：并行与综合验收 | Planned | 仅在采样需要时 Chunk 并行；真实敌群/GAS/VFX/网络长时间压力 | 帧时间、带宽、内存和数据池容量稳定，形成真实优化对照 |
 
-P0/P1 当前源码进度：StressTestActor、LegacyActor 参考、Data Projectile Pool、Free List、Generation、直线集中模拟与基础统计已写入；尚未完成编译、PIE 和 Unreal Insights 验收，因此两阶段保持 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于 P0～P7 前置阶段。若未来另做，单独记录为 Legacy Projectile Optimization。
+P0/P1 当前源码进度：StressTestActor、LegacyActor 参考、Data Projectile Pool、Free List、Generation、直线集中模拟与基础统计已写入，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接；尚未完成 PIE 和 Unreal Insights 验收，因此两阶段保持 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于 P0～P7 前置阶段。若未来另做，单独记录为 Legacy Projectile Optimization。
 
 ## 12. 验证计划与证据
 
