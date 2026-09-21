@@ -1219,7 +1219,7 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 ### 通过标准
 
 - [已完成] 项目编译通过，无 UHT、反射、TickableWorldSubsystem 或日志分类错误。
-- [1000/5000 档已通过] DataPool 在正常容量内 Active 长时间稳定在目标附近；1000 档为 Active=1000/1001、Failed=0、Overflow=0；5000 档为 Active≈5000、Failed=0、Overflow=0，容量从 5000 自动扩到 6024，PeakActive 约 5021～5048。100/250/500/2000 档和完整 Insights 对照仍待验证。
+- [1000/5000 档已通过] DataPool 在正常容量内 Active 长时间稳定在目标附近；1000 档为 Active=1000/1001、Failed=0、Overflow=0；5000 档为 Active≈5000、Failed=0、Overflow=0，容量从 5000 自动扩到 6024，PeakActive 约 5021～5048。解除 60 FPS 限制后（`t.MaxFPS=240`），5000 档稳态窗口约 9.1~9.2ms/frame，PIE `stat unit` 约 Frame=9.43ms、Game=9.44ms、GPU=7.74ms。100/250/500/2000 档和完整 Insights 对照仍待验证。
 - 槽位释放后旧 Handle 的 Generation 失效，旧 Handle 不能读取或释放下一代 Projectile。
 - 5000 档在容量允许时不出现非预期 Overflow；主动降低容量时 Overflow 可见且已有 Projectile 不被抢占。
 - P0 每档获得可重复的 Average/P95/P99/Max 与 Unreal Insights 线程数据；Legacy/Data 使用相同 Seed、速度、寿命和发射率。
