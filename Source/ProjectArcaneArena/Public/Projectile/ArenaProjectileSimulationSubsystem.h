@@ -10,6 +10,8 @@
 class AActor;
 class AArenaEnemyCharacter;
 
+DECLARE_MULTICAST_DELEGATE(FArenaProjectileSimulationUpdated);
+
 // 同一轮霰弹对同一目标的命中计数 Key；FObjectKey 不持有 UObject 强引用，避免伤害衰减状态延长 Actor 生命周期。
 struct FArenaPelletHitKey
 {
@@ -88,6 +90,18 @@ public:
 	// 为调试或后续表现层读取当前位置；无效 Handle 返回 false。
 	bool GetProjectilePosition(const FArenaProjectileHandle& Handle, FVector& OutPosition) const;
 
+	// P5 批量复制当前 Active Projectile 的纯表现快照；MaxSamples 只限制视觉预算，不改变权威 Projectile。
+	void BuildVisualSnapshot(TArray<FArenaProjectileVisualSample>& OutSamples, int32 MaxSamples) const;
+
+	// 复制当前 Tick 已产生的命中表现事件；只读，不参与 GAS 伤害结算。
+	void CopyFrameImpactVisualEvents(TArray<FArenaProjectileImpactVisualEvent>& OutEvents) const;
+
+	// 每次 Simulation Tick 完成后广播，表现层可在同一帧读取稳定位置和本帧 Impact。
+	FArenaProjectileSimulationUpdated& OnSimulationUpdated()
+	{
+		return SimulationUpdated;
+	}
+
 	// 使所有 Active Projectile 失效并归还槽位，通常用于压力测试切档或世界收尾。
 	void ResetAllProjectiles();
 
@@ -141,6 +155,7 @@ private:
 	TArray<int32> PierceRemaining;
 	TArray<int32> AttackInstanceIDs;
 	TArray<int32> WeaponRuntimeIDs;
+	TArray<int32> VisualTypeIDs;
 	TArray<int32> PelletIndices;
 	TArray<int32> PelletCounts;
 	TArray<float> SameTargetPelletFalloffs;
@@ -167,6 +182,8 @@ private:
 	// 仅为同一 AttackInstanceID 的霰弹跨帧命中保存短生命周期计数；到期后延迟清理，避免每颗 Pellet 永久留状态。
 	TMap<FArenaPelletHitKey, FArenaPelletHitState> PelletHitStates;
 	double LastPelletHitStateCleanupTime = 0.0;
+
+	FArenaProjectileSimulationUpdated SimulationUpdated;
 
 	int32 PeakActiveCount = 0;
 	int32 OverflowCount = 0;
