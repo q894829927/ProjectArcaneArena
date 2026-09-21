@@ -422,7 +422,7 @@ bool UArenaAutoAttackComponent::FireAtTarget(
 	return true;
 }
 
-// 默认武器只在首次拿到 PlayerState Loadout 时播种；之后玩家主动卸装不会被下一次 Evaluate 自动补回。
+// 默认武器数组索引直接映射 Loadout Slot；只在首次拿到 PlayerState Loadout 时播种，主动卸装后不会自动补回。
 void UArenaAutoAttackComponent::TrySeedDefaultWeaponRuntimes()
 {
 	if (bDefaultWeaponSeedAttempted)
@@ -443,27 +443,15 @@ void UArenaAutoAttackComponent::TrySeedDefaultWeaponRuntimes()
 	}
 
 	bDefaultWeaponSeedAttempted = true;
-	const int32 MaxSlots = Loadout->GetMaxWeaponSlots();
-
-	if (MaxSlots > 0 && DefaultWeaponDefinition)
+	const int32 WeaponCount = FMath::Min(DefaultWeaponDefinitions.Num(), Loadout->GetMaxWeaponSlots());
+	for (int32 SlotIndex = 0; SlotIndex < WeaponCount; ++SlotIndex)
 	{
-		const FArenaWeaponRuntime* ExistingRuntime = Loadout->FindWeaponRuntimeAtSlot(0);
-		if (!ExistingRuntime || !ExistingRuntime->IsValid())
-		{
-			Loadout->EquipWeapon(0, DefaultWeaponDefinition);
-		}
-	}
-
-	const int32 AdditionalCount = FMath::Min(DefaultAdditionalWeaponDefinitions.Num(), FMath::Max(MaxSlots - 1, 0));
-	for (int32 AdditionalIndex = 0; AdditionalIndex < AdditionalCount; ++AdditionalIndex)
-	{
-		UArenaWeaponDataAsset* WeaponDefinition = DefaultAdditionalWeaponDefinitions[AdditionalIndex];
+		UArenaWeaponDataAsset* WeaponDefinition = DefaultWeaponDefinitions[SlotIndex];
 		if (!WeaponDefinition)
 		{
 			continue;
 		}
 
-		const int32 SlotIndex = AdditionalIndex + 1;
 		const FArenaWeaponRuntime* ExistingRuntime = Loadout->FindWeaponRuntimeAtSlot(SlotIndex);
 		if (!ExistingRuntime || !ExistingRuntime->IsValid())
 		{
