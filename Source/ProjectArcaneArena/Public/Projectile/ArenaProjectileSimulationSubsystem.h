@@ -21,6 +21,9 @@ public:
 	// 批量推进所有 Active Projectile 的位置与寿命；P2 再接入空间哈希和命中命令。
 	virtual void Tick(float DeltaTime) override;
 
+	// 为 TickableWorldSubsystem 提供独立性能统计 ID，避免运行时落入基类 PURE_VIRTUAL。
+	virtual TStatId GetStatId() const override;
+
 	// 从 Free List 获取一个槽位并写入本次发射快照；失败时增加 OverflowCount。
 	bool SpawnProjectile(const FArenaProjectileSpawnParams& Params, FArenaProjectileHandle& OutHandle);
 
