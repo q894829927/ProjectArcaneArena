@@ -1400,3 +1400,36 @@ py "E:/UE_DEMO/ProjectArcaneArena/Content/Python/overload_test/setup_overload_te
 
 
 当前状态：P4-D 核心验收已通过，包含 `PierceCount=2` 单 Pellet 命中序号/预算/目标去重，以及 Spread+Pierce 独立穿透历史与 PelletFalloff 组合。`ProjectileSpeed=10000` 同帧多目标、高速边界、多人 Source 归属与长时间压力测试后置到 `Verified`。
+
+
+## P5-A Shared Niagara / NDC 批量表现
+
+### 资产准备
+
+1. 先完成窄目标编译并重启 Editor，使 `UArenaProjectileVisualSubsystem` 与新增 `ProjectileVisualTypeID` 反射生效。
+2. 按 `Docs/PROJECTILE_NIAGARA_NDC_SETUP.md` 创建：
+   - `/Game/Projectile/VFX/NDC_ArenaProjectiles`
+   - `/Game/Projectile/VFX/NDC_ArenaProjectileImpacts`
+   - `/Game/Projectile/VFX/NS_ArenaProjectiles_Shared`
+3. 两个 NDC 首版使用 Global 类型，变量名/类型必须与 Setup 文档完全一致。
+4. `NS_ArenaProjectiles_Shared` 至少包含 ProjectileSnapshot 与 ImpactBurst 两个 Emitter，并使用覆盖 Arena 的 Fixed Bounds。
+
+### 运行验证
+
+1. Standalone 或 Listen Server Host PIE，控制台执行 `arena.Projectile.Visual.LogWrites 1`。
+2. 自动武器持续发射时，应看到 `Projectile Visual NDC snapshot wrote X/X active samples`；发生命中时应看到 `Projectile Impact NDC wrote N events`。
+3. 屏幕上可看到共享 Projectile Sprite/Mesh 随 Data Projectile 移动，并在 Projectile 回收后快速消失；穿透/散射不额外创建独立 Niagara Component。
+4. 使用 `stat Niagara` / Niagara Debugger 检查 System Instance。核心标准是大量 Projectile 仍由单个 `NS_ArenaProjectiles_Shared` Component 承担，不出现“500 Projectile = 500 Niagara Components”。
+5. 将 `arena.Projectile.Visual.Enabled 0`：视觉消失或停止更新，但命中、伤害、死亡和 Wave 推进必须完全不变。
+6. 设置 `arena.Projectile.Visual.MaxSamples 10` 并制造 >10 个 Active Projectile：最多只提交 10 个视觉 Sample，但真实 ActiveCount、HitCommand 与 GAS 伤害不能减少。
+7. 设置两把 WeaponDataAsset 使用不同 `ProjectileVisualTypeID`，确认 NDC 日志正常；Niagara 内按 VisualType 做明显外观差异后，两类 Projectile 不串样式。
+8. Spread + Pierce 回归：同一 Attack 的多个 Pellet 和穿透 Impact 均进入共享 NDC；视觉缺失/裁剪不能改变 PelletFalloff 或 Pierce 命中次数。
+9. Dedicated Server 专项后置到 P6/P7；当前 Remote Client 因尚未实现 Launch Reconstruction，不要求看到 Data Projectile。
+
+### 通过标准
+
+- Data Projectile 本体没有新增每发 Actor、CollisionComponent、ProjectileMovementComponent 或 NiagaraComponent。
+- 一个 World 只创建一个共享 Projectile Niagara Component；Projectile/Impact 数据通过两个 NDC 批量提交。
+- Visual Budget 只影响表现数量，不影响服务器权威模拟和 GAS。
+- Slot + Generation 已进入 NDC 协议，可供 P5-B 做稳定 Particle 身份映射。
+- Standalone / Listen Server Host 通过后，P5-A 可记为 Implemented；远端客户端可见性属于 P6。
