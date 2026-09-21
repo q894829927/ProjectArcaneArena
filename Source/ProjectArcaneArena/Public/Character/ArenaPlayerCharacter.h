@@ -18,6 +18,7 @@ class UInputModifierSwizzleAxis;
 class USpringArmComponent;
 class UAbilitySystemComponent;
 class UArenaAbilitySystemComponent;
+class UArenaAutoAttackComponent;
 class UGameplayAbility;
 class UGameplayEffect;
 
@@ -37,6 +38,9 @@ public:
 
 	// Returns current dash input direction, or zero when standing still.
 	FVector GetLastMovementInputDirection() const { return LastMovementInputDirection; }
+
+	// 返回服务器原型自动武器组件，P2 仅用于单武器 Data Projectile 接入与验证。
+	UArenaAutoAttackComponent* GetAutoAttackComponent() const { return AutoAttackComponent; }
 
 	// 本地交互菜单打开前在本地和服务器停止奔跑，避免 UI 期间保留加速状态。
 	void StopSprintingForLocalMenu();
@@ -151,6 +155,9 @@ private:
 	void ServerSetSprinting(bool bNewSprinting);
 
 private:
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Arena|Auto Attack", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UArenaAutoAttackComponent> AutoAttackComponent;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Camera", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<USpringArmComponent> CameraBoom;
 
