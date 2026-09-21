@@ -12,6 +12,8 @@
 重要：
 - .uasset/.umap 只通过 Unreal EditorAssetLibrary.rename_asset() 移动。
 - __ExternalActors__ / __ExternalObjects__ 从不手工移动，由 Unreal 随地图管理。
+- World 的 PersistentLevel 等子对象不会作为独立资产迁移，会折叠到所属 .umap Package。
+- __pycache__ / .pyc 属本地缓存，不移动到 Scripts/Python。
 - 第三方目录和明确保留目录从不迁移。
 """
 
@@ -154,11 +156,24 @@ def _write_report() -> pathlib.Path:
 # -----------------------------------------------------------------------------
 
 def _canonical_asset_path(raw_path: str) -> str:
-    """把 /Game/A/B.Asset 统一成 /Game/A/B。"""
+    """把 ObjectPath/SubobjectPath 统一成唯一 PackagePath。
+
+    例如：
+    /Game/Map/Lvl.Lvl -> /Game/Map/Lvl
+    /Game/Map/Lvl.Lvl:PersistentLevel -> /Game/Map/Lvl
+
+    Asset Registry 在部分 World 上会同时返回 World 与 PersistentLevel 子对象；
+    迁移计划必须把它们折叠到同一个 Package，避免同一 .umap 被计划移动两次。
+    """
     path = str(raw_path).replace("\\", "/")
+
+    if ":" in path:
+        path = path.split(":", 1)[0]
+
     leaf = path.rsplit("/", 1)[-1]
     if "." in leaf:
         path = path.rsplit(".", 1)[0]
+
     return path.rstrip("/")
 
 
@@ -774,6 +789,11 @@ def build_support_file_plan() -> tuple[list[tuple[pathlib.Path, pathlib.Path]], 
             continue
 
         rel = source.relative_to(content_dir).as_posix()
+
+        # __pycache__ / .pyc 是本地 Python 运行缓存，不属于迁移源文件。
+        # 它们既不进入 Scripts/Python，也不参与 Git/Content 资产规划。
+        if source.suffix.lower() == ".pyc" or "__pycache__" in source.parts:
+            continue
 
         if rel == "3":
             review.append(
