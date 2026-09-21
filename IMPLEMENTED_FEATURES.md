@@ -489,6 +489,14 @@ Status meanings:
 * 新系统与现有主动技能解耦；`AArenaFireballProjectile`、`AArenaEnemyProjectile` 保持原实现，后续只有 Profiling 证明其生命周期成本值得优化时才考虑独立 Actor Pool。
 * 状态：源码已实现并通过窄目标 UBT 编译；`GetStatId()` 修复后的 DataPool 1000 档 PIE smoke test 已连续输出稳定统计，Active=1000 左右、Failed=0、Overflow=0，未再出现 Tickable PURE_VIRTUAL 崩溃；DataPool 5000 档也已稳定运行，Active≈5000、Failed=0、Overflow=0，容量按 GrowChunk 从 5000 扩到 6024，PeakActive 约 5.0k；在 `t.MaxFPS=240`、VSync 关闭后，稳态压力窗口约 9.1~9.2ms/frame（约 108 FPS），PIE `stat unit` 观测到 Frame≈9.43ms、Game≈9.44ms、GPU≈7.74ms。修正 Trace early-return 后，5 秒稳定区间 `ArenaProjectileSimulation` 为 22.1 ms / 539 次，约 0.041 ms/frame。首个 LegacyActor M0 基线（Movement/Collision/Replication 全关闭）在 5000 Active、相同 Lifetime/Seed 下稳态约 15.27~15.31 ms/frame（约 65 FPS），Active≈5030、Failed=0；同期 `ProjectileMovement*` 搜索在 5 秒区间出现约 8.3k Component 事件，主要对应每秒持续 Spawn/Destroy 时的组件创建/注册路径，而非开启后的 Movement Tick。LegacyActor M1（Movement 开启、Collision/Replication 关闭）稳态约 24.96~26.71 ms/frame，后两窗口约 26.5~26.7 ms/frame（约 37~38 FPS），Active≈5060~5080、Failed=0；5 秒 Insights 中 `ProjectileMovement` 约 1.1 s CPU 累计、约 102 万次事件。100/250/500/2000/5000 阶梯、Unreal Insights Capture、Generation 复用回归和 Listen Server 压力验证仍待完成，因此当前记为 `Partial`。
 
+### Projectile P2 / G-A — Partial
+
+* 新增 `UArenaAutoAttackComponent` 并作为原生子组件挂到 `AArenaPlayerCharacter`。组件不使用每帧 Tick，而由服务器 Timer 调度；只在 `EArenaGamePhase::Combat` 且 Owner ASC 不含 `State.Dead` / `State.Stunned` 时尝试攻击。
+* P2 当前使用低频 `TActorIterator<AArenaEnemyCharacter>` 选择范围内最近存活敌人，成功后直接调用 `UArenaProjectileSimulationSubsystem::SpawnProjectile`，写入 `AttackInstanceID` 与临时单武器 `WeaponRuntimeID`；P3 将把全量遍历替换为共享 Target Grid / Spatial Hash。
+* 当前原型武器参数（射击间隔、索敌距离、速度、寿命、半径和出生偏移）暴露在组件 Details 中；现阶段 Projectile 只有数据飞行，没有碰撞、GAS 伤害或 Niagara 表现。
+* Authority-only 调度保证客户端不会重复创建玩法 Projectile；组件在 Avatar EndPlay 时清理 Timer，因此换 Pawn / 销毁旧 Avatar 不会继续发射。
+* 状态：源码已接入，尚未完成 UBT 编译和 PIE 功能回归，因此保持 `Partial`。
+
 ## Verification Notes
 
 * `git diff --check` passed after the Phase 3/4 source implementation.
