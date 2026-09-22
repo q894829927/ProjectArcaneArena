@@ -83,6 +83,15 @@ void UArenaProjectileVisualSubsystem::Initialize(FSubsystemCollectionBase& Colle
 	SimulationUpdatedHandle = Simulation->OnSimulationUpdated().AddUObject(
 		this,
 		&UArenaProjectileVisualSubsystem::HandleSimulationUpdated);
+
+	UE_LOG(
+		LogArenaProjectile,
+		Warning,
+		TEXT("[P5Diag] VisualSubsystem initialized. World=%s NetMode=%d Simulation=%s DelegateBound=%d"),
+		*GetNameSafe(World),
+		static_cast<int32>(World->GetNetMode()),
+		*GetNameSafe(Simulation),
+		SimulationUpdatedHandle.IsValid() ? 1 : 0);
 }
 
 // World 收尾时对称解绑，避免 PIE 重开后旧 Subsystem 回调进入新 World。
@@ -123,6 +132,18 @@ bool UArenaProjectileVisualSubsystem::DoesSupportWorldType(EWorldType::Type Worl
 // Simulation 完成后立刻提交同帧视觉数据；即使视觉预算截断，也不会改变真实 Projectile/HitCommand。
 void UArenaProjectileVisualSubsystem::HandleSimulationUpdated()
 {
+	static int32 DiagCounter = 0;
+	++DiagCounter;
+
+	if (DiagCounter % 60 == 0)
+	{
+		UE_LOG(
+			LogArenaProjectile,
+			Warning,
+			TEXT("[P5Diag] HandleSimulationUpdated called. Enabled=%d"),
+			CVarArenaProjectileVisualEnabled.GetValueOnGameThread());
+	}
+
 	if (CVarArenaProjectileVisualEnabled.GetValueOnGameThread() == 0)
 	{
 		return;
@@ -131,6 +152,10 @@ void UArenaProjectileVisualSubsystem::HandleSimulationUpdated()
 	TRACE_CPUPROFILER_EVENT_SCOPE(ArenaProjectileVisualNDC);
 	if (!EnsureVisualAssets())
 	{
+		if (DiagCounter % 60 == 0)
+		{
+			UE_LOG(LogArenaProjectile, Warning, TEXT("[P5Diag] EnsureVisualAssets failed."));
+		}
 		return;
 	}
 
@@ -148,6 +173,14 @@ bool UArenaProjectileVisualSubsystem::EnsureVisualAssets()
 		ProjectileDataChannel = LoadObject<UNiagaraDataChannelAsset>(nullptr, ProjectileDataChannelPath);
 		ImpactDataChannel = LoadObject<UNiagaraDataChannelAsset>(nullptr, ImpactDataChannelPath);
 		SharedProjectileSystem = LoadObject<UNiagaraSystem>(nullptr, SharedProjectileSystemPath);
+
+		UE_LOG(
+			LogArenaProjectile,
+			Warning,
+			TEXT("[P5Diag] Asset load: ProjectileNDC=%s ImpactNDC=%s SharedSystem=%s"),
+			ProjectileDataChannel ? TEXT("OK") : TEXT("NULL"),
+			ImpactDataChannel ? TEXT("OK") : TEXT("NULL"),
+			SharedProjectileSystem ? TEXT("OK") : TEXT("NULL"));
 	}
 
 	const bool bReady = ProjectileDataChannel && ImpactDataChannel && SharedProjectileSystem;
@@ -202,6 +235,20 @@ void UArenaProjectileVisualSubsystem::WriteProjectileSnapshot()
 
 	const int32 MaxSamples = FMath::Max(CVarArenaProjectileVisualMaxSamples.GetValueOnGameThread(), 0);
 	Simulation->BuildVisualSnapshot(VisualSamples, MaxSamples);
+
+	static int32 SnapshotDiagCounter = 0;
+	++SnapshotDiagCounter;
+	if (SnapshotDiagCounter % 30 == 0 || !VisualSamples.IsEmpty())
+	{
+		UE_LOG(
+			LogArenaProjectile,
+			Warning,
+			TEXT("[P5Diag] Snapshot Active=%d Samples=%d Max=%d"),
+			Simulation->GetActiveProjectileCount(),
+			VisualSamples.Num(),
+			MaxSamples);
+	}
+
 	if (VisualSamples.IsEmpty())
 	{
 		return;
@@ -219,6 +266,11 @@ void UArenaProjectileVisualSubsystem::WriteProjectileSnapshot()
 		TEXT("ArenaProjectileVisualSnapshot"));
 	if (!Writer)
 	{
+		UE_LOG(
+			LogArenaProjectile,
+			Error,
+			TEXT("[P5Diag] Projectile NDC Writer is NULL. Samples=%d"),
+			VisualSamples.Num());
 		return;
 	}
 
