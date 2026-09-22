@@ -557,7 +557,7 @@ P0/P1 当前源码进度：StressTestActor、LegacyActor 参考、Data Projectil
 
 ## 12. P7 Gameplay Scale & Performance：真实战斗规模化与性能验收
 
-### 13.1 目标与原则
+### 12.1 目标与原则
 
 P7 不再以 Projectile 子系统单独能跑多少发作为最终结论，而验证正式玩法链在高密度场景中的整体承载能力。测试必须保留真实玩家、真实自动武器、真实敌人、AI、CharacterMovement、动画、GAS、命中特效、伤害数字、血条、死亡、OnKill、掉落和 Wave 推进。
 
@@ -569,7 +569,7 @@ P7 不再以 Projectile 子系统单独能跑多少发作为最终结论，而�
 - 不允许通过少发 Projectile、漏伤害、减少状态触发或关闭必要表现取得更好的性能结论。
 - Chunked Parallel Simulation 不是默认任务；只有 Unreal Insights 证明 Projectile Simulation / Swept Collision 在综合场景中仍是 GameThread 主要成本时才实施。
 
-### 13.2 Gameplay Stress 测试内容
+### 12.2 Gameplay Stress 测试内容
 
 建议建立独立性能测试目录，包含 Lvl_GameplayStress、BP_ArenaGameMode_GameplayStress、20/50/100 敌人 WaveData，以及六把不同负载特征的 Stress WeaponDataAsset。
 
@@ -577,7 +577,7 @@ P7 不再以 Projectile 子系统单独能跑多少发作为最终结论，而�
 
 AArenaProjectileStressTestActor 继续作为 Projectile-only 微基准，不承担 P7 最终性能结论。
 
-### 13.3 六槽真实高密度武器负载
+### 12.3 六槽真实高密度武器负载
 
 使用现有最多六槽 WeaponLoadout 从正式武器链路制造高密度弹幕。六把压力武器分别强调：
 
@@ -592,7 +592,7 @@ AArenaProjectileStressTestActor 继续作为 Projectile-only 微基准，不承�
 
 Projectile 生成速率近似为各武器 ProjectilesPerAttack / FireInterval 的总和；Active Projectile 近似为 ProjectilePerSecond × AverageFlightTime。优先通过 FireInterval、Pellet、Speed、Lifetime、Spread、敌人距离和 Miss Rate 把 Active 数量稳定推到目标档，而不是直接使用 64 Pellet × 0.05s 这种缺少玩法意义的极端配置。
 
-### 13.4 两类 50 Enemy 场景
+### 12.4 两类 50 Enemy 场景
 
 #### A. Steady State 持续压力
 
@@ -606,11 +606,11 @@ Projectile 生成速率近似为各武器 ProjectilesPerAttack / FireInterval �
 
 重点捕获 10～30 名敌人短时间同时死亡时的 Burst Spike，观察死亡、OnKill、掉落、数字、Niagara、GC、AI 注销与 Wave 逻辑是否形成尖峰。最终结论必须同时包含 Steady State 和 Burst Spike。
 
-### 13.5 第一轮测试禁止提前关闭表现
+### 12.5 第一轮测试禁止提前关闭表现
 
 首次综合 Profiling 中 Damage Number、Impact Niagara、Projectile VFX、Hit Flash、Health Bar、Audio、Enemy Animation、Enemy AI 和 GAS 全部开启。首轮目的不是取得漂亮帧率，而是确定真实 Top Bottleneck。取得基线后才允许做独立 A/B 开关测某一层成本。
 
-### 13.6 P7 Telemetry
+### 12.6 P7 Telemetry
 
 建议新增 AArenaGameplayStressController 或等价只读统计入口，只汇总当前测试负载与性能上下文，不拥有 Gameplay。
 
@@ -618,7 +618,7 @@ Projectile 生成速率近似为各武器 ProjectilesPerAttack / FireInterval �
 
 Gameplay 吞吐统计使用低频聚合；正式性能 Capture 中默认关闭逐 Hit 详细日志，避免日志本身污染结果。
 
-### 13.7 固定验收矩阵
+### 12.7 固定验收矩阵
 
 | 场景 | Enemy | Active Projectile | 目的 |
 |---|---:|---:|---|
@@ -632,7 +632,7 @@ Gameplay 吞吐统计使用低频聚合；正式性能 Capture 中默认关闭�
 
 P6 完成后，同一矩阵逐步增加 Standalone、Listen Server Host、Remote Client、Dedicated Server + Clients。Remote Client 的正式 P7 结论依赖 P6 Launch Reconstruction 完成。
 
-### 13.8 Top Bottleneck 驱动的优化分支
+### 12.8 Top Bottleneck 驱动的优化分支
 
 首次综合 Profile 后按实际占用最大的模块推进，而不是预设 Projectile 一定最慢。
 
@@ -643,13 +643,13 @@ P6 完成后，同一矩阵逐步增加 Standalone、Listen Server Host、Remote
 - P7-H GAS / Feedback：若 GameplayEffect / ExecCalc / GameplayEvent / GameplayCue 成为主要成本，先定位 Spec 构建、事件、Cue、状态效果或网络派发的具体成本；禁止通过丢 Hit 或静默延迟已确认伤害降低成本。
 - P7-I Optional Projectile Parallel Simulation：仅当综合场景中 Projectile Simulation / Swept Collision 明确是 GameThread Top Bottleneck，且其他主要瓶颈优化后仍明显超预算时，才按 Chunk 并行数学与只读 SpatialGrid 查询，工作线程只输出线程本地 HitCommand，GameThread 合并后进入 GAS。
 
-### 13.9 Before / After 证据要求
+### 12.9 Before / After 证据要求
 
 每个 P7 优化项必须记录同一条件下的 Enemy Count、Active Projectile、Spawn/s、Hit/s、DamageNumber/s、Impact/s、GameThread、RenderThread、GPU、P95、P99 和 Memory，并说明改善了哪个 Scope、是否把成本转移到其他线程/GPU、是否影响峰值内存或网络带宽、是否改变表现密度，以及 Gameplay Hit/Damage/Death/Status 数量是否保持一致。
 
 禁止通过少生成 Projectile、减少应结算 Hit、漏掉 GAS Damage/Status、缩短正式武器 Lifetime、关闭 DamageNumber/Impact VFX、降低 Enemy 数量、让 AI 停止工作或更换 Seed/布局来形成伪 Before/After。
 
-### 13.10 P7 完成标准
+### 12.10 P7 完成标准
 
 1. Lvl_GameplayStress 或等价真实压力场景可重复运行。
 2. S1～S5 至少完成本机 Standalone 固定参数 Capture；P6 完成后补网络矩阵。
