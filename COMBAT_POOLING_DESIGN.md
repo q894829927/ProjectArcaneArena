@@ -36,7 +36,7 @@ P0：Legacy Actor Reference / 独立压力基线
 → P4：Spread / Pierce / 多武器
 → P5：Shared Niagara / Niagara Data Channel
 → P6：Launch Reconstruction / 轻量网络
-→ P7：Chunked Parallel Simulation（仅在采样需要时）+ 综合规模化验收
+→ P7：Gameplay Scale & Performance（真实战斗规模化、瓶颈定位、定向优化与最终验收；Chunked Parallel Simulation 仅在采样证明需要时启用）
 ```
 
 其中 Legacy Actor 仅作为“传统实现成本参考”，不要求先完成 Actor Pool 优化。旧技能 Actor Pool 若未来需要，作为独立可选任务处理。
@@ -551,14 +551,123 @@ ServerLaunchTime
 | P4：Spread / Pierce / 多武器 | Implemented | 多武器、Spread/PelletFalloff 与直线 Pierce 核心玩法均已通过 PIE | 高速同帧、多人与规模化性能回归后置到 Verified |
 | P5：批量表现 | Partial | `UArenaProjectileVisualSubsystem`、Active Snapshot NDC、Impact NDC、单 Shared Niagara Component 源码已接入；VisualTypeID 已从 WeaponDataAsset 快照到 Projectile | 待 UBT/PIE 与三个 Niagara 资产配置；大量 Projectile 不得创建同数量 Niagara Component |
 | P6：轻量网络 | Planned | Launch Params + Seed + ServerTime 客户端重建 | 高密度普通弹不使用逐弹 ReplicateMovement |
-| P7：并行与综合验收 | Planned | 仅在采样需要时 Chunk 并行；真实敌群/GAS/VFX/网络长时间压力 | 帧时间、带宽、内存和数据池容量稳定，形成真实优化对照 |
+| P7：Gameplay Scale & Performance | Planned | 建立真实 Gameplay Stress 场景，覆盖 20/50/100 敌人、500～5000 Active Projectile、完整 GAS/AI/动画/伤害数字/Impact VFX/死亡掉落链路；先 Profiling，再按 Top Bottleneck 定向优化；Projectile Chunk 并行仅在 Insights 证明 Simulation 仍是主要瓶颈时实施 | 固定场景获得 Game/Render/GPU、P95/P99、Gameplay 吞吐与内存证据；50 Enemy + 2000～3000 Active Projectile 作为主要目标档，5000 作为 Extreme 档；完成 Before/After 对照且不得通过少发弹、漏伤害或关闭必要表现取得结果 |
 
 P0/P1 当前源码进度：StressTestActor、LegacyActor 参考、Data Projectile Pool、SoA 热数据、Free List、Generation、直线集中模拟与基础统计已写入，并已通过 ProjectArcaneArenaEditor 窄目标 UBT 编译与链接。5000 Active 的 DataPool 已取得稳定 PIE/Insights 基线（`ArenaProjectileSimulation` 约 0.041 ms/frame），LegacyActor M0/M1 也已获得端到端对照；但完整 100/250/500/1000/2000/5000 阶梯、Collision/Replication、Generation 专项与 Listen Server 验收仍未完成，因此 P0/P1 保持 `Partial`。P2 Auto Weapon 已进入源码实现：`UArenaAutoAttackComponent` 使用服务器 Timer、Combat/Dead/Stunned 门控和最近存活敌人原型查询，直接向 Data Projectile Pool 写入 `AttackInstanceID` / `WeaponRuntimeID`；尚未完成 UBT 与 PIE，因此状态为 `Partial`。\n\n旧 Fireball／EnemyProjectile Actor Pool 不属于 P0～P7 前置阶段。若未来另做，单独记录为 Legacy Projectile Optimization。
 
-## 12. 验证计划与证据
+## 12. P7 Gameplay Scale & Performance：真实战斗规模化与性能验收
+
+### 13.1 目标与原则
+
+P7 不再以 Projectile 子系统单独能跑多少发作为最终结论，而验证正式玩法链在高密度场景中的整体承载能力。测试必须保留真实玩家、真实自动武器、真实敌人、AI、CharacterMovement、动画、GAS、命中特效、伤害数字、血条、死亡、OnKill、掉落和 Wave 推进。
+
+- 建立可重复的真实 Gameplay Stress 场景，而不是继续扩大裸 Data Projectile Benchmark。
+- 同屏约 50 个真实敌人时，逐步把 Active Projectile 提升到 1000、2000～3000、5000 档。
+- 同时记录 Projectile、Spatial Hash、HitCommand、GAS、AI、CharacterMovement、Animation、Niagara、Damage Number、UI、Audio、Network 和 GC 成本。
+- 首轮保持当前真实表现全部开启，先确定 Top Bottleneck，再决定优化对象。
+- 每项优化必须使用同一地图、同一武器配置、同一敌人配置、同一随机种子和同一采样窗口做 Before / After 对比。
+- 不允许通过少发 Projectile、漏伤害、减少状态触发或关闭必要表现取得更好的性能结论。
+- Chunked Parallel Simulation 不是默认任务；只有 Unreal Insights 证明 Projectile Simulation / Swept Collision 在综合场景中仍是 GameThread 主要成本时才实施。
+
+### 13.2 Gameplay Stress 测试内容
+
+建议建立独立性能测试目录，包含 Lvl_GameplayStress、BP_ArenaGameMode_GameplayStress、20/50/100 敌人 WaveData，以及六把不同负载特征的 Stress WeaponDataAsset。
+
+测试 GameMode 和地图只负责配置测试负载、开始/停止测试与统计，不复制一套战斗逻辑。场景继续使用正式 AArenaPlayerCharacter、PlayerState/WeaponLoadout、UArenaAutoAttackComponent、ProjectileSimulationSubsystem、Enemy/Ranged/Elite、AIController、NavMesh、CharacterMovement、GAS Damage/Crit/Status/OnKill、HitReaction、DamageNumber、Shared Niagara、HealthBar、Death、Drop、Pickup 和 Wave。
+
+AArenaProjectileStressTestActor 继续作为 Projectile-only 微基准，不承担 P7 最终性能结论。
+
+### 13.3 六槽真实高密度武器负载
+
+使用现有最多六槽 WeaponLoadout 从正式武器链路制造高密度弹幕。六把压力武器分别强调：
+
+| 武器 | 主要压力 | 建议特征 |
+|---|---|---|
+| Rapid | 高频 Launch | 低 FireInterval、单发或少量 Pellet |
+| Shotgun | Pellet 与同目标多 Hit | 8～16 Pellet、较大 Spread |
+| Pierce | Swept Collision 与多 HitCommand | Pierce 2～3 |
+| SpreadPierce | 组合路径 | 多 Pellet + Pierce |
+| LongLife | Active Projectile 数 | 较长 Lifetime、较低 Speed 或较远 Target |
+| Heavy | GAS / Crit / Feedback | 高命中率、Crit / 状态 / 命中反馈明显 |
+
+Projectile 生成速率近似为各武器 ProjectilesPerAttack / FireInterval 的总和；Active Projectile 近似为 ProjectilePerSecond × AverageFlightTime。优先通过 FireInterval、Pellet、Speed、Lifetime、Spread、敌人距离和 Miss Rate 把 Active 数量稳定推到目标档，而不是直接使用 64 Pellet × 0.05s 这种缺少玩法意义的极端配置。
+
+### 13.4 两类 50 Enemy 场景
+
+#### A. Steady State 持续压力
+
+使用真实敌人，但测试专用高 MaxHealth，确保 50 个敌人在 30～60 秒采样窗口内持续存活。AI、Navigation、CharacterMovement、SkeletalMesh/AnimBP、GAS、HealthBar、Hit Flash、Damage Number、Projectile VFX、Impact VFX 和 Audio 全部保持开启。
+
+该场景记录 Active Projectile、Spawn/s、Spatial Candidate、Swept Collision、HitCommand/s、GameplayEffect/ExecCalc/GameplayEvent、DamageNumber/s、ImpactVFX/s、AI/Movement/Animation、GameThread、RenderThread、GPU、P95/P99 和内存平台期。
+
+#### B. Real Combat Burst 正常战斗尖峰
+
+敌人使用正常或接近正式平衡的 Health，允许真实发生 Projectile Hit → GAS Damage → Crit/Status → Death → OnKill → Death Animation → Drop → Pickup → Wave 清理/推进。
+
+重点捕获 10～30 名敌人短时间同时死亡时的 Burst Spike，观察死亡、OnKill、掉落、数字、Niagara、GC、AI 注销与 Wave 逻辑是否形成尖峰。最终结论必须同时包含 Steady State 和 Burst Spike。
+
+### 13.5 第一轮测试禁止提前关闭表现
+
+首次综合 Profiling 中 Damage Number、Impact Niagara、Projectile VFX、Hit Flash、Health Bar、Audio、Enemy Animation、Enemy AI 和 GAS 全部开启。首轮目的不是取得漂亮帧率，而是确定真实 Top Bottleneck。取得基线后才允许做独立 A/B 开关测某一层成本。
+
+### 13.6 P7 Telemetry
+
+建议新增 AArenaGameplayStressController 或等价只读统计入口，只汇总当前测试负载与性能上下文，不拥有 Gameplay。
+
+至少记录：EnemiesAlive、ActiveProjectile、ProjectileSpawnPerSecond、HitCommandPerSecond、DamageSettlementPerSecond、GameplayEffectPerSecond（可获得时）、DamageNumberPerSecond、ImpactVFXPerSecond、ProjectilePoolCapacity、ProjectilePoolPeak、ProjectileOverflow、FrameTime、GameThread、RenderThread、GPU、P95 和 P99。
+
+Gameplay 吞吐统计使用低频聚合；正式性能 Capture 中默认关闭逐 Hit 详细日志，避免日志本身污染结果。
+
+### 13.7 固定验收矩阵
+
+| 场景 | Enemy | Active Projectile | 目的 |
+|---|---:|---:|---|
+| S1 Normal | 20 | 约 500 | 正常玩法基线 |
+| S2 Heavy | 50 | 约 1000 | 普通后期负载 |
+| S3 Target | 50 | 约 2000～3000 | 主要目标综合场景 |
+| S4 Extreme | 50 | 约 5000 | 极限压力与降级边界 |
+| S5 Enemy Stress | 100 | 约 2000 | Enemy AI / Movement / Animation 专项 |
+
+每档至少包含 30 秒 Steady State、一次完整高密度死亡/Wave 清理 Burst、相同武器/敌人/Seed/表现配置、Unreal Insights Capture、stat unit/GPU/Niagara 辅助证据，以及内存、Actor、Component、Niagara Instance 与 Pool 统计。
+
+P6 完成后，同一矩阵逐步增加 Standalone、Listen Server Host、Remote Client、Dedicated Server + Clients。Remote Client 的正式 P7 结论依赖 P6 Launch Reconstruction 完成。
+
+### 13.8 Top Bottleneck 驱动的优化分支
+
+首次综合 Profile 后按实际占用最大的模块推进，而不是预设 Projectile 一定最慢。
+
+- P7-D Damage Number：若 AArenaDamageNumberActor + UWidgetComponent + Actor Tick 在高 HitRate 下成为主要成本，迁移到 DamageNumberSubsystem + Value Event + Pool/Batch + Central Update；保留当前全开基线后再优化。
+- P7-E Enemy AI Frequency Budget：若 AI 决策、Target Query、LOS 或 Behavior Tree 成本明显，则降低非连续决策频率、错峰 Evaluation、复用 Spatial Query，避免每个 Enemy 高频全量遍历。
+- P7-F Animation Budget：若 SkeletalMesh / AnimBP 成为主要成本，评估 Animation Budget Allocator、Update Rate Optimization、LOD、Visibility Based Anim Tick 和距离分层动画频率。
+- P7-G Movement / Navigation：若 CharacterMovement、Floor Check、NavMesh 成为主要成本，则降低不必要更新、错峰路径重算；只有数据证明更高敌人数 Character 路径不可接受时再评估轻量 Pawn 或 MassEntity，50 Enemy 不作为提前迁移 Mass 的理由。
+- P7-H GAS / Feedback：若 GameplayEffect / ExecCalc / GameplayEvent / GameplayCue 成为主要成本，先定位 Spec 构建、事件、Cue、状态效果或网络派发的具体成本；禁止通过丢 Hit 或静默延迟已确认伤害降低成本。
+- P7-I Optional Projectile Parallel Simulation：仅当综合场景中 Projectile Simulation / Swept Collision 明确是 GameThread Top Bottleneck，且其他主要瓶颈优化后仍明显超预算时，才按 Chunk 并行数学与只读 SpatialGrid 查询，工作线程只输出线程本地 HitCommand，GameThread 合并后进入 GAS。
+
+### 13.9 Before / After 证据要求
+
+每个 P7 优化项必须记录同一条件下的 Enemy Count、Active Projectile、Spawn/s、Hit/s、DamageNumber/s、Impact/s、GameThread、RenderThread、GPU、P95、P99 和 Memory，并说明改善了哪个 Scope、是否把成本转移到其他线程/GPU、是否影响峰值内存或网络带宽、是否改变表现密度，以及 Gameplay Hit/Damage/Death/Status 数量是否保持一致。
+
+禁止通过少生成 Projectile、减少应结算 Hit、漏掉 GAS Damage/Status、缩短正式武器 Lifetime、关闭 DamageNumber/Impact VFX、降低 Enemy 数量、让 AI 停止工作或更换 Seed/布局来形成伪 Before/After。
+
+### 13.10 P7 完成标准
+
+1. Lvl_GameplayStress 或等价真实压力场景可重复运行。
+2. S1～S5 至少完成本机 Standalone 固定参数 Capture；P6 完成后补网络矩阵。
+3. S3 50 Enemy + 2000～3000 Active Projectile 使用完整 Gameplay/Presentation 路径，形成主要目标场景完整证据。
+4. S4 50 Enemy + 约 5000 Active Projectile 完成 Extreme 边界测试，并记录表现 Budget、Pool、内存和帧时间行为。
+5. 同时具备 Steady State 与高密度死亡 Burst 数据。
+6. 至少定位并记录综合场景 Top 3 Bottleneck。
+7. 对实际主要瓶颈实施必要优化，并用完全相同参数完成 Before / After。
+8. Projectile、Hit、GAS Damage、Death、OnKill、Status 与 Wave 语义无回归。
+9. 长时间运行不存在 Pool、DamageNumber、Niagara、Actor、Timer、Delegate 或 Weak Reference 无界增长。
+10. 未达到目标的项目明确记录在 PENDING_VERIFICATION.md，不得仅凭平均 FPS 标记完成。
+
+开发目标而非既成结果：在目标开发机和固定 1920×1080 配置下，S3 优先争取稳定在 16.67ms/frame 预算内，并重点控制 P95/P99；S4 作为 Extreme 档可以触发表现 Budget，但服务器权威 Gameplay 不允许降级。最终门槛根据完成 P5/P6 后的真实基线校准。
+
+## 13. 验证计划与证据
 
 
-### 12.1 性能基线
+### 13.1 性能基线
 
 必须使用 Unreal Insights 和固定压力场景记录 Game／Render／GPU／Slate／GC／Physics／Network 成本，不以编辑器主观流畅或平均 FPS 单独作为结论。
 
@@ -594,7 +703,7 @@ Data/Actor only
 
 所有优化版本使用相同随机种子、发射率、寿命、碰撞规则、伤害频率和表现档位对照；不能通过少发 Projectile、漏伤害或关闭必要敌方弹体冒充性能提升。
 
-### 12.2 功能与生命周期
+### 13.2 功能与生命周期
 
 | 场景 | 通过标准 |
 |---|---|
@@ -609,7 +718,7 @@ Data/Actor only
 | 目标死亡或离开视野 | 本次数字使用已记录位置；显示策略不影响伤害和事件 |
 | 切图、结束 PIE、多次重开 | 无旧 World 引用、回调、残留对象或持续内存增长 |
 
-### 12.3 双视角与多人
+### 13.3 双视角与多人
 
 - 单人 PIE 分别验证顶视角和第三人称的 BasicAttack、Fireball、Dash、Shield、LightningStorm 及敌方子弹反馈。
 - 飞行、命中、数字淡出、冷却期间切视角，不增加 Ability、子弹、区域 Actor、伤害或数字。
@@ -619,7 +728,7 @@ Data/Actor only
 - Dedicated Server 无本地数字、Widget、音频和 VFX，客户端表现缺失不影响服务器伤害。
 - Standalone 和 Packaged Build 冷启动验证资源收录、首次效果及最低容量准备，不能只做编辑器热缓存测试。
 
-### 12.4 首版验收门槛
+### 13.4 首版验收门槛
 
 1. 已预热且容量充足的稳定场景中，正常取用／回收不再持续创建和销毁对应对象。
 2. 固定峰值负载下，池总量不突破配置上限，预留与活跃计数准确，空闲对象没有无意义 Tick／碰撞。
@@ -629,7 +738,7 @@ Data/Actor only
 
 性能目标应在阶段 A 根据目标设备和演示负载确定。不能用降低实际伤害次数、减少应发射的子弹或关闭必要敌方弹体表现来冒充性能提升。
 
-## 13. 工程验证与文档维护
+## 14. 工程验证与文档维护
 
 - 每个阶段最小化修改范围，新增或修改函数补充准确的中文职责注释。
 - 静态检查包含 includes、反射声明、复制字段、GC 引用、Timer／委托对称清理及 `git diff --check`。
@@ -639,7 +748,7 @@ Data/Actor only
 - 实施后同步更新本文阶段状态及 `IMPLEMENTED_FEATURES.md`；未完成验证进入 `PENDING_VERIFICATION.md`。
 - 若未来改动 Boss 技能或阶段行为，再同步对应 Boss 规划；本次通用池设计不改变 Boss 阶段进度。
 
-## 14. 参考资料
+## 15. 参考资料
 
 - [UE 5.6 Actor Network Dormancy](https://dev.epicgames.com/documentation/en-us/unreal-engine/actor-network-dormancy-in-unreal-engine?application_version=5.6)：唤醒顺序、休眠与相关性的区别，以及快速切换的成本。
 - [UE 5.6 Niagara Scalability and Best Practices](https://dev.epicgames.com/documentation/en-us/unreal-engine/scalability-and-best-practices-for-niagara?application_version=5.6)：组件池之外的实例、发射器和粒子预算。
